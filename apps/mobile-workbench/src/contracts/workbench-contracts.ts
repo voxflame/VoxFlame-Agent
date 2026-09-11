@@ -3,94 +3,25 @@ import type { MobileWorkbenchSurfaceId } from '../constants/surfaces'
 export type MobileWorkbenchRtcSurface = 'mobile_workbench'
 export type MobileWorkbenchSourceSurface = 'mobile_workbench'
 
-export type MobileWorkbenchSessionMode =
-  | 'communication'
-  | 'training'
-  | 'quick_talk'
+import type { RtcSessionIntent, RtcDeviceContext } from './generated/rtc-session'
+export type {
+  RtcSessionMode as MobileWorkbenchSessionMode,
+  RtcSessionStrategy as MobileWorkbenchSessionStrategy,
+  RtcCapabilityId as MobileWorkbenchCapabilityId,
+  RtcScene as MobileWorkbenchScene,
+  RtcResolvedSessionIntent as MobileWorkbenchResolvedRtcSessionIntent,
+  RtcSessionReadinessSummary as MobileWorkbenchRtcReadinessSummary,
+  LiveKitTransportRuntime as MobileWorkbenchLiveKitRuntime,
+  RtcStartSessionResult as MobileWorkbenchRtcSessionResponse,
+} from './generated/rtc-session'
 
-export type MobileWorkbenchSessionStrategy =
-  | 'heavy_realtime'
-  | 'light_voice'
-
-export type MobileWorkbenchCapabilityId =
-  | 'transport_send_control'
-  | 'voice_profile_update'
-  | 'workspace_snapshot_read'
-  | 'upload_artifact_persist'
-
-export type MobileWorkbenchScene =
-  | 'medical'
-  | 'family'
-  | 'stranger'
-  | 'emergency'
-  | 'work'
-  | 'interview'
-  | 'outing'
-  | 'home'
-
-export interface MobileWorkbenchDeviceContext {
-  secureContext?: boolean
-  mediaDevicesSupported?: boolean
-  microphoneStatus?: 'unknown' | 'available' | 'unavailable'
-  networkOnline?: boolean
+export interface MobileWorkbenchDeviceContext extends RtcDeviceContext {
   appState?: 'active' | 'background' | 'inactive'
 }
 
-export interface MobileWorkbenchRtcSessionIntent {
+export interface MobileWorkbenchRtcSessionIntent extends RtcSessionIntent {
   surface: MobileWorkbenchRtcSurface
-  mode: MobileWorkbenchSessionMode
-  sessionStrategy: MobileWorkbenchSessionStrategy
-  requestedCapabilities: MobileWorkbenchCapabilityId[]
-  scene?: MobileWorkbenchScene
   deviceContext?: MobileWorkbenchDeviceContext
-}
-
-export interface MobileWorkbenchResolvedRtcSessionIntent
-  extends Omit<MobileWorkbenchRtcSessionIntent, 'scene'> {
-  grantedCapabilities: MobileWorkbenchCapabilityId[]
-  scene?: MobileWorkbenchScene | null
-}
-
-export interface MobileWorkbenchRtcReadinessSummary {
-  status: 'needs_attention' | 'can_start' | 'ready'
-  label: string
-  detail: string
-  nextAction: string
-  blockerSummary: string | null
-  warningSummary: string | null
-}
-
-export interface MobileWorkbenchLiveKitRuntime {
-  provider: 'livekit'
-  serverUrl: string
-  roomName: string
-  participantIdentity: string
-  participantName: string
-  participantToken: string
-  participantMetadata: string
-  participantAttributes: Record<string, string>
-  agentDispatch: {
-    agentName: string
-  } | null
-}
-
-export interface MobileWorkbenchRtcSessionResponse {
-  requestId: string
-  channelName: string
-  graphName: string
-  executionBackend: 'livekit'
-  transport: MobileWorkbenchLiveKitRuntime
-  intent: MobileWorkbenchResolvedRtcSessionIntent
-  readiness: {
-    canStart: boolean
-    requestedStrategy: MobileWorkbenchSessionStrategy
-    resolvedStrategy: MobileWorkbenchSessionStrategy
-    recommendedStrategy: MobileWorkbenchSessionStrategy
-    microphoneRequired: boolean
-    blockers: string[]
-    warnings: string[]
-    summary: MobileWorkbenchRtcReadinessSummary
-  }
 }
 
 export type MobileWorkbenchRecordingMode =

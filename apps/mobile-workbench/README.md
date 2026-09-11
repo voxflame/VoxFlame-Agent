@@ -6,7 +6,7 @@ VoxFlame 的 Expo / React Native 移动端，Android 与 iOS 共用一套产品�
 
 `0.1.0` 第一版包含四个可测试页面：
 
-1. `沟通`：先进入固定场景选择 screen，再进入实时沟通 screen；通过 backend 创建、保活和结束 RTC session，再连接 LiveKit 麦克风。
+1. `沟通`：先进入固定场景选择 screen，再进入实时沟通 screen；通过 backend 创建 RTC session；连接和结束由 LiveKit room 管理，再连接 LiveKit 麦克风。
 2. `练习`：只区分独立筛查与数据录入；自定义材料是数据录入页的一种内容来源。执行面支持原生录音、本机队列、逐条回放、确认删除、上传和 receipt。
 3. `准备`：读取与 Web 相同的 workspace snapshot、准备材料和常用短句。
 4. `我的`：账户、麦克风权限、资料同步和待上传状态。
@@ -54,7 +54,12 @@ The communication surface now includes the first backend-orchestrated RTC slice:
 2. The app receives room metadata, readiness, and participant token from backend.
 3. The UI displays room/readiness state but never renders the participant token.
 4. `src/realtime/use-livekit-room-connection.ts` starts the LiveKit React Native `AudioSession`, connects the room, and publishes microphone audio.
-5. Real-device room smoke is still required before declaring communication complete.
+5. Disconnect the SDK room before clearing the bootstrap credential state; there are no HTTP ping/stop calls. `ready` in `use-mobile-rtc-session` means credentials acquired, not that audio/Agent are ready.
+6. Real-device room smoke is still required before declaring communication complete.
+
+RTC response/intent types and parser are generated from `backend/src/contracts/rtc-session.ts` into `src/contracts/generated/rtc-session.ts`; never hand-edit the generated file. Run `npm run test:rtc-contract` at the repo root. Mobile only accepts `mobile_workbench` responses; `appState` is client-local context, not a Backend device field. `joinTokenTtlSeconds` is a JWT TTL, not session duration.
+
+This is an undeployed breaking contract change. New clients require the matching Backend; old installed apps require an upgrade/blocking plan before backend rollout. See [release and rollback boundaries](../../research/product-engineering/RTC_CONTRACT_CLEANUP_2026-09-11.md).
 
 ## Commands
 

@@ -104,7 +104,6 @@ export function useRtcAgentSession(options: UseRtcAgentSessionOptions = {}) {
   const micAnalyserRef = useRef<AnalyserNode | null>(null)
   const sessionRef = useRef<StartRtcSessionResponse | null>(null)
   const connectPromiseRef = useRef<Promise<void> | null>(null)
-  const pingTimerRef = useRef<number | null>(null)
   const latestUserTranscriptRef = useRef<LatestUserTranscriptSnapshot>({
     text: '',
     clientCaptureId: null,
@@ -125,13 +124,6 @@ export function useRtcAgentSession(options: UseRtcAgentSessionOptions = {}) {
 
     memoryService.init(memoryOwnerId)
   }, [memoryOwnerId])
-
-  const clearPing = useCallback(() => {
-    if (pingTimerRef.current !== null) {
-      window.clearInterval(pingTimerRef.current)
-      pingTimerRef.current = null
-    }
-  }, [])
 
   const cleanupMicrophoneResources = useCallback(() => {
     cleanupSessionMicrophoneResources({
@@ -219,12 +211,10 @@ export function useRtcAgentSession(options: UseRtcAgentSessionOptions = {}) {
         latestUserTranscriptRef,
         onDecodedEnvelopeRef,
       },
-      accessToken,
-      clearPing,
       cleanupMicrophoneResources,
       setState,
     })
-  }, [accessToken, cleanupMicrophoneResources, clearPing, memoryOwnerId])
+  }, [cleanupMicrophoneResources, memoryOwnerId])
 
   const ensureMicrophoneTrack = useCallback(async (): Promise<SessionMicrophoneTrack> => {
     return ensurePublishedMicrophoneTrack({
@@ -286,9 +276,7 @@ export function useRtcAgentSession(options: UseRtcAgentSessionOptions = {}) {
         timeoutSeconds,
         suppressGreeting: connectOptions.suppressGreeting,
         setState,
-        clearPing,
         cleanupMicrophoneResources,
-        pingTimerRef,
         handleRtmMessage,
       })
     })()
@@ -303,7 +291,6 @@ export function useRtcAgentSession(options: UseRtcAgentSessionOptions = {}) {
       }
     }
   }, [
-    clearPing,
     cleanupMicrophoneResources,
     connectionNotice,
     handleRtmMessage,

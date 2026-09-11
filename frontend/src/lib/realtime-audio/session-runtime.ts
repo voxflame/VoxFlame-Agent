@@ -28,11 +28,7 @@ import {
   type ChunkAccumulator,
 } from './session-messages'
 import { syncRtcSessionProfile } from './session-profile'
-import {
-  pingRtcSession,
-  startRtcSession,
-  stopRtcSession,
-} from './session-bootstrap'
+import { startRtcSession } from './session-bootstrap'
 import {
   applyDisconnectedState,
   applyConnectingState,
@@ -91,16 +87,12 @@ interface StartRtcRuntimeConnectionOptions {
   timeoutSeconds?: number
   suppressGreeting?: boolean
   setState: Dispatch<SetStateAction<RtcAgentState>>
-  clearPing: () => void
   cleanupMicrophoneResources: () => void
-  pingTimerRef: MutableRefObject<number | null>
   handleRtmMessage: (event: RtmMessageEvent) => void
 }
 
 interface DisconnectRtcRuntimeOptions {
   refs: SessionRuntimeRefs
-  accessToken?: string
-  clearPing: () => void
   cleanupMicrophoneResources: () => void
   setState: Dispatch<SetStateAction<RtcAgentState>>
 }
@@ -213,22 +205,6 @@ function resetRuntimeRefs(refs: SessionRuntimeRefs): void {
   refs.inboundRtmChunksRef.current.clear()
   refs.latestUserTranscriptRef.current = { text: '', clientCaptureId: null }
   refs.onDecodedEnvelopeRef.current = null
-}
-
-export async function pingRtcRuntimeSession(
-  sessionRef: MutableRefObject<StartRtcSessionResponse | null>,
-  accessToken?: string,
-): Promise<void> {
-  const session = sessionRef.current
-  if (!session) {
-    return
-  }
-
-  try {
-    await pingRtcSession(session.channelName, accessToken)
-  } catch (error) {
-    console.error('[useRtcAgentSession] ping failed:', error)
-  }
 }
 
 export async function publishRtcRuntimeControlMessage(
@@ -479,37 +455,21 @@ export function createRtmMessageHandler({
 
 export async function disconnectRtcRuntime({
   refs,
-  accessToken,
-  clearPing,
   cleanupMicrophoneResources,
   setState,
 }: DisconnectRtcRuntimeOptions): Promise<void> {
-  clearPing()
-
   const client = refs.clientRef.current
-  const rtmClient = refs.rtmClientRef.current
   const micTrack = refs.micTrackRef.current
-  const session = refs.sessionRef.current
 
   resetRuntimeRefs(refs)
   refs.connectPromiseRef.current = null
 
   setState((prev) => applyDisconnectedState(prev))
 
-  await disconnectSessionExecution({
-    clientHandle: client,
-    rtmClient,
-    micTrack,
-    session,
-  })
-  cleanupMicrophoneResources()
-
-  if (session) {
-    try {
-      await stopRtcSession(session.channelName, accessToken)
-    } catch (error) {
-      console.warn('[useRtcAgentSession] stop session failed:', error)
-    }
+  try {
+    await disconnectSessionExecution({ clientHandle: client, micTrack })
+  } finally {
+    cleanupMicrophoneResources()
   }
 }
 
@@ -527,9 +487,7 @@ export async function startRtcRuntimeConnection({
   timeoutSeconds,
   suppressGreeting,
   setState,
-  clearPing,
   cleanupMicrophoneResources,
-  pingTimerRef,
   handleRtmMessage,
 }: StartRtcRuntimeConnectionOptions): Promise<void> {
   if (!userId) {
@@ -554,7 +512,6 @@ export async function startRtcRuntimeConnection({
   let lastError: Error | null = null
 
   for (let attempt = 1; attempt <= SESSION_INIT_ACK_MAX_ATTEMPTS; attempt += 1) {
-    let session: StartRtcSessionResponse | null = null
     let client: SessionExecutionClient | null = null
     let rtmClient: SessionControlClient | null = null
     let initAckGate: ReturnType<typeof createSessionInitAckGate> | null = null
@@ -565,11 +522,15 @@ export async function startRtcRuntimeConnection({
         accessToken,
         timeoutSeconds,
       })
-      session = activeSession
       initAckGate = createSessionInitAckGate(activeSession.requestId)
       refs.onDecodedEnvelopeRef.current = initAckGate.handleDecodedMessage
+      refs.sessionRef.current = activeSession
 
-      const transportEventHandlers = createSessionTransportEventHandlers(setState)
+      // Ignore callbacks from an intentionally released or superseded room.
+      const transportEventHandlers = createSessionTransportEventHandlers(
+        setState,
+        () => refs.sessionRef.current === activeSession,
+      )
       const transport = await connectSessionExecution({
         session: activeSession,
         onRtmMessage: handleRtmMessage,
@@ -580,7 +541,6 @@ export async function startRtcRuntimeConnection({
 
       refs.clientRef.current = client
       refs.rtmClientRef.current = rtmClient
-      refs.sessionRef.current = activeSession
 
       await initAckGate.waitForReady()
 
@@ -589,7 +549,7 @@ export async function startRtcRuntimeConnection({
           kind: activeSession.intent.mode === 'training' ? 'training' : 'communication',
           source: 'rtc_agent',
           surface: activeSession.intent.surface,
-          scene: activeSession.intent.scene,
+          scene: activeSession.intent.scene ?? undefined,
           sessionStrategy: activeSession.intent.sessionStrategy,
           executionBackend: activeSession.executionBackend,
           transportProvider: activeSession.transport.provider,
@@ -615,11 +575,6 @@ export async function startRtcRuntimeConnection({
         sendControl: bootstrapSendControlMessage,
       })
 
-      clearPing()
-      pingTimerRef.current = window.setInterval(() => {
-        void pingRtcRuntimeSession(refs.sessionRef, accessToken)
-      }, 30_000)
-
       refs.onDecodedEnvelopeRef.current = null
       initAckGate.cleanup()
       setState((prev) => applyConnectedRtcSession(prev, activeSession, connectionNotice))
@@ -637,20 +592,10 @@ export async function startRtcRuntimeConnection({
 
       await disconnectSessionExecution({
         clientHandle: client,
-        rtmClient,
         micTrack: refs.micTrackRef.current,
-        session,
       })
       cleanupMicrophoneResources()
       resetRuntimeRefs(refs)
-
-      if (session) {
-        try {
-          await stopRtcSession(session.channelName, accessToken)
-        } catch {
-          // ignore cleanup error
-        }
-      }
 
       if (
         lastError instanceof SessionBootstrapTimeoutError &&

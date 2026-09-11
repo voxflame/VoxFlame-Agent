@@ -16,11 +16,15 @@ interface SessionTransportEventHandlers {
 
 export function createSessionTransportEventHandlers(
   setState: Dispatch<SetStateAction<RtcAgentState>>,
+  isCurrentSession: () => boolean = () => true,
 ): SessionTransportEventHandlers {
+  const updateCurrentState: typeof setState = (update) => {
+    if (isCurrentSession()) setState(update)
+  }
   return {
     onRtmStatus: (event) => {
       if (event.newState === 'DISCONNECTED') {
-        setState((prev) => ({
+        updateCurrentState((prev) => ({
           ...prev,
           isConnected: false,
           error: '连接已断开，请重新连接。',
@@ -28,13 +32,13 @@ export function createSessionTransportEventHandlers(
       }
     },
     onRemoteAudioStart: () => {
-      setState((prev) => ({ ...prev, isSpeaking: true }))
+      updateCurrentState((prev) => ({ ...prev, isSpeaking: true }))
     },
     onRemoteAudioStop: () => {
-      setState((prev) => ({ ...prev, isSpeaking: false }))
+      updateCurrentState((prev) => ({ ...prev, isSpeaking: false }))
     },
     onRtcDisconnected: () => {
-      setState((prev) => ({ ...prev, isConnected: false, isRecording: false }))
+      updateCurrentState((prev) => ({ ...prev, isConnected: false, isRecording: false }))
     },
   }
 }

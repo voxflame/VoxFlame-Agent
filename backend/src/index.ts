@@ -175,10 +175,7 @@ app.listen(PORT, () => {
   console.log('')
   console.log('🎛️ RTC Orchestration 端点:')
   console.log('   - GET  /api/rtc/health')
-  console.log('   - GET  /api/rtc/graphs')
   console.log('   - POST /api/rtc/session/start')
-  console.log('   - POST /api/rtc/session/ping')
-  console.log('   - POST /api/rtc/session/stop')
 
   console.log('')
   console.log('💾 Memory API 端点:')

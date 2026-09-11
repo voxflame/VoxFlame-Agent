@@ -31,3 +31,7 @@
 
 - 固有闭环：**发现需求 → 实现 → 优化 → 测试 → 迭代**；记录需求证据、实现/回退、baseline/优化假设、测试结果和下一动作/owner/日期，缺测不当通过，失败回到实现/优化。
 - 语音与 Agent 使用 `research/voice-agent/VOICE_AGENT_BENCHMARK_PROTOCOL.md` 的官方工程口径，阈值仍以 `research/HARNESS_RULES.yaml` 为准；离线评测与真实 RTC/设备/目标用户证据分开，沿现有 RO/反馈闭环，不自动发布。
+
+## RTC 契约入口
+
+- RTC HTTP 响应/intent 唯一可编辑源：`backend/src/contracts/rtc-session.ts`；客户端 generated 文件禁止手改。生成与验证：`node scripts/sync-rtc-contract.mjs`、`npm run test:rtc-contract`。并行开发先冻结接口与文件 owner，详见 `research/AI_ENGINEERING_SYSTEM.md` 的 RTC 契约边界。

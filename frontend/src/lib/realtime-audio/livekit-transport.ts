@@ -38,14 +38,6 @@ class LiveKitDataClient implements SessionControlClient {
     this.channelName = channelName
   }
 
-  async login(): Promise<void> {
-    return
-  }
-
-  async logout(): Promise<void> {
-    return
-  }
-
   async publish(
     channelName: string,
     message: string | Uint8Array,
@@ -59,22 +51,6 @@ class LiveKitDataClient implements SessionControlClient {
       reliable: true,
       topic: channelName || this.channelName,
     })
-  }
-
-  async subscribe(): Promise<void> {
-    return
-  }
-
-  async unsubscribe(): Promise<void> {
-    return
-  }
-
-  addEventListener(): void {
-    return
-  }
-
-  removeEventListener(): void {
-    return
   }
 }
 

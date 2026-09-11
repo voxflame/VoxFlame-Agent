@@ -5,7 +5,6 @@ import {
   RtcExecutionBackend,
   RtcOrchestrationError,
   RtcOrchestrationService,
-  RtcPropertyOverrides,
   RtcScene,
   RtcSessionMode,
   RtcSessionIntentInput,
@@ -204,14 +203,6 @@ function parseOptionalInteger(value: unknown): number | undefined {
   return undefined
 }
 
-function parsePropertyOverrides(value: unknown): RtcPropertyOverrides | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined
-  }
-
-  return value as RtcPropertyOverrides
-}
-
 function handleRtcError(res: Response, error: unknown): void {
   if (error instanceof RtcOrchestrationError) {
     res.status(error.statusCode).json({ error: error.message })
@@ -234,15 +225,6 @@ router.get('/health', (_req: Request, res: Response) => {
 
 router.use(authMiddleware)
 
-router.get('/graphs', async (_req: Request, res: Response) => {
-  try {
-    const graphs = await rtcService.listGraphs()
-    res.json({ graphs })
-  } catch (error) {
-    handleRtcError(res, error)
-  }
-})
-
 router.post('/session/start', async (req: Request, res: Response) => {
   try {
     const authenticatedUserId = req.user?.id ?? null
@@ -257,8 +239,6 @@ router.post('/session/start', async (req: Request, res: Response) => {
         typeof req.body?.requestId === 'string' ? req.body.requestId : undefined,
       channelName:
         typeof req.body?.channelName === 'string' ? req.body.channelName : undefined,
-      graphName:
-        typeof req.body?.graphName === 'string' ? req.body.graphName : undefined,
       executionBackend: parseExecutionBackend(
         req.body?.executionBackend ?? req.body?.execution_backend,
       ),
@@ -267,51 +247,11 @@ router.post('/session/start', async (req: Request, res: Response) => {
       userUid: parseOptionalInteger(req.body?.userUid),
       authenticatedUserId,
       asrAccountId,
-      botUid: parseOptionalInteger(req.body?.botUid),
       timeoutSeconds: parseOptionalInteger(req.body?.timeoutSeconds),
-      properties: parsePropertyOverrides(req.body?.properties),
       browserOrigin: deriveBrowserOrigin(req),
     })
 
     res.json(result)
-  } catch (error) {
-    handleRtcError(res, error)
-  }
-})
-
-router.post('/session/stop', async (req: Request, res: Response) => {
-  try {
-    if (typeof req.body?.channelName !== 'string' || !req.body.channelName.trim()) {
-      res.status(400).json({ error: 'channelName is required' })
-      return
-    }
-
-    await rtcService.stopSession({
-      requestId:
-        typeof req.body?.requestId === 'string' ? req.body.requestId : undefined,
-      channelName: req.body.channelName,
-    })
-
-    res.json({ stopped: true, channelName: req.body.channelName })
-  } catch (error) {
-    handleRtcError(res, error)
-  }
-})
-
-router.post('/session/ping', async (req: Request, res: Response) => {
-  try {
-    if (typeof req.body?.channelName !== 'string' || !req.body.channelName.trim()) {
-      res.status(400).json({ error: 'channelName is required' })
-      return
-    }
-
-    await rtcService.pingSession({
-      requestId:
-        typeof req.body?.requestId === 'string' ? req.body.requestId : undefined,
-      channelName: req.body.channelName,
-    })
-
-    res.json({ ok: true, channelName: req.body.channelName })
   } catch (error) {
     handleRtcError(res, error)
   }

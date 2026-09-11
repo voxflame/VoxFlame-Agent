@@ -1,3 +1,4 @@
+import { parseRtcStartSessionResult } from './generated/rtc-session'
 import { config } from '@/lib/config'
 import { getAccessToken } from '@/lib/supabase/client'
 import type {
@@ -56,29 +57,5 @@ export async function startRtcSession(
     throw new Error(`rtc_session_start_${response.status}`)
   }
 
-  return response.json() as Promise<StartRtcSessionResponse>
-}
-
-export async function pingRtcSession(
-  channelName: string,
-  accessToken?: string,
-): Promise<void> {
-  const headers = await buildAuthorizedJsonHeaders(accessToken)
-  await fetch(buildApiUrl('/rtc/session/ping'), {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ channelName }),
-  })
-}
-
-export async function stopRtcSession(
-  channelName: string,
-  accessToken?: string,
-): Promise<void> {
-  const headers = await buildAuthorizedJsonHeaders(accessToken)
-  await fetch(buildApiUrl('/rtc/session/stop'), {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ channelName }),
-  })
+  return parseRtcStartSessionResult(await response.json())
 }

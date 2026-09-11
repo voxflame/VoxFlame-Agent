@@ -1,3 +1,4 @@
+import { parseRtcStartSessionResult } from '../contracts/generated/rtc-session'
 import type {
   MobileWorkbenchRtcSessionIntent,
   MobileWorkbenchRtcSessionResponse,
@@ -73,42 +74,7 @@ export async function startMobileRtcSession(
     throw new Error(`rtc_session_start_${response.status}`)
   }
 
-  return await response.json() as MobileWorkbenchRtcSessionResponse
-}
-
-async function updateMobileRtcSession(
-  action: 'ping' | 'stop',
-  channelName: string,
-  options: MobileWorkbenchClientOptions,
-): Promise<void> {
-  const authHeaders = await getAuthorizationHeader(options.tokenProvider)
-  const response = await fetch(
-    buildApiUrl(options.apiBaseUrl, `/rtc/session/${action}`),
-    {
-      method: 'POST',
-      headers: {
-        ...authHeaders,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ channelName }),
-    },
-  )
-
-  if (!response.ok) {
-    throw new Error(`rtc_session_${action}_${response.status}`)
-  }
-}
-
-export async function pingMobileRtcSession(
-  channelName: string,
-  options: MobileWorkbenchClientOptions,
-): Promise<void> {
-  await updateMobileRtcSession('ping', channelName, options)
-}
-
-export async function stopMobileRtcSession(
-  channelName: string,
-  options: MobileWorkbenchClientOptions,
-): Promise<void> {
-  await updateMobileRtcSession('stop', channelName, options)
+  const session = parseRtcStartSessionResult(await response.json())
+  if (session.intent.surface !== 'mobile_workbench') throw new Error('rtc_session_invalid_surface')
+  return session
 }

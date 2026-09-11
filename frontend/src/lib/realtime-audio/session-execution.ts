@@ -49,14 +49,10 @@ export async function connectSessionExecution(
 
 export async function disconnectSessionExecution({
   clientHandle,
-  rtmClient,
   micTrack,
-  session,
 }: {
   clientHandle: SessionExecutionClient | null
-  rtmClient: SessionControlClient | null
   micTrack: SessionMicrophoneTrack | null
-  session: StartRtcSessionResponse | null
 }): Promise<void> {
   try {
     micTrack?.close()

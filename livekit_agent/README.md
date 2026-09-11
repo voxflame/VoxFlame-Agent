@@ -72,6 +72,10 @@
    - 前端会把这些信号写回当前 session metadata
    - `session-close user profile update` 也已开始吸收这层信号，后续可以更可靠地区分“发音问题”和“收音问题”
 
+## HTTP 与 Agent 边界
+
+Web/Mobile 的 HTTP start 响应/intent 由 Backend canonical contract 管理，详见[接口收口](../research/product-engineering/RTC_CONTRACT_CLEANUP_2026-09-11.md)。Agent 继续消费签发服务的 metadata/dispatch 和 room data；本轮没有更改 Python data-message 协议或 ASR/LLM/TTS 参数。HTTP start 不等于 Agent ready，停止客户端 room 也不等于管理员删除房间。
+
 ## Env 约定
 
 `livekit_agent` 的 env 现在按“LiveKit 基础设施 + DashScope correction/ASR/TTS”两层分组：

@@ -321,18 +321,6 @@ export default function App() {
   }, [liveKitRoom.latestAssistantTranscript])
 
   useEffect(() => {
-    if (liveKitRoom.status !== 'connected') {
-      return undefined
-    }
-
-    const timer = setInterval(() => {
-      void rtcSession.ping()
-    }, 25_000)
-
-    return () => clearInterval(timer)
-  }, [liveKitRoom.status, rtcSession.ping])
-
-  useEffect(() => {
     diagnostics.addBreadcrumb('navigation', 'open_surface', activeSurfaceId)
   }, [activeSurfaceId, diagnostics.addBreadcrumb])
 
@@ -437,7 +425,7 @@ export default function App() {
 
   const stopCommunication = async (): Promise<void> => {
     await liveKitRoom.disconnect()
-    await rtcSession.stop()
+    rtcSession.clear()
   }
 
   const ensureTrainingConnection = async (): Promise<boolean> => {
@@ -453,7 +441,7 @@ export default function App() {
 
   const stopTrainingSession = async (): Promise<void> => {
     await trainingLiveKitRoom.disconnect()
-    await trainingRtcSession.stop()
+    trainingRtcSession.clear()
   }
 
   const signOut = async (): Promise<void> => {

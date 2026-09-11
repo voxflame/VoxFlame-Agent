@@ -1,3 +1,4 @@
+import { parseRtcStartSessionResult } from '../contracts/rtc-session'
 import assert from 'node:assert/strict'
 import { TokenVerifier } from 'livekit-server-sdk'
 import {
@@ -319,6 +320,11 @@ async function runLiveKitConfigTests(): Promise<void> {
           },
         })
 
+        assert.deepEqual(parseRtcStartSessionResult(JSON.parse(JSON.stringify(result))), result)
+        assert.equal(result.intent.scene, null)
+        for (const field of ['graphName', 'appId', 'token', 'rtmToken', 'rtmUserId', 'rtmChannelName', 'botUid', 'userUid', 'timeoutSeconds', 'controlServerUrl']) {
+          assert.equal(Object.prototype.hasOwnProperty.call(result, field), false, field)
+        }
         assert.equal(result.executionBackend, 'livekit')
         assert.equal(result.transport.agentDispatch?.agentName, 'voxflame-agent')
         assert.equal(

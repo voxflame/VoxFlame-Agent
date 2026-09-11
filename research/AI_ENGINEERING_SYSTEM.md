@@ -251,6 +251,14 @@ AI 可以加速资料发现、方案比较、规格起草和文档生成，但�
 
 但同一能力不能长期并存多个“同级现役入口”。
 
+### RTC 契约与并行开发边界
+
+- RTC HTTP 响应、intent 与响应解析的唯一可编辑源是 `backend/src/contracts/rtc-session.ts`；Web/Mobile 的 generated 副本由 `node scripts/sync-rtc-contract.mjs` 产生，禁止独立手改。各端仍独立构建，不导入 Backend service 或 Next.js 运行时。
+- `npm run test:rtc-contract` 检查生成漂移与跨端解析；Backend API、Web runtime、Mobile 类型/检查与实际 RTC 验证分别负责各自边界，不能互相冒充。
+- Backend 签发 participant 凭证与 dispatch；客户端 SDK room 管连接/保活/断开。JWT TTL 不是会话时长，HTTP start 成功也不是 Agent 已就绪。
+- 并行前冻结请求/响应、错误语义、权限、事件次序和验收 fixture，并明确文件 owner。worktree/分支只能隔离写入，不能消除语义冲突；契约、迁移、共享入口由一个 owner 串行修改，其他任务消费已冻结接口。
+- 当前只收口 RTC HTTP 响应/intent；data message、workspace/upload 的完整跨端 schema 尚未全部冻结。发布破坏性契约变更前必须明确 Web/Backend/已安装 App 的切换与整体回退，不能靠永久 compat 兜底。
+
 ### 3.3 路径分类
 
 所有实现默认归类为以下四种之一：

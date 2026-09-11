@@ -9,7 +9,9 @@
     "release:android:preview:background": "bash scripts/start-android-preview-release-background.sh",
     "sync:android:latest": "bash scripts/release-android-preview.sh publish-latest",
     "sync:android:latest:background": "bash scripts/start-android-preview-release-background.sh publish-latest",
-    "build:ios:preview": "npm --prefix apps/mobile-workbench run build:ios:preview"
+    "build:ios:preview": "npm --prefix apps/mobile-workbench run build:ios:preview",
+    "check:rtc-contract": "node scripts/sync-rtc-contract.mjs --check",
+    "test:rtc-contract": "npm run check:rtc-contract && node --import ./frontend/test/register-runtime-test-hooks.mjs --test --experimental-strip-types scripts/test-rtc-contract.mjs"
   },
   "devDependencies": {
     "js-sha256": "^0.11.1"

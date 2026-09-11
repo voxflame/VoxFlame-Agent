@@ -1,6 +1,6 @@
 # 当前任务状态
 
-> 最后更新：2026-09-10。只记录仍需执行或验收的事项；完成历史由 Git 和 `research/` 专项事实源保存。
+> 最后更新：2026-09-11。只记录仍需执行或验收的事项；完成历史由 Git 和 `research/` 专项事实源保存。
 
 ## P0：采集四项需求
 
@@ -60,6 +60,15 @@
 - [ ] 小智硬件接入方式待确认：成员使用官方服务还是自建 `xiaozhi-esp32-server`、仅 ASR 还是完整对话。2026-09-10 只读检查 CPU1 的 `127.0.0.1:8001` 为 SSH 隧道，现役 Agent 以 multipart `audio` 和 `X-Account-ID` 调用 `/transcribe`；308 默认注册表版本为 EXP-39，EXP-25 保留。现役 Caddy 未提供 ASR 外网代理，内部 OpenAPI 未声明认证方案，不得把账号路由头当鉴权。若另行实施，需受限凭证、固定授权模型、统一容量保护及音频大小/时长限制；不公开内部 `/accounts`，不让调试旁路绕过生产限流。本轮未开放端口、未部署、未发放凭证或发送推理请求。
 - [x] 生成仓库外受限临时凭证，复用现役签发代码和 Agent 调度；签名/房间范围检查、公网 RTC 连接与 Agent 初始化 ACK 通过，探针已断开，未部署。
 - [ ] 同事用官方 ESP32 SDK 完成单设备上行收音/下行播放、ASR/TTS、停止/打断和重连；凭证北京时间 2026-09-09 19:51:50 到期。仅用非敏感测试语句，结束主动断开，不压测；完整硬件验收仍未完成。
+
+## P0：RTC 接口收口（2026-09-11）
+
+- [x] Backend 作为唯一可编辑 RTC HTTP 契约源，生成 Web/Mobile 客户端副本并加入 drift guard；resolved intent 的 `scene` 统一为 `RtcScene | null`。
+- [x] 删除无副作用的 `/api/rtc/session/ping`、`/api/rtc/session/stop`、`/api/rtc/graphs` 与各端定时空转调用；LiveKit SDK room 负责真实 connect/disconnect。
+- [x] 精简 start 响应：凭证只在 `transport` 返回，`joinTokenTtlSeconds` 明确表示 JWT TTL，不再返回 RTM/Agora 兼容别名、botUid/graphName 等空字段。
+- [x] 加入客户端响应运行时校验、跨端契约漂移检查和回归测试；未部署。新客户端要求匹配 Backend；旧 App 的空转调用将失败，发布必须协调切换与旧版阻断，不能先单独升级任一端。
+- 验证：Backend构建/本机HTTP回归、跨端10项、Web153项/类型/生产构建、Agent12项、Mobile类型/守卫/训练/双平台export通过；隔离Playwright确认31秒无HTTP保活、SDK断开/重复连接/无效响应，修复旧room回调覆盖状态。见[执行记录](../research/product-engineering/RTC_CONTRACT_CLEANUP_2026-09-11.md)。
+- [ ] 继续补 RTC data-message schema、全量请求边界、连接进行中取消/重连凭证过期、跨实例事件和真实 Web/Mobile/设备 smoke；本切片不宣称全项目接口已冻结。
 
 ## P1：数据与运行时治理
 

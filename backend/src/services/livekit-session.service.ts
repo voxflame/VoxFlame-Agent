@@ -6,7 +6,7 @@ import {
 import type {
   RtcResolvedSessionIntent,
   RtcSessionReadiness,
-} from './rtc-orchestration.service'
+} from '../contracts/rtc-session'
 
 export interface LiveKitSessionInput {
   requestId: string

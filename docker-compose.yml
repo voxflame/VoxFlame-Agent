@@ -154,7 +154,6 @@ services:
       - NODE_ENV=production
       - PORT=3001
       - RTC_ENABLE_LIVEKIT_EXPERIMENT=${RTC_ENABLE_LIVEKIT_EXPERIMENT:-1}
-      - RTC_DEFAULT_GRAPH=voxflame_voice_assistant_rtc_preview
       - RTC_DEFAULT_TIMEOUT=120
       - LIVEKIT_URL=${LIVEKIT_INTERNAL_URL:-ws://host.docker.internal:7880}
       - LIVEKIT_BROWSER_URL=${LIVEKIT_BROWSER_URL:-ws://localhost:3000}

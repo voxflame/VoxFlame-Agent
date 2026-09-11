@@ -235,8 +235,6 @@ for (const requiredToken of [
   '/upload/contribution',
   'uploadReceipt',
   '/rtc/session/start',
-  "'ping' | 'stop'",
-  '`/rtc/session/${action}`',
   'participantToken',
   'registerGlobals',
   'AudioSession.startAudioSession',
@@ -360,7 +358,7 @@ const backendRtcController = readFileSync(
   'utf8',
 )
 const backendRtcService = readFileSync(
-  path.join(repoRoot, 'backend/src/services/rtc-orchestration.service.ts'),
+  path.join(repoRoot, 'backend/src/contracts/rtc-session.ts'),
   'utf8',
 )
 const backendIndex = readFileSync(
@@ -373,7 +371,7 @@ const backendMobileDiagnosticsController = readFileSync(
   'utf8',
 )
 
-for (const route of ["router.post('/session/start'", "router.post('/session/ping'", "router.post('/session/stop'"]) {
+for (const route of ["router.post('/session/start'"]) {
   assert(backendRtcController.includes(route), `backend RTC route missing: ${route}`)
 }
 
@@ -413,3 +411,9 @@ for (const privacyGuard of [
 }
 
 console.log('mobile workbench check passed')
+
+const expectedRtcContract = '// GENERATED from backend/src/contracts/rtc-session.ts; run node scripts/sync-rtc-contract.mjs\n' + backendRtcService
+assert(readFileSync(path.join(repoRoot, 'apps/mobile-workbench/src/contracts/generated/rtc-session.ts'), 'utf8') === expectedRtcContract, 'RTC generated contract drift; run node scripts/sync-rtc-contract.mjs')
+for (const removed of ["router.post('/session/ping'", "router.post('/session/stop'", "router.get('/graphs'"]) {
+  assert(!backendRtcController.includes(removed), `removed no-op RTC route returned: ${removed}`)
+}

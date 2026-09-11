@@ -29,10 +29,6 @@ export interface SessionMemoryTurn {
   content: string
 }
 
-const RTM_PUBLISH_OPTIONS = {
-  channelType: 'MESSAGE' as const,
-}
-
 const RTM_CHUNK_TTL_MS = 15_000
 
 function parseEnvelope(text: string): RtcMessageEnvelope | null {
@@ -137,9 +133,8 @@ export async function publishSessionEnvelope(
   payload: Record<string, unknown>,
 ): Promise<void> {
   await rtmClient.publish(
-    session.rtmChannelName || session.channelName,
+    session.transport.roomName,
     JSON.stringify(payload),
-    RTM_PUBLISH_OPTIONS,
   )
 }
 
@@ -154,7 +149,7 @@ export async function publishSessionControlMessage({
   type: string
   payload?: Record<string, unknown>
 }): Promise<void> {
-  const clientId = String(session.userUid)
+  const clientId = session.transport.participantIdentity
 
   await publishSessionEnvelope(rtmClient, session, {
     type,

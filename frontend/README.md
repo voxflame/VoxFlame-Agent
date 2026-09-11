@@ -1,6 +1,6 @@
 # VoxFlame Frontend
 
-前端已收口到 `RTC + RTM` 实时链路，不再接入旧 websocket 代理。
+前端已收口到 `LiveKit RTC + room data` 实时链路，不再接入旧 websocket 代理。
 
 ## 技术栈
 
@@ -108,6 +108,14 @@ app (路由/页面入口)
 - 长期画像前端优先消费 backend `workspace` 聚合接口，而不是页面各自拼 memory
 - 训练录音前端统一围绕 `recording envelope -> recorder queue -> upload receipt` 组织
 - 默认优先走同源 `/api` rewrite，而不是让浏览器直接访问 `:3001`
+
+### RTC HTTP 契约与生命周期
+
+`src/lib/realtime-audio/generated/rtc-session.ts` 来自 Backend canonical contract，不手改；`session-contract.ts` 只保留 Web 设备上下文与默认策略辅助函数。根目录 `npm run test:rtc-contract` 检查三端漂移与实际 HTTP 客户端解析。
+
+`session-bootstrap.ts` 只获取并校验 start 响应；`session-runtime.ts` 等待 Agent ACK 后标记连接成功，退出走 SDK disconnect，不再 HTTP ping/stop。`transport` 是唯一连接信息；`joinTokenTtlSeconds` 不是会话时长。历史 `rtm` 内部变量名表示 LiveKit room data，不是另一套 RTM SDK。
+
+发布需协调 Backend 与 App 版本；详见[接口边界](../research/product-engineering/RTC_CONTRACT_CLEANUP_2026-09-11.md)。
 
 ## 核心模块
 

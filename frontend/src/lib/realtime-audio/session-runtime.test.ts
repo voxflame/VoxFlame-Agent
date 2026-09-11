@@ -27,17 +27,8 @@ function createSession(): StartRtcSessionResponse {
   return {
     requestId: 'req_1',
     channelName: 'voxrtc_channel',
-    graphName: 'voxflame_graph',
     executionBackend: 'livekit',
-    userUid: 1001,
-    botUid: 2001,
-    appId: '',
-    token: 'participant_token',
-    rtmUserId: 'rtm-user-1',
-    rtmChannelName: 'voxrtc_channel',
-    rtmToken: 'participant_token',
-    timeoutSeconds: 90,
-    controlServerUrl: 'ws://127.0.0.1:3000',
+    joinTokenTtlSeconds: 90,
     transport: {
       provider: 'livekit',
       serverUrl: 'ws://127.0.0.1:3000',
@@ -145,9 +136,7 @@ test('session-runtime clears connecting state when session start fails', async (
         mode: 'communication',
         connectionNotice: null,
         setState: harness.setState,
-        clearPing: () => undefined,
         cleanupMicrophoneResources: () => undefined,
-        pingTimerRef: { current: null },
         handleRtmMessage: () => undefined,
       }),
       /连接失败，请重试/,
@@ -198,13 +187,13 @@ test('session-runtime publishes a structured control envelope through RTM when r
   const payload = JSON.parse(serializedPayload) as Record<string, unknown>
   assert.equal(channelName, 'voxrtc_channel')
   assert.equal(payload.type, 'user_input')
-  assert.equal(payload.client_id, '1001')
+  assert.equal(payload.client_id, 'rtm-user-1')
   assert.equal(payload.session_id, 'voxrtc_channel')
   assert.equal(payload.input_type, 'text')
   assert.equal(payload.text, '你好')
   assert.equal(typeof payload.timestamp, 'number')
   assert.deepEqual(payload.metadata, {
-    client_id: '1001',
+    client_id: 'rtm-user-1',
     session_id: 'voxrtc_channel',
     transport: 'livekit_data',
     mode: 'communication',
@@ -409,4 +398,56 @@ test('session-runtime forwards decoded envelopes to the optional onDecodedEnvelo
   })
 
   assert.deepEqual(seenTypes, ['session_init_ack'])
+})
+
+test('disconnect releases SDK room and local refs without HTTP even with no login token', async () => {
+  const { disconnectRtcRuntime } = await import('./session-runtime.ts')
+  const harness = createStateHarness({ ...createInitialRtcAgentState(), isConnected: true })
+  let disconnectCalls = 0
+  let cleanupCalls = 0
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => { throw new Error('disconnect must not perform HTTP') }
+  const refs: import('./session-runtime.ts').SessionRuntimeRefs = {
+    clientRef: { current: { provider: 'livekit', room: {
+      disconnect: async () => { disconnectCalls += 1 },
+    } as unknown as import('livekit-client').Room } },
+    rtmClientRef: { current: { publish: async () => undefined } },
+    micTrackRef: { current: null }, sessionRef: { current: createSession() },
+    connectPromiseRef: { current: null }, inboundRtmChunksRef: { current: new Map() },
+    latestUserTranscriptRef: { current: { text: 'old', clientCaptureId: 'old' } },
+    onDecodedEnvelopeRef: { current: () => undefined },
+  }
+  try {
+    await disconnectRtcRuntime({ refs, setState: harness.setState, cleanupMicrophoneResources: () => { cleanupCalls += 1 } })
+    await disconnectRtcRuntime({ refs, setState: harness.setState, cleanupMicrophoneResources: () => { cleanupCalls += 1 } })
+    assert.equal(disconnectCalls, 1)
+    assert.equal(cleanupCalls, 2)
+    assert.equal(refs.sessionRef.current, null)
+    assert.equal(refs.clientRef.current, null)
+    assert.equal(refs.rtmClientRef.current, null)
+    assert.equal(refs.onDecodedEnvelopeRef.current, null)
+    assert.deepEqual(refs.latestUserTranscriptRef.current, { text: '', clientCaptureId: null })
+    assert.equal(harness.getState().isConnected, false)
+  } finally { globalThis.fetch = originalFetch }
+})
+
+test('disconnect still cleans microphone resources when SDK teardown rejects', async () => {
+  const { disconnectRtcRuntime } = await import('./session-runtime.ts')
+  let cleaned = false
+  const refs: import('./session-runtime.ts').SessionRuntimeRefs = {
+    clientRef: { current: { provider: 'livekit', room: {
+      disconnect: async () => { throw new Error('SDK disconnect failed') },
+    } as unknown as import('livekit-client').Room } },
+    rtmClientRef: { current: null }, micTrackRef: { current: null },
+    sessionRef: { current: createSession() }, connectPromiseRef: { current: null },
+    inboundRtmChunksRef: { current: new Map() },
+    latestUserTranscriptRef: { current: { text: '', clientCaptureId: null } },
+    onDecodedEnvelopeRef: { current: null },
+  }
+  await assert.rejects(disconnectRtcRuntime({
+    refs, setState: createStateHarness().setState,
+    cleanupMicrophoneResources: () => { cleaned = true },
+  }), /SDK disconnect failed/)
+  assert.equal(cleaned, true)
+  assert.equal(refs.clientRef.current, null)
 })

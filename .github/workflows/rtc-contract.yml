@@ -1,0 +1,21 @@
+name: RTC Contract Guard
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  rtc-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --prefix backend
+      - run: npm ci --prefix frontend
+      - run: npm run test:rtc-contract
+      - run: npm --prefix backend run build && npm --prefix backend test
+      - run: npm --prefix frontend run test:runtime
+      - run: cd frontend && npx tsc --noEmit
+      - run: npm ci --prefix apps/mobile-workbench
+      - run: npm --prefix apps/mobile-workbench run typecheck && npm --prefix apps/mobile-workbench run check

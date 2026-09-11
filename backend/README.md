@@ -14,7 +14,7 @@ backend 当前是控制面和业务面，不再代理运行时 websocket 音频�
 - workspace / memory API
 - phrases API
 - upload API
-- compat 路由的受控兜底
+- RTC HTTP 响应/intent 契约与客户端生成源
 
 ## 当前主链
 
@@ -62,9 +62,13 @@ Frontend (3000) → Backend (3001/api/rtc/*) → LiveKit server + livekit_agent
 |------|------|------|
 | `/health` | GET | 健康检查 |
 | `/api/rtc/health` | GET | RTC orchestration 健康检查 |
-| `/api/rtc/session/start` | POST | 启动 RTC + RTM 会话 |
-| `/api/rtc/session/ping` | POST | 保活 RTC 会话 |
-| `/api/rtc/session/stop` | POST | 停止 RTC 会话 |
+| `/api/rtc/session/start` | POST | 签发 LiveKit participant 凭证与会话意图 |
+
+RTC 响应/intent 以 `src/contracts/rtc-session.ts` 为唯一可编辑源。从根目录运行 `node scripts/sync-rtc-contract.mjs` 生成客户端，`npm run test:rtc-contract` 检查漂移与解析；Backend `npm test` 包含本机 HTTP 路由测试（替身鉴权，不调用生产服务）。
+
+`transport.participantToken` 是唯一凭证字段，`joinTokenTtlSeconds` 是 JWT TTL。实际连接/保活/断开归 LiveKit SDK room；`session/ping`、`session/stop`、`graphs` 已移除，不代表服务端支持踢人或撤销凭证。请求仍由 controller 白名单解析，可信账户/模型映射由 auth 与 service 提供；全量请求严格 schema 不在本轮范围。
+
+本地破坏性契约尚未部署；Backend/Web/App 必须协调切换和整体回退，见[发布边界](../research/product-engineering/RTC_CONTRACT_CLEANUP_2026-09-11.md)。
 
 ### Workspace / 记忆系统 API
 
