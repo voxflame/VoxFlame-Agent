@@ -81,3 +81,7 @@
 - 安全边界
 
 做定制，而不是机械照抄。
+
+## 固有工程闭环
+
+变更遵循 **发现需求 → 实现 → 优化 → 测试 → 迭代**，逐项保留需求证据、实现/回退、baseline/优化假设、可重复测试和下一动作/owner/日期。详见 [工程系统](../AI_ENGINEERING_SYSTEM.md) 与 [执行模板](../templates/AI_EXECUTION_PLAN_TEMPLATE.md)。测试贯穿全程；缺测不当通过，失败回到实现/优化，不能自动部署。语音使用 [官方指标协议](../voice-agent/VOICE_AGENT_BENCHMARK_PROTOCOL.md)，沿既有 RO/反馈回流，不另建生命周期。

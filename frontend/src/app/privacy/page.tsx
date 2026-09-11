@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
-const LEGAL_OPERATOR = '上海生声不息科技有限公司'
+const LEGAL_OPERATOR = '杭州燃言科技'
 const PRIVACY_EMAIL = 'feng@ranyankeji.top'
 const CONTACT_ADDRESS = '杭州市思凯路189号3幢D6—403—42'
 const POLICY_VERSION = '2026-09-06'

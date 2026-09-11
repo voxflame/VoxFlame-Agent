@@ -1,0 +1,96 @@
+[
+  {
+    "id": "livekit-metrics",
+    "url": "https://docs.livekit.io/agents/build/metrics.md",
+    "accessed_at": "2026-09-10",
+    "http": 200,
+    "content_type": "text/markdown; charset=utf-8",
+    "bytes": 3322,
+    "sha256": "dab0e34cbbd4251bede3f0e00b152c804cbd55529fc3e6392ce238eff3332046"
+  },
+  {
+    "id": "webrtc-stats",
+    "url": "https://www.w3.org/TR/webrtc-stats/",
+    "accessed_at": "2026-09-10",
+    "http": 200,
+    "content_type": "text/html; charset=utf-8",
+    "bytes": 869661,
+    "sha256": "b899c5df0aabf3431027bafcbaae29cb6474dbd9c1f089377c69d0a4db8d67c8"
+  },
+  {
+    "id": "voicebench",
+    "url": "https://raw.githubusercontent.com/MatthewCYM/VoiceBench/main/README.md",
+    "accessed_at": "2026-09-10",
+    "http": 200,
+    "content_type": "text/plain; charset=utf-8",
+    "bytes": 32424,
+    "sha256": "c0997e70144f07938e35455e0042d6f0ab43c284786d4aef9887dd732655a283"
+  },
+  {
+    "id": "tau2",
+    "url": "https://raw.githubusercontent.com/sierra-research/tau2-bench/main/README.md",
+    "accessed_at": "2026-09-10",
+    "http": 200,
+    "content_type": "text/plain; charset=utf-8",
+    "bytes": 10443,
+    "sha256": "ed39688aa5d40bd73007355df65f4e41a6c250960642e56764c3ad44da1df8d2"
+  },
+  {
+    "id": "jiwer",
+    "url": "https://raw.githubusercontent.com/jitsi/jiwer/master/README.md",
+    "accessed_at": "2026-09-10",
+    "http": 200,
+    "content_type": "text/plain; charset=utf-8",
+    "bytes": 2915,
+    "sha256": "39b71a1d81da605a4a0a63347a4fa8e45f9d67ab5bc605d80da853a1148ce6c8"
+  },
+  {
+    "id": "aec-challenge",
+    "url": "https://raw.githubusercontent.com/microsoft/AEC-Challenge/main/README.md",
+    "accessed_at": "2026-09-10",
+    "http": 200,
+    "content_type": "text/plain; charset=utf-8",
+    "bytes": 7512,
+    "sha256": "6c9c77955ad00b6c2be5898f5b9e09f2b4f2d58c5fcccafc7496b6b7345cdece"
+  },
+  {
+    "id": "livekit-data",
+    "url": "https://docs.livekit.io/deploy/observability/data.md",
+    "resolved_url": "https://docs.livekit.io/deploy/observability/data.md",
+    "http": 200,
+    "accessed_at": "2026-09-10",
+    "content_type": "text/markdown; charset=utf-8",
+    "bytes": 40918,
+    "sha256": "a680098b7a0c5ca4c50e2b3777225f1497cec82133e52757a34c48818b59bcfb"
+  },
+  {
+    "id": "livekit-testing",
+    "url": "https://docs.livekit.io/agents/build/testing.md",
+    "resolved_url": "https://docs.livekit.io/agents/build/testing.md",
+    "http": 200,
+    "accessed_at": "2026-09-10",
+    "content_type": "text/markdown; charset=utf-8",
+    "bytes": 10917,
+    "sha256": "875f808c57b5d325984fc4479f13cc214ea59fed148f08a7ef06d86f38ec5244"
+  },
+  {
+    "id": "tau-voice",
+    "url": "https://raw.githubusercontent.com/sierra-research/tau2-bench/main/src/tau2/voice/README.md",
+    "resolved_url": "https://raw.githubusercontent.com/sierra-research/tau2-bench/main/src/tau2/voice/README.md",
+    "http": 200,
+    "accessed_at": "2026-09-10",
+    "content_type": "text/plain; charset=utf-8",
+    "bytes": 5864,
+    "sha256": "9a8fffe5b9d67859c8a756980159b864a9484b486c448763e1bbe39d6611a256"
+  },
+  {
+    "id": "nist-sctk",
+    "url": "https://raw.githubusercontent.com/usnistgov/SCTK/master/README.md",
+    "resolved_url": "https://raw.githubusercontent.com/usnistgov/SCTK/master/README.md",
+    "http": 200,
+    "accessed_at": "2026-09-10",
+    "content_type": "text/plain; charset=utf-8",
+    "bytes": 7483,
+    "sha256": "ff51a3d1b7b8d268c73c2d7fef2ddc59bc2464153e225e148ce85b74df23a88b"
+  }
+]

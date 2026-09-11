@@ -47,6 +47,8 @@ for rel in "AGENTS.md" "CLAUDE.md" ".github/copilot-instructions.md"; do
   assert_contains "${rel}" ".claude-summary.md"
   assert_contains "${rel}" ".tasks/current.md"
   assert_contains "${rel}" "research/AI_ENGINEERING_SYSTEM.md"
+  assert_contains "${rel}" "发现需求 → 实现 → 优化 → 测试 → 迭代"
+  assert_contains "${rel}" "VOICE_AGENT_BENCHMARK_PROTOCOL.md"
 done
 
 if [[ -e "${ROOT_DIR}/docs" ]]; then

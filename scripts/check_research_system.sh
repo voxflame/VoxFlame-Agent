@@ -45,6 +45,8 @@ done
 
 python3 "${ROOT_DIR}/scripts/check_research_sources.py"
 python3 "${ROOT_DIR}/scripts/check_research_harness.py"
+python3 "${ROOT_DIR}/scripts/research/voice_benchmark.py" --check-registered
+python3 -m unittest discover -s "${ROOT_DIR}/scripts/research/tests" -q
 
 if ! grep -qF 'path = references/clear-vox-model' "${ROOT_DIR}/.gitmodules"; then
   echo "CLEAR-VOX-MODEL submodule path is not registered" >&2

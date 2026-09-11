@@ -1,0 +1,262 @@
+{
+  "schema": "voxflame-voice-benchmark-v1",
+  "research_id": "RO-014",
+  "feedback_ref": "FB-008",
+  "domain": "synthetic",
+  "metadata": {
+    "run_id": "local-tts-cancellation-20260910",
+    "code_version": "dd26641bb5cbd7bbfb41c6b83c72ddc9fbc0d7f0+scope-sha256:db6430bd6eb431aa32cd464adb0b6f6d172e2cbd422bc3206b42644488d3b240",
+    "config_sha256": "5fdba9c50db948ac11f86e475e8051cf1331fbf448ff0b818d8d8389c6ee662c",
+    "dataset_sha256": "ee2f5fb57d1199cd7ca6003f1d36d74a07293d169f15e0e37583760833366d78",
+    "protocol_sha256": "6a17ecf1ef4f58d3e60943a16866834eaac7fa6ac32ecf0cac1b9186f0c9e67e",
+    "scenario": "TTS cancellation with in-memory source and client; 32 serial trials",
+    "population": "no-user-audio",
+    "device": "cpu1-local-process-no-device",
+    "model_version": "mock-no-model",
+    "seed": 0,
+    "concurrency": 1,
+    "temperature_state": "not_applicable"
+  },
+  "baseline_ref": "research/voice-agent/RO-014-voice-pipeline-repair-2026-09-10.md (functional reproduction only; no comparable timing baseline)",
+  "evidence_ref": "livekit_agent/scripts/benchmark_voice_cancellation.py",
+  "limitations": "Actual TTS interrupt with test doubles, not live RTC/provider or acoustic stop. No before/after timing claim. ASR/CER/AEC and real user latency unmeasured. Shared host scheduler affects microtiming.",
+  "cycle": {
+    "发现需求": "FB-008 audio backlog/interrupt report; official engineering metric request",
+    "实现": "Existing TTS producer cancellation then source clear; offline Harness added",
+    "优化": "Removed old queue; hypothesis stale audio stops. Timing baseline absent, improvement unproven",
+    "测试": "32 serial trials against actual interrupt method with source/provider doubles; actual results below",
+    "迭代": "Keep FB-008 validating; authorize one-room RTC then device/quality evidence"
+  },
+  "iteration": {
+    "decision": "hold",
+    "next_action": "Collect authorized RTC/device traces and licensed reference audio; do not deploy on mock results",
+    "owner": "livekit_agent + platform operations",
+    "review_date": "2026-09-12"
+  },
+  "samples": [
+    {
+      "id": "mock-00",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.3497509751468897
+      }
+    },
+    {
+      "id": "mock-01",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.30633900314569473
+      }
+    },
+    {
+      "id": "mock-02",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.3176550380885601
+      }
+    },
+    {
+      "id": "mock-03",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.3011641092598438
+      }
+    },
+    {
+      "id": "mock-04",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.31588412821292877
+      }
+    },
+    {
+      "id": "mock-05",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.34134206362068653
+      }
+    },
+    {
+      "id": "mock-06",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.3244481049478054
+      }
+    },
+    {
+      "id": "mock-07",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.31066592782735825
+      }
+    },
+    {
+      "id": "mock-08",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.3152769058942795
+      }
+    },
+    {
+      "id": "mock-09",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.3031548112630844
+      }
+    },
+    {
+      "id": "mock-10",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.30965893529355526
+      }
+    },
+    {
+      "id": "mock-11",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.3021338488906622
+      }
+    },
+    {
+      "id": "mock-12",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.32484508119523525
+      }
+    },
+    {
+      "id": "mock-13",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.3199728671461344
+      }
+    },
+    {
+      "id": "mock-14",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.3026500344276428
+      }
+    },
+    {
+      "id": "mock-15",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.3029641229659319
+      }
+    },
+    {
+      "id": "mock-16",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.3407199401408434
+      }
+    },
+    {
+      "id": "mock-17",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.29989914037287235
+      }
+    },
+    {
+      "id": "mock-18",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.31083100475370884
+      }
+    },
+    {
+      "id": "mock-19",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.306716188788414
+      }
+    },
+    {
+      "id": "mock-20",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.3028081264346838
+      }
+    },
+    {
+      "id": "mock-21",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.322944950312376
+      }
+    },
+    {
+      "id": "mock-22",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.34609902650117874
+      }
+    },
+    {
+      "id": "mock-23",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.374780036509037
+      }
+    },
+    {
+      "id": "mock-24",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.31847390346229076
+      }
+    },
+    {
+      "id": "mock-25",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.3691010642796755
+      }
+    },
+    {
+      "id": "mock-26",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.4028689581900835
+      }
+    },
+    {
+      "id": "mock-27",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.3519798628985882
+      }
+    },
+    {
+      "id": "mock-28",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.3906460478901863
+      }
+    },
+    {
+      "id": "mock-29",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.6291291210800409
+      }
+    },
+    {
+      "id": "mock-30",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.30705705285072327
+      }
+    },
+    {
+      "id": "mock-31",
+      "outcome": "completed",
+      "measurements": {
+        "cancel_to_clear_ms": 0.33368985168635845
+      }
+    }
+  ]
+}

@@ -101,7 +101,7 @@
 
 - `frontend/...`
 - `backend/...`
-- `ten_agent/...`
+- `livekit_agent/...`
 - `research/...`
 - CI / lint / script：
 - 受影响的表 / 缓存 / 事件：
@@ -133,3 +133,13 @@
 - 实际删除的内容：
 - 未完成内容：
 - 后续建议：
+
+## 15. 固有闭环（发现需求 → 实现 → 优化 → 测试 → 迭代）
+
+- 发现需求：需求/失败证据、场景、验收目标、已有 RO/FB（适用时）：
+- 实现：现役路径、最小切片、diff、回退：
+- 优化：可证伪假设、改动前 baseline、版本/配置/数据哈希、保护指标；不适用时理由：
+- 测试：命令/结果证据、样本数/失败/取消/缺测、官方定义与项目阈值引用、未验证边界：
+- 迭代：continue / hold / stop / ready_for_review；下一动作、owner、复核日期：
+
+语音/Agent 性能按 `research/voice-agent/VOICE_AGENT_BENCHMARK_PROTOCOL.md`，报告用 `scripts/research/voice_benchmark.py` 校验/汇总；通过结构校验不等于产品验收通过。测试失败回到实现/优化，未测不记为零或通过。

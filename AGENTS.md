@@ -119,3 +119,8 @@ VoxFlame 面向构音障碍者，第一原则是提升系统对用户意图的�
 1. 先更新 `research/AI_ENGINEERING_SYSTEM.md`。
 2. 再同步本文件、`CLAUDE.md` 和 `.github/copilot-instructions.md` 的入口描述。
 3. 最后更新 `.claude-summary.md` 和 `.tasks/current.md`。
+
+## 工程闭环与评测入口
+
+- 固有闭环：**发现需求 → 实现 → 优化 → 测试 → 迭代**；记录需求证据、实现/回退、baseline/优化假设、测试结果和下一动作/owner/日期，缺测不当通过，失败回到实现/优化。
+- 语音与 Agent 使用 `research/voice-agent/VOICE_AGENT_BENCHMARK_PROTOCOL.md` 的官方工程口径，阈值仍以 `research/HARNESS_RULES.yaml` 为准；离线评测与真实 RTC/设备/目标用户证据分开，沿现有 RO/反馈闭环，不自动发布。

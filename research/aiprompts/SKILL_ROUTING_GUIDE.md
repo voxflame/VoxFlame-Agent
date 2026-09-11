@@ -137,3 +137,7 @@
 - 不要把 `Context7` 当普通搜索引擎；它应该服务“专业资料核验”。
 - 不要跳过 `Playwright` 就宣称前端交互已经通过。
 - 不要把 skill 输出当唯一事实源；仓库代码、测试结果和验证记录才是事实源。
+
+## 语音与 Agent benchmark
+
+按 [官方指标协议](../voice-agent/VOICE_AGENT_BENCHMARK_PROTOCOL.md)：本地实现 → Context7/官方 LiveKit 与 W3C 定义 → 离线 Harness 校验 → 经授权复用现有 RTC 探针 → 真机/场景验收。网页 benchmark / Lighthouse 不代替语音评测；LLM 文本 judge 不代替 ASR、打断和声学测试。外部 benchmark 在隔离 runner 固定版本，不为研究升级生产依赖。

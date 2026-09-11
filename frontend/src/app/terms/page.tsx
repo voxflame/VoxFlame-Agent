@@ -1,6 +1,6 @@
 import Link from 'next/link'
 
-const OPERATOR = '上海生声不息科技有限公司'
+const OPERATOR = '杭州燃言科技'
 const CONTACT_EMAIL = 'feng@ranyankeji.top'
 
 export default function TermsPage() {

@@ -86,15 +86,15 @@ entries:
     problem: 单 Agent Worker 按房间创建独立 Job 进程，每路持有 ASR/TTS/LLM 与音频状态；外部服务配额、8001 ASR 实例和 TURN/网络容量尚未被真实 RTC 压测证明。
     target_scenario: 5、10、20、50 路并发实时语音，逐级观察拒绝、延迟、错误和资源边界
     current_gate: reproducible_rtc_load_test
-    next_action: 固定音频样本和测试账号，完成 5→10→20→50 路 RTC+ASR/TTS/LLM 压测并记录 p95/p99
+    next_action: 先验收取消/有界缓存修复的单房间RTC与硬件尾音/AEC，再复跑现有8路基线并评估扩容；不以本地单测代替生产验收
     evidence_package: research/evidence/RO-014.yaml
-    feedback_refs: [FB-003]
+    feedback_refs: [FB-003, FB-008]
     release_intents: [internal_only]
     authority_gate: research/evidence/RO-014.yaml#authority_gate
     review_report: research/outcome-reviews/RO-014.md
     source_refs: [livekit-agents-server-options, livekit-self-hosting, livekit-cli-load-test, local-livekit-agent-source, local-runtime-config]
     evidence_refs: [research/voice-agent/RO-014-livekit-asr-concurrency-capacity-2026-08-29.md, research/agent-systems/RO-014-cross-modal-realtime-capacity-2026-08-29.md]
-    experiment_refs: []
+    experiment_refs: [research/voice-agent/RO-014-voice-pipeline-repair-2026-09-10.md, research/voice-agent/VOICE_AGENT_BENCHMARK_PROTOCOL.md, research/voice-agent/RO-014-benchmark-local-2026-09-10.json]
     scholarly_ip_refs: []
     product_refs: [livekit_agent, livekit-server, backend-rtc-session]
     metrics: [active_jobs, job_start_p95_ms, asr_p95_ms, tts_first_byte_p95_ms, llm_p95_ms, rtc_packet_loss, provider_429_rate, cpu_pct, memory_mb, fd_count]

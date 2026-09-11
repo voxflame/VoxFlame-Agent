@@ -74,3 +74,18 @@ outcome_gates:
   patent: not_applicable
   software_copyright: not_applicable
   product: pending
+
+repair_validation_2026_09_10:
+  report: research/voice-agent/RO-014-voice-pipeline-repair-2026-09-10.md
+  feedback_ref: FB-008
+  status: validating
+  scope: isolated implementation and synthetic tests only; not deployed
+  baseline: 90 agent tests; stale audio recaptured after source clear reproduced
+  result: 118 agent tests passed; no real device or live provider inference
+  next_review_date: 2026-09-12
+  limitations: endpoint AEC, actual playout tail, RTC load and user speech accuracy unverified
+
+benchmark_runs:
+  - research/voice-agent/RO-014-benchmark-local-2026-09-10.json
+benchmark_protocol: research/voice-agent/VOICE_AGENT_BENCHMARK_PROTOCOL.md
+benchmark_sources: research/voice-agent/VOICE_BENCHMARK_SOURCES_2026-09-10.json

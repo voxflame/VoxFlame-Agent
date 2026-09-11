@@ -121,3 +121,17 @@ entries:
     action: 生成中文Word/PDF，补建议预算和参数边界，建立报价/试机/签约条件；不执行充值或采购。
     validation: 金额与配置求和、全文和版式检查、官方来源哈希；独立财务与供方书面审核仍待完成。
     state: validating
+  - feedback_id: FB-008
+    research_id: RO-014
+    source: user
+    observed_at: 2026-09-10
+    scenario: "语音积压、打断和无AEC硬件调试"
+    observation: "隔离复现TTS清源后回灌旧帧；收音等待HTTP ASR；旧回复FIFO与同步LLM无法完整取消。成员实际硬件路径尚未知。"
+    severity: "high"
+    failure_type: "runtime"
+    evidence_ref: "research/voice-agent/RO-014-voice-pipeline-repair-2026-09-10.md"
+    hypothesis: "取消生产者后清源、不可变capture归属及单轮可取消回复可消除已复现竞态；无AEC设备仍需半双工或有效端侧AEC。"
+    owner: "livekit_agent"
+    action: "已实现本地异步取消、有界缓存和半双工保护；官方工程指标协议与离线benchmark纳入Harness，证据挂同一RO；待单房间RTC与硬件验收，不部署。"
+    validation: "118项Agent测试通过；真机尾音/AEC/真实账号连续录音及并发保护指标未验收。"
+    state: validating

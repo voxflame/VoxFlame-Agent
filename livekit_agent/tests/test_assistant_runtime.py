@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from assistant_runtime import (
     CAPTION_ASR_FALLBACK_SOURCE,
+    DashScopeCompletionResult,
     AssistantReplyGenerationError,
     CommunicationAssistantRuntime,
     build_recent_correction_history,
@@ -58,7 +59,6 @@ def create_config() -> LiveKitAgentConfig:
         livekit_audio_apm_auto_gain_control=False,
         dashscope_asr_vad_threshold=0.032,
         dashscope_asr_vad_silence_duration_ms=860,
-        dashscope_asr_vad_hop_size_ms=16,
         dashscope_asr_barge_in_min_speech_ms=360,
         dashscope_asr_min_commit_speech_ms=420,
         dashscope_tts_url="wss://dashscope.aliyuncs.com/api-ws/v1/realtime",
@@ -90,20 +90,26 @@ def create_context() -> VoxFlameSessionContext:
 
 
 class FakeDashScopeClient:
+    async def aclose(self) -> None:
+        pass
+
     def __init__(self, text: str | list[str]) -> None:
         self.text = text
         self.requests: list[list[dict[str, object]]] = []
 
-    def complete(self, messages: list[dict[str, object]]) -> str:
+    async def complete(self, messages: list[dict[str, object]]) -> DashScopeCompletionResult:
         self.requests.append(messages)
         if isinstance(self.text, list):
             index = min(len(self.requests) - 1, len(self.text) - 1)
-            return self.text[index]
-        return self.text
+            return DashScopeCompletionResult(self.text[index])
+        return DashScopeCompletionResult(self.text)
 
 
 class FailingDashScopeClient:
-    def complete(self, messages: list[dict[str, object]]) -> str:  # noqa: ARG002
+    async def aclose(self) -> None:
+        pass
+
+    async def complete(self, messages: list[dict[str, object]]) -> DashScopeCompletionResult:  # noqa: ARG002
         raise RuntimeError("The read operation timed out")
 
 
@@ -185,7 +191,8 @@ class TestAssistantRuntime(unittest.TestCase):
             client=fake_client,
         )
 
-        asyncio.run(runtime.generate_reply("请帮我叫医生"))
+        reply, source = asyncio.run(runtime.generate_reply("请帮我叫医生"))
+        runtime.accept_reply("请帮我叫医生", reply, source)
         asyncio.run(runtime.generate_reply("我现在很难受"))
 
         self.assertIn("实时字幕纠错助手", fake_client.requests[0][0]["content"])
@@ -278,7 +285,8 @@ class TestAssistantRuntime(unittest.TestCase):
         )
 
         for index in range(6):
-            asyncio.run(runtime.generate_reply(f"第{index}句"))
+            reply, source = asyncio.run(runtime.generate_reply(f"第{index}句"))
+            runtime.accept_reply(f"第{index}句", reply, source)
 
         current_turn_prompt = fake_client.requests[-1][1]["content"]
         self.assertEqual(len(fake_client.requests[-1]), 2)

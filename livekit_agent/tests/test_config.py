@@ -43,7 +43,6 @@ class ConfigTests(unittest.TestCase):
             "LIVEKIT_AUDIO_APM_AUTO_GAIN_CONTROL": "0",
             "QWEN_ASR_VAD_THRESHOLD": "0.02",
             "QWEN_ASR_VAD_SILENCE_DURATION_MS": "650",
-            "QWEN_ASR_VAD_HOP_SIZE_MS": "20",
             "QWEN_ASR_BARGE_IN_MIN_SPEECH_MS": "240",
             "QWEN_ASR_MIN_COMMIT_SPEECH_MS": "360",
             "QWEN_TTS_REALTIME_URL": "wss://dashscope.aliyuncs.com/api-ws/v1/realtime",
@@ -107,7 +106,6 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(config.livekit_audio_apm_auto_gain_control)
         self.assertEqual(config.dashscope_asr_vad_threshold, 0.02)
         self.assertEqual(config.dashscope_asr_vad_silence_duration_ms, 650)
-        self.assertEqual(config.dashscope_asr_vad_hop_size_ms, 20)
         self.assertEqual(config.dashscope_asr_barge_in_min_speech_ms, 240)
         self.assertEqual(config.dashscope_asr_min_commit_speech_ms, 360)
         self.assertEqual(config.dashscope_tts_url, "wss://dashscope.aliyuncs.com/api-ws/v1/realtime")

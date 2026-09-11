@@ -98,3 +98,5 @@ git submodule update --init --recursive
 - 未经临床专家复核、目标人群验证和合规评估的结果，只能标为研究或训练反馈。
 - 健康数据坚持最小必要收集、明确授权、可撤回和用途隔离。
 - 任何面向用户的健康提示都必须声明能力边界，并为高风险情况提供人工专业支持路径。
+
+- [语音/Agent 官方工程指标与 Benchmark 协议](voice-agent/VOICE_AGENT_BENCHMARK_PROTOCOL.md)：发现需求 → 实现 → 优化 → 测试 → 迭代；离线检查、RTC 与设备证据分层。

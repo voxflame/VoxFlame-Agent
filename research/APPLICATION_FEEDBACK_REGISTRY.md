@@ -59,3 +59,11 @@
 - 机制、工程架构、产品交互和真实场景分别有什么证据，哪一层仍是假设？
 - 对语音输入，ASR 不确定性、停顿、打断、重叠说话和音频隐私会如何改变结论？
 - 进入 VoxFlame 时复用哪个现役 owner，如何避免新增平行 runtime / memory / control plane？
+
+### RF-014 补充：FB-008 取消与音频积压（2026-09-10）
+
+[本地修复/官方机制/验证边界](voice-agent/RO-014-voice-pipeline-repair-2026-09-10.md)：已移除TTS重复待播队列、回复FIFO、同步LLM与共享fallback状态，HTTP ASR录音独立归属，增加半双工保护和退出回收。118项合成/入口回归通过；决策保持 `validate`，未部署。没有成员固件或真实播放时间戳，不能宣称AEC或识别准确率已改善。owner：livekit_agent；2026-09-12或取得真机日志时复核。下个门槛为单房间非敏感音频、播放尾音/双讲、连续10句capture一致与原容量保护指标。
+
+### RF-014 / FB-008：工程评测闭环（2026-09-10）
+
+[官方指标协议](voice-agent/VOICE_AGENT_BENCHMARK_PROTOCOL.md)与[本地实测包](voice-agent/RO-014-benchmark-local-2026-09-10.json)已沿现有 RO-014 接入 Harness。采用官方指标定义作为工程方法，不等于采用未验证语音能力；应用决定保持 `validate`。32次实际 TTS 取消函数 + 内存替身仅证明局部机制可测，真实 RTC/识别准确率/设备AEC仍未验证，无基线计时对照，不宣称速度提升或生产通过。

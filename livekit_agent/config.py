@@ -37,7 +37,6 @@ class LiveKitAgentConfig:
     livekit_audio_apm_auto_gain_control: bool
     dashscope_asr_vad_threshold: float
     dashscope_asr_vad_silence_duration_ms: int
-    dashscope_asr_vad_hop_size_ms: int
     dashscope_asr_barge_in_min_speech_ms: int
     dashscope_asr_min_commit_speech_ms: int
     dashscope_tts_url: str
@@ -47,6 +46,8 @@ class LiveKitAgentConfig:
     dashscope_tts_connect_timeout_seconds: int
     dashscope_tts_request_timeout_seconds: float
     log_level: str
+    audio_duplex_mode: str = "half"
+    audio_playout_tail_seconds: float = 0.3
     provider_capacity_directory: str = "/tmp/voxflame-provider-capacity"
     provider_asr_max_concurrency: int = 4
     provider_asr_wait_timeout_seconds: float = 0.25
@@ -72,7 +73,15 @@ def _required_env(name: str) -> str:
 
 
 def load_config() -> LiveKitAgentConfig:
+    duplex_mode = os.getenv("VOXFLAME_AUDIO_DUPLEX_MODE", "half").strip().lower()
+    if duplex_mode not in {"half", "full"}:
+        raise ValueError("VOXFLAME_AUDIO_DUPLEX_MODE must be half or full")
+    playout_tail = float(os.getenv("VOXFLAME_AUDIO_PLAYOUT_TAIL_SECONDS", "0.3"))
+    if not 0 <= playout_tail <= 2:
+        raise ValueError("VOXFLAME_AUDIO_PLAYOUT_TAIL_SECONDS must be between 0 and 2")
     return LiveKitAgentConfig(
+        audio_duplex_mode=duplex_mode,
+        audio_playout_tail_seconds=playout_tail,
         livekit_url=_required_env("LIVEKIT_URL"),
         livekit_api_key=_required_env("LIVEKIT_API_KEY"),
         livekit_api_secret=_required_env("LIVEKIT_API_SECRET"),
@@ -152,7 +161,6 @@ def load_config() -> LiveKitAgentConfig:
         dashscope_asr_vad_silence_duration_ms=int(
             os.getenv("QWEN_ASR_VAD_SILENCE_DURATION_MS", "860").strip() or "860"
         ),
-        dashscope_asr_vad_hop_size_ms=int(os.getenv("QWEN_ASR_VAD_HOP_SIZE_MS", "16").strip() or "16"),
         dashscope_asr_barge_in_min_speech_ms=int(
             os.getenv("QWEN_ASR_BARGE_IN_MIN_SPEECH_MS", "360").strip() or "360"
         ),

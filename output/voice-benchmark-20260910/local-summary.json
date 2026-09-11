@@ -1,0 +1,131 @@
+{
+  "schema": "voxflame-voice-benchmark-v1",
+  "domain": "synthetic",
+  "run_id": "local-tts-cancellation-20260910",
+  "total": 32,
+  "outcomes": {
+    "completed": 32,
+    "failed": 0,
+    "cancelled": 0
+  },
+  "metrics": {
+    "asr_request_ms": {
+      "unit": "ms",
+      "basis": "livekit-data/STTMetrics.duration/non-streaming",
+      "n": 0,
+      "missing_or_unsuccessful": 32,
+      "p50": null,
+      "p95": null,
+      "p99": null,
+      "threshold": 2000.0,
+      "status": "not_measured"
+    },
+    "end_of_turn_ms": {
+      "unit": "ms",
+      "basis": "livekit-data/EOUMetrics.end_of_utterance_delay",
+      "n": 0,
+      "missing_or_unsuccessful": 32,
+      "p50": null,
+      "p95": null,
+      "p99": null,
+      "threshold": null,
+      "status": "not_measured"
+    },
+    "llm_full_ms": {
+      "unit": "ms",
+      "basis": "livekit-data/LLMMetrics.duration",
+      "n": 0,
+      "missing_or_unsuccessful": 32,
+      "p50": null,
+      "p95": null,
+      "p99": null,
+      "threshold": null,
+      "status": "not_measured"
+    },
+    "llm_ttft_ms": {
+      "unit": "ms",
+      "basis": "livekit-data/LLMMetrics.ttft",
+      "n": 0,
+      "missing_or_unsuccessful": 32,
+      "p50": null,
+      "p95": null,
+      "p99": null,
+      "threshold": null,
+      "status": "not_measured"
+    },
+    "tts_ttfb_ms": {
+      "unit": "ms",
+      "basis": "livekit-data/TTSMetrics.ttfb",
+      "n": 0,
+      "missing_or_unsuccessful": 32,
+      "p50": null,
+      "p95": null,
+      "p99": null,
+      "threshold": 1500.0,
+      "status": "not_measured"
+    },
+    "rtc_first_frame_after_input_ms": {
+      "unit": "ms",
+      "basis": "project/rtc-receive-proxy-not-speaker",
+      "n": 0,
+      "missing_or_unsuccessful": 32,
+      "p50": null,
+      "p95": null,
+      "p99": null,
+      "threshold": null,
+      "status": "not_measured"
+    },
+    "audible_response_ms": {
+      "unit": "ms",
+      "basis": "project/acoustic-end-of-speech-to-speaker-onset",
+      "n": 0,
+      "missing_or_unsuccessful": 32,
+      "p50": null,
+      "p95": null,
+      "p99": null,
+      "threshold": null,
+      "status": "not_measured"
+    },
+    "cancel_to_clear_ms": {
+      "unit": "ms",
+      "basis": "project/cancel-to-producer-joined-and-source-cleared",
+      "n": 32,
+      "missing_or_unsuccessful": 0,
+      "p50": 0.3176550380885601,
+      "p95": 0.4028689581900835,
+      "p99": 0.6291291210800409,
+      "threshold": null,
+      "status": "not_evaluated"
+    },
+    "jitter_buffer_ms": {
+      "unit": "ms",
+      "basis": "w3c-webrtc-stats/delta-jitterBufferDelay-over-delta-jitterBufferEmittedCount",
+      "n": 0,
+      "missing_or_unsuccessful": 32,
+      "p50": null,
+      "p95": null,
+      "p99": null,
+      "threshold": null,
+      "status": "not_measured"
+    },
+    "concealed_sample_rate": {
+      "unit": "ratio",
+      "basis": "w3c-webrtc-stats/delta-concealedSamples-over-delta-totalSamplesReceived",
+      "n": 0,
+      "missing_or_unsuccessful": 32,
+      "p50": null,
+      "p95": null,
+      "p99": null,
+      "threshold": null,
+      "status": "not_measured"
+    }
+  },
+  "iteration": {
+    "decision": "hold",
+    "next_action": "Collect authorized RTC/device traces and licensed reference audio; do not deploy on mock results",
+    "owner": "livekit_agent + platform operations",
+    "review_date": "2026-09-12"
+  },
+  "acceptance": "manual_review_required",
+  "limitations": "Actual TTS interrupt with test doubles, not live RTC/provider or acoustic stop. No before/after timing claim. ASR/CER/AEC and real user latency unmeasured. Shared host scheduler affects microtiming."
+}

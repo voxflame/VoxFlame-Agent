@@ -12,6 +12,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from asr_runtime import (
+    ServerEventHandler,
     LiveKitASRRuntime,
     QwenHttpASRClient,
     RMSVoiceActivityDetector,
@@ -66,7 +67,6 @@ def create_config() -> LiveKitAgentConfig:
         livekit_audio_apm_auto_gain_control=False,
         dashscope_asr_vad_threshold=0.032,
         dashscope_asr_vad_silence_duration_ms=860,
-        dashscope_asr_vad_hop_size_ms=16,
         dashscope_asr_barge_in_min_speech_ms=360,
         dashscope_asr_min_commit_speech_ms=420,
         dashscope_tts_url="wss://dashscope.aliyuncs.com/api-ws/v1/realtime",
@@ -115,6 +115,8 @@ class FakeASRClient:
 
 class FakeFallbackASRClient:
     def __init__(self) -> None:
+        self.handler: ServerEventHandler | None = None
+        self.stopped = False
         self.started_payloads: list[dict[str, object]] = []
         self.appended_audio: list[bytes] = []
         self.commit_calls = 0
@@ -128,12 +130,13 @@ class FakeFallbackASRClient:
 
     async def commit_audio(self) -> None:
         self.commit_calls += 1
+        await self.handler({"type": "conversation.item.input_audio_transcription.completed", "transcript": "备用识别结果"})
 
     async def clear_audio(self) -> None:
         self.clear_calls += 1
 
     async def stop(self) -> None:
-        return
+        self.stopped = True
 
 
 class FakeHttpResponse:
@@ -156,7 +159,7 @@ class FakeHttpClient:
     response_payload: dict[str, object] = {}
     requests: list[dict[str, object]] = []
 
-    def __init__(self, *, timeout: float) -> None:
+    def __init__(self, *, timeout: float, trust_env: bool = False) -> None:
         self.timeout = timeout
 
     async def post(self, url: str, **kwargs: object) -> FakeHttpResponse:
@@ -510,6 +513,10 @@ class TestASRRuntime(unittest.TestCase):
         events: list[dict[str, object]] = []
         fallback = FakeFallbackASRClient()
 
+        def factory(handler: ServerEventHandler) -> FakeFallbackASRClient:
+            fallback.handler = handler
+            return fallback
+
         async def handle_event(payload: dict[str, object]) -> None:
             events.append(payload)
 
@@ -520,7 +527,7 @@ class TestASRRuntime(unittest.TestCase):
             sample_rate=16000,
             request_timeout_seconds=3,
             event_handler=handle_event,
-            fallback_client=fallback,  # type: ignore[arg-type]
+            fallback_factory=factory,
         )
 
         async def fake_transcribe(_pcm_bytes: bytes) -> tuple[str, dict[str, object]]:
@@ -535,14 +542,18 @@ class TestASRRuntime(unittest.TestCase):
 
         asyncio.run(run_client())
 
-        self.assertTrue(client.fallback_active)
+        self.assertTrue(fallback.stopped)
         self.assertEqual(fallback.commit_calls, 1)
         self.assertEqual(fallback.appended_audio, [b"\x01\x00" * 160])
-        self.assertEqual(events[-1]["type"], "input_audio_buffer.committed")
+        self.assertEqual(events[-1]["provider"], "dashscope_realtime_asr_backup")
 
     def test_http_asr_capacity_exhaustion_can_use_independent_realtime_fallback(self) -> None:
         events: list[dict[str, object]] = []
         fallback = FakeFallbackASRClient()
+
+        def factory(handler: ServerEventHandler) -> FakeFallbackASRClient:
+            fallback.handler = handler
+            return fallback
 
         async def handle_event(payload: dict[str, object]) -> None:
             events.append(payload)
@@ -567,7 +578,7 @@ class TestASRRuntime(unittest.TestCase):
                 sample_rate=16000,
                 request_timeout_seconds=3,
                 event_handler=handle_event,
-                fallback_client=fallback,  # type: ignore[arg-type]
+                fallback_factory=factory,
                 capacity_pool=primary_pool,
             )
 
@@ -588,10 +599,10 @@ class TestASRRuntime(unittest.TestCase):
 
             asyncio.run(run_client())
 
-        self.assertTrue(client.fallback_active)
+        self.assertTrue(fallback.stopped)
         self.assertEqual(fallback.commit_calls, 1)
         self.assertEqual(fallback.appended_audio, [b"\x01\x00" * 160])
-        self.assertEqual(events[-1]["type"], "input_audio_buffer.committed")
+        self.assertEqual(events[-1]["provider"], "dashscope_realtime_asr_backup")
 
     def test_runtime_builds_distinct_primary_and_realtime_fallback_capacity_pools(self) -> None:
         config = create_config()

@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import gc
+import hashlib
+import sys
 import json
 import os
 import statistics
@@ -10,7 +12,9 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "research"))
+from voice_benchmark import percentile
 
 from livekit import api, rtc
 
@@ -20,8 +24,10 @@ def parse_args() -> argparse.Namespace:
         description="Run concurrent LiveKit rooms through ASR, LLM correction, and TTS",
     )
     parser.add_argument("--audio", required=True, help="16 kHz mono signed 16-bit PCM fixture")
-    parser.add_argument("--rooms", type=int, default=8)
-    parser.add_argument("--account-id", default="3083029019")
+    parser.add_argument("--rooms", type=int, default=1)
+    parser.add_argument("--account-id", required=True)
+    parser.add_argument("--allow-live-provider-calls", action="store_true",
+                        help="Explicit authorization: creates rooms and calls actual providers")
     parser.add_argument("--connect-stagger-ms", type=int, default=250)
     parser.add_argument("--turn-stagger-ms", type=int, default=0)
     parser.add_argument("--result-timeout-seconds", type=float, default=35.0)
@@ -34,21 +40,15 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def percentile(values: list[float], ratio: float) -> float | None:
-    if not values:
-        return None
-    ordered = sorted(values)
-    index = min(len(ordered) - 1, max(0, int(len(ordered) * ratio) - 1))
-    return round(ordered[index], 1)
-
-
-def latency_summary(values: list[float]) -> dict[str, float] | None:
+def latency_summary(values: list[float]) -> dict[str, float | int | None] | None:
     if not values:
         return None
     return {
+        "n": len(values),
         "min": round(min(values), 1),
-        "p50": round(statistics.median(values), 1),
-        "p95": percentile(values, 0.95) or 0.0,
+        "p50": percentile(values, 0.5),
+        "p95": percentile(values, 0.95),
+        "p99": percentile(values, 0.99),
         "max": round(max(values), 1),
         "mean": round(statistics.mean(values), 1),
     }
@@ -65,7 +65,7 @@ class RoomProbe:
     user_final_event: asyncio.Event = field(default_factory=asyncio.Event)
     assistant_final_event: asyncio.Event = field(default_factory=asyncio.Event)
     tts_audio_event: asyncio.Event = field(default_factory=asyncio.Event)
-    messages: list[dict[str, Any]] = field(default_factory=list)
+    messages: list[dict[str, object]] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     connected_at: float | None = None
     turn_started_at: float | None = None
@@ -119,13 +119,13 @@ class RoomProbe:
         stream = rtc.AudioStream(track)
         try:
             async for _event in stream:
-                if self.tts_audio_at is None:
+                if self.turn_started_at is not None and self.tts_audio_at is None:
                     self.tts_audio_at = time.perf_counter()
                     self.tts_audio_event.set()
         finally:
             await stream.aclose()
 
-    def final_message(self, role: str) -> dict[str, Any] | None:
+    def final_message(self, role: str) -> dict[str, object] | None:
         for payload in reversed(self.messages):
             if (
                 payload.get("type") == "transcript"
@@ -135,7 +135,7 @@ class RoomProbe:
                 return payload
         return None
 
-    def result(self) -> dict[str, Any]:
+    def result(self) -> dict[str, object]:
         user_message = self.final_message("user")
         assistant_message = self.final_message("assistant")
         user_metadata = (
@@ -156,8 +156,8 @@ class RoomProbe:
                 return None
             return round((completed_at - self.turn_started_at) * 1000, 1)
 
-        def after_speech_ms(completed_at: float | None) -> float | None:
-            if completed_at is None or self.turn_stopped_at is None:
+        def after_input_ms(completed_at: float | None) -> float | None:
+            if completed_at is None or self.turn_stopped_at is None or completed_at < self.turn_stopped_at:
                 return None
             return round((completed_at - self.turn_stopped_at) * 1000, 1)
 
@@ -168,12 +168,12 @@ class RoomProbe:
             "user_final": self.user_final_event.is_set(),
             "assistant_final": self.assistant_final_event.is_set(),
             "tts_audio": self.tts_audio_event.is_set(),
-            "asr_ms": elapsed_ms(self.user_final_at),
-            "assistant_ms": elapsed_ms(self.assistant_final_at),
-            "tts_first_audio_ms": elapsed_ms(self.tts_audio_at),
-            "asr_after_speech_ms": after_speech_ms(self.user_final_at),
-            "assistant_after_speech_ms": after_speech_ms(self.assistant_final_at),
-            "tts_after_speech_ms": after_speech_ms(self.tts_audio_at),
+            "input_start_to_user_final_ms": elapsed_ms(self.user_final_at),
+            "input_start_to_assistant_final_ms": elapsed_ms(self.assistant_final_at),
+            "input_start_to_first_received_frame_ms": elapsed_ms(self.tts_audio_at),
+            "input_end_to_user_final_ms": after_input_ms(self.user_final_at),
+            "input_end_to_assistant_final_ms": after_input_ms(self.assistant_final_at),
+            "rtc_first_frame_after_input_ms": after_input_ms(self.tts_audio_at),
             "asr_source": user_metadata.get("source"),
             "asr_model": user_metadata.get("model_version"),
             "asr_personalized": user_metadata.get("personalized"),
@@ -256,7 +256,7 @@ async def run_turn(
     sample_rate = 16000
     chunk_samples = 640
     chunk_bytes = chunk_samples * 2
-    source = rtc.AudioSource(sample_rate, 1, queue_size_ms=3000)
+    source = rtc.AudioSource(sample_rate, 1, queue_size_ms=200)
     probe.microphone_source = source
     track = rtc.LocalAudioTrack.create_audio_track(f"capacity-mic-{probe.index}", source)
     probe.microphone_publication = await probe.room.local_participant.publish_track(
@@ -285,7 +285,7 @@ async def run_turn(
             rtc.AudioFrame(chunk, sample_rate, 1, chunk_samples),
         )
         await asyncio.sleep(0.04)
-    await asyncio.sleep(0.5)
+    await source.wait_for_playout()
     probe.turn_stopped_at = time.perf_counter()
     await probe.room.local_participant.publish_data(
         json.dumps(
@@ -312,11 +312,15 @@ async def run_turn(
 
 async def main() -> int:
     args = parse_args()
+    if not args.allow_live_provider_calls:
+        raise ValueError("Live probe requires --allow-live-provider-calls and an authorized fixture/account")
     if args.rooms <= 0:
         raise ValueError("--rooms must be positive")
     pcm_bytes = Path(args.audio).read_bytes()
-    if not pcm_bytes:
-        raise ValueError("audio fixture is empty")
+    if not pcm_bytes or len(pcm_bytes) % 2:
+        raise ValueError("audio fixture must contain complete signed 16-bit PCM samples")
+    if pcm_bytes.startswith(b"RIFF"):
+        raise ValueError("expected raw PCM, not a WAV header")
 
     livekit_url = os.environ.get("LIVEKIT_URL", "ws://127.0.0.1:7880")
     api_key = os.environ["LIVEKIT_API_KEY"]
@@ -386,9 +390,15 @@ async def main() -> int:
         complete = [
             result
             for result in results
-            if result["user_final"] and result["assistant_final"] and result["tts_audio"]
+            if result["user_final"] and result["assistant_final"] and result["tts_audio"] and not result["errors"]
         ]
         summary = {
+            "schema": "voxflame-rtc-probe-v2",
+            "domain": "rtc",
+            "fixture_sha256": hashlib.sha256(pcm_bytes).hexdigest(),
+            "fixture_duration_seconds": len(pcm_bytes) / 32000,
+            "percentile_method": "nearest_rank",
+            "limitations": "Manual-end input proxy, not acoustic speech end; first received frame may be silent, not speaker onset; no CER or provider request timing; successful observations only, inspect coverage/errors. Not full benchmark-v1 acceptance evidence.",
             "rooms": args.rooms,
             "complete": len(complete),
             "incomplete": args.rooms - len(complete),
@@ -400,42 +410,42 @@ async def main() -> int:
                 result["asr_source"] == "dashscope_realtime_asr_backup"
                 for result in results
             ),
-            "asr_ms": latency_summary(
-                [float(result["asr_ms"]) for result in results if result["asr_ms"] is not None]
+            "input_start_to_user_final_ms": latency_summary(
+                [float(result["input_start_to_user_final_ms"]) for result in results if result["input_start_to_user_final_ms"] is not None]
             ),
-            "assistant_ms": latency_summary(
+            "input_start_to_assistant_final_ms": latency_summary(
                 [
-                    float(result["assistant_ms"])
+                    float(result["input_start_to_assistant_final_ms"])
                     for result in results
-                    if result["assistant_ms"] is not None
+                    if result["input_start_to_assistant_final_ms"] is not None
                 ]
             ),
-            "tts_first_audio_ms": latency_summary(
+            "input_start_to_first_received_frame_ms": latency_summary(
                 [
-                    float(result["tts_first_audio_ms"])
+                    float(result["input_start_to_first_received_frame_ms"])
                     for result in results
-                    if result["tts_first_audio_ms"] is not None
+                    if result["input_start_to_first_received_frame_ms"] is not None
                 ]
             ),
-            "asr_after_speech_ms": latency_summary(
+            "input_end_to_user_final_ms": latency_summary(
                 [
-                    float(result["asr_after_speech_ms"])
+                    float(result["input_end_to_user_final_ms"])
                     for result in results
-                    if result["asr_after_speech_ms"] is not None
+                    if result["input_end_to_user_final_ms"] is not None
                 ]
             ),
-            "assistant_after_speech_ms": latency_summary(
+            "input_end_to_assistant_final_ms": latency_summary(
                 [
-                    float(result["assistant_after_speech_ms"])
+                    float(result["input_end_to_assistant_final_ms"])
                     for result in results
-                    if result["assistant_after_speech_ms"] is not None
+                    if result["input_end_to_assistant_final_ms"] is not None
                 ]
             ),
-            "tts_after_speech_ms": latency_summary(
+            "rtc_first_frame_after_input_ms": latency_summary(
                 [
-                    float(result["tts_after_speech_ms"])
+                    float(result["rtc_first_frame_after_input_ms"])
                     for result in results
-                    if result["tts_after_speech_ms"] is not None
+                    if result["rtc_first_frame_after_input_ms"] is not None
                 ]
             ),
             "results": results,

@@ -68,3 +68,8 @@
 - 跳过验证直接提交结论。
 - 在未收敛边界前做大范围清理式改动。
 - 让 `AGENTS.md`、`CLAUDE.md`、本文件长期漂移。
+
+## 工程闭环与评测入口
+
+- 固有闭环：**发现需求 → 实现 → 优化 → 测试 → 迭代**；记录需求证据、实现/回退、baseline/优化假设、测试结果和下一动作/owner/日期，缺测不当通过，失败回到实现/优化。
+- 语音与 Agent 使用 `research/voice-agent/VOICE_AGENT_BENCHMARK_PROTOCOL.md` 的官方工程口径，阈值仍以 `research/HARNESS_RULES.yaml` 为准；离线评测与真实 RTC/设备/目标用户证据分开，沿现有 RO/反馈闭环，不自动发布。

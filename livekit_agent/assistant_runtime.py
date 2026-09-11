@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import difflib
-import json
 import logging
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any
-from urllib import error, request
+from typing import Any, Protocol
+import httpx
 
 from capacity import (
     ProcessSlotPool,
@@ -399,8 +398,15 @@ class DashScopeChatClient:
     temperature: float
     max_tokens: int
 
-    def complete(self, messages: list[dict[str, Any]]) -> "DashScopeCompletionResult":
-        payload = json.dumps(
+    _http_client: httpx.AsyncClient | None = field(default=None, init=False, repr=False)
+
+    async def aclose(self) -> None:
+        if self._http_client is not None:
+            await self._http_client.aclose()
+            self._http_client = None
+
+    async def complete(self, messages: list[dict[str, object]]) -> "DashScopeCompletionResult":
+        payload = (
             {
                 "model": self.model,
                 "messages": messages,
@@ -409,30 +415,19 @@ class DashScopeChatClient:
                 "parameters": {
                     "enable_thinking": False,
                 },
-            },
-            ensure_ascii=False,
-        ).encode("utf-8")
+            }
+        )
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
         }
-        req = request.Request(
-            url=f"{self.base_url}/chat/completions",
-            data=payload,
-            method="POST",
-            headers=headers,
+        if self._http_client is None:
+            self._http_client = httpx.AsyncClient(timeout=self.timeout_seconds, trust_env=False)
+        response = await self._http_client.post(
+            f"{self.base_url}/chat/completions", json=payload, headers=headers,
         )
-
-        try:
-            with request.urlopen(req, timeout=self.timeout_seconds) as resp:
-                body = resp.read().decode("utf-8")
-        except error.HTTPError as exc:  # pragma: no cover - exercised via caller fallback
-            detail = exc.read().decode("utf-8", errors="ignore")
-            raise RuntimeError(f"DashScope HTTP {exc.code}: {detail}") from exc
-        except error.URLError as exc:  # pragma: no cover - exercised via caller fallback
-            raise RuntimeError(f"DashScope connection failed: {exc.reason}") from exc
-
-        parsed = json.loads(body)
+        response.raise_for_status()
+        parsed = response.json()
         text = extract_text_from_completion(parsed)
         if not text:
             raise RuntimeError("DashScope returned no usable text content")
@@ -481,23 +476,10 @@ class AssistantReplyGenerationError(RuntimeError):
         self.detail = detail or user_message
 
 
-def _normalize_completion_result(
-    raw_result: str | DashScopeCompletionResult,
-) -> DashScopeCompletionResult:
-    if isinstance(raw_result, DashScopeCompletionResult):
-        cleaned_text = sanitize_correction_reply(raw_result.text)
-        return DashScopeCompletionResult(
-            text=cleaned_text,
-            prompt_tokens=raw_result.prompt_tokens,
-            completion_tokens=raw_result.completion_tokens,
-            cached_tokens=raw_result.cached_tokens,
-            cache_creation_input_tokens=raw_result.cache_creation_input_tokens,
-        )
+class ChatClient(Protocol):
+    async def complete(self, messages: list[dict[str, object]]) -> DashScopeCompletionResult: ...
 
-    normalized = sanitize_correction_reply(raw_result)
-    if not normalized:
-        raise RuntimeError("LLM returned an empty reply")
-    return DashScopeCompletionResult(text=normalized)
+    async def aclose(self) -> None: ...
 
 
 def _classify_generation_failure(exc: Exception) -> AssistantReplyGenerationError:
@@ -527,7 +509,7 @@ class CommunicationAssistantRuntime:
     config: LiveKitAgentConfig
     ctx: VoxFlameSessionContext
     userdata: VoxFlameSessionUserData
-    client: DashScopeChatClient | Any | None = None
+    client: ChatClient | None = None
     capacity_pool: ProcessSlotPool | None = None
     history: list[str] = field(default_factory=list)
 
@@ -568,8 +550,6 @@ class CommunicationAssistantRuntime:
                 code="empty_transcript",
             )
 
-        self.userdata.note_user_transcript(normalized)
-
         if self.client is None:
             caption_fallback = self._build_caption_fallback_reply(normalized)
             if caption_fallback is not None:
@@ -608,30 +588,32 @@ class CommunicationAssistantRuntime:
             },
         ]
         started_at = time.perf_counter()
-        soft_target_ms = round(self.config.dashscope_reply_timeout_seconds * 1000)
+        deadline_ms = round(self.config.dashscope_reply_timeout_seconds * 1000)
 
         try:
             if self.capacity_pool is None:
                 raise RuntimeError("LLM capacity pool is not initialized")
-            async with self.capacity_pool.lease():
-                if isinstance(self.client, DashScopeChatClient):
-                    raw_result = await asyncio.to_thread(self.client.complete, messages)
-                else:
-                    raw_result = self.client.complete(messages)
-            completion = _normalize_completion_result(raw_result)
-            reply = completion.text.strip()
+            async def complete_with_lease() -> DashScopeCompletionResult:
+                async with self.capacity_pool.lease():
+                    return await self.client.complete(messages)
+
+            raw_result = await asyncio.wait_for(
+                complete_with_lease(), timeout=self.config.dashscope_reply_timeout_seconds,
+            )
+            completion = raw_result
+            reply = sanitize_correction_reply(completion.text)
             if not reply:
                 raise RuntimeError("LLM returned an empty reply")
         except Exception as exc:
             elapsed_ms = round((time.perf_counter() - started_at) * 1000)
             classified_error = _classify_generation_failure(exc)
             logger.warning(
-                "DashScope correction failed room=%s participant=%s scene=%s latency_ms=%s soft_target_ms=%s code=%s error=%s",
+                "DashScope correction failed room=%s participant=%s scene=%s latency_ms=%s deadline_ms=%s code=%s error=%s",
                 self.ctx.room_name,
                 self.ctx.participant_identity,
                 self.ctx.scene,
                 elapsed_ms,
-                soft_target_ms,
+                deadline_ms,
                 classified_error.code,
                 classified_error.detail,
             )
@@ -651,13 +633,13 @@ class CommunicationAssistantRuntime:
 
         elapsed_ms = round((time.perf_counter() - started_at) * 1000)
         logger.info(
-            "DashScope correction completed room=%s participant=%s scene=%s latency_ms=%s soft_target_ms=%s exceeded_soft_target=%s prompt_tokens=%s cached_tokens=%s cache_creation_input_tokens=%s completion_tokens=%s reply_chars=%s",
+            "DashScope correction completed room=%s participant=%s scene=%s latency_ms=%s deadline_ms=%s exceeded_deadline=%s prompt_tokens=%s cached_tokens=%s cache_creation_input_tokens=%s completion_tokens=%s reply_chars=%s",
             self.ctx.room_name,
             self.ctx.participant_identity,
             self.ctx.scene,
             elapsed_ms,
-            soft_target_ms,
-            elapsed_ms > soft_target_ms,
+            deadline_ms,
+            elapsed_ms > deadline_ms,
             completion.prompt_tokens,
             completion.cached_tokens,
             completion.cache_creation_input_tokens,
@@ -665,9 +647,18 @@ class CommunicationAssistantRuntime:
             len(reply),
         )
         source = "dashscope_chat_completion"
-        self._remember_turn(reply)
-        self.userdata.note_assistant_reply(reply, source=source)
         return reply, source
+
+    def accept_reply(self, user_text: str, reply: str, source: str) -> None:
+        """Commit session-local history only after the current output was published."""
+        self.userdata.note_user_transcript(user_text)
+        self.userdata.note_assistant_reply(reply, source=source)
+        if source != CAPTION_ASR_FALLBACK_SOURCE:
+            self._remember_turn(reply)
+
+    async def aclose(self) -> None:
+        if self.client is not None:
+            await self.client.aclose()
 
     def _remember_turn(self, reply: str) -> None:
         self.history.append(reply)

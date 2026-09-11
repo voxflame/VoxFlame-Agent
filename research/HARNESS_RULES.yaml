@@ -1,5 +1,5 @@
 version: 1
-updated_at: 2026-09-04
+updated_at: 2026-09-10
 schema: voxflame-research-harness-rules-v1
 entrypoint: AGENTS.md
 registries:
@@ -59,3 +59,62 @@ completion:
   required_artifacts: [problem, evidence_package, feedback_ref, baseline, metrics, stop_conditions, rollback, outcome_review, next_review_date]
   required_verification: [mechanism_or_engineering, product_or_scenario_when_claimed]
   prohibited_shortcuts: [analysis_only, deployed_without_verification, single_http_test_as_rtc_capacity, single_user_as_population_proof]
+
+engineering_cycle:
+  stages: [发现需求, 实现, 优化, 测试, 迭代]
+  required_iteration_fields: [decision, next_action, owner, review_date]
+  decisions: [continue, hold, stop, ready_for_review]
+voice_benchmark:
+  schema: voxflame-voice-benchmark-v1
+  protocol: research/voice-agent/VOICE_AGENT_BENCHMARK_PROTOCOL.md
+  sample_outcomes: [completed, failed, cancelled]
+  domains: [synthetic, offline_audio, rtc, device]
+  metadata_fields: [run_id, code_version, config_sha256, dataset_sha256, protocol_sha256, scenario, population, device, model_version, seed, concurrency, temperature_state]
+  metric_catalog:
+    asr_request_ms:
+      unit: ms
+      basis: livekit-data/STTMetrics.duration/non-streaming
+      domains: [offline_audio, rtc, device]
+      threshold: triggers.realtime.asr_p95_ms
+    end_of_turn_ms:
+      unit: ms
+      basis: livekit-data/EOUMetrics.end_of_utterance_delay
+      domains: [rtc, device]
+    llm_full_ms:
+      unit: ms
+      basis: livekit-data/LLMMetrics.duration
+      domains: [offline_audio, rtc, device]
+    llm_ttft_ms:
+      unit: ms
+      basis: livekit-data/LLMMetrics.ttft
+      domains: [offline_audio, rtc, device]
+    tts_ttfb_ms:
+      unit: ms
+      basis: livekit-data/TTSMetrics.ttfb
+      domains: [offline_audio, rtc, device]
+      threshold: triggers.realtime.tts_first_byte_p95_ms
+    rtc_first_frame_after_input_ms:
+      unit: ms
+      basis: project/rtc-receive-proxy-not-speaker
+      domains: [rtc, device]
+    audible_response_ms:
+      unit: ms
+      basis: project/acoustic-end-of-speech-to-speaker-onset
+      domains: [device]
+    cancel_to_clear_ms:
+      unit: ms
+      basis: project/cancel-to-producer-joined-and-source-cleared
+      domains: [synthetic, rtc, device]
+    jitter_buffer_ms:
+      unit: ms
+      basis: w3c-webrtc-stats/delta-jitterBufferDelay-over-delta-jitterBufferEmittedCount
+      domains: [rtc, device]
+    concealed_sample_rate:
+      unit: ratio
+      basis: w3c-webrtc-stats/delta-concealedSamples-over-delta-totalSamplesReceived
+      domains: [rtc, device]
+  # Quality targets require a frozen corpus/device protocol, not invented constants.
+  percentile_method: nearest_rank
+  incomplete_measurement_policy: not_measured
+  missing_threshold_policy: not_evaluated
+  promotion: manual_review_only
