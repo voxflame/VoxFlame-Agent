@@ -1,16 +1,6 @@
 import { Request, Response, Router } from 'express'
-import {
-  RtcCapabilityId,
-  RtcDeviceContext,
-  RtcExecutionBackend,
-  RtcOrchestrationError,
-  RtcOrchestrationService,
-  RtcScene,
-  RtcSessionMode,
-  RtcSessionIntentInput,
-  RtcSessionStrategy,
-  RtcSurface,
-} from '../services/rtc-orchestration.service'
+import { RtcOrchestrationError, RtcOrchestrationService } from '../services/rtc-orchestration.service'
+import { parseRtcStartSessionRequest } from '../contracts/rtc-session'
 import { authMiddleware } from '../middlewares/auth.middleware'
 import { resolveAsrAccountId } from '../services/asr-account-routing.service'
 
@@ -73,136 +63,6 @@ function deriveBrowserOrigin(req: Request): string | null {
   return `${forwardedProto}://${forwardedHost}`
 }
 
-function parseExecutionBackend(value: unknown): RtcExecutionBackend | undefined {
-  return value === 'livekit' ? value : undefined
-}
-
-function parseMode(value: unknown): RtcSessionMode | undefined {
-  return value === 'training'
-    ? 'training'
-    : value === 'communication'
-      ? 'communication'
-      : value === 'quick_talk'
-        ? 'quick_talk'
-        : undefined
-}
-
-function parseSurface(value: unknown): RtcSurface | undefined {
-  return value === 'home_main' ||
-    value === 'communication_workspace' ||
-    value === 'training_workspace' ||
-    value === 'memory_workspace' ||
-    value === 'mobile_workbench' ||
-    value === 'desktop_companion'
-    ? value
-    : undefined
-}
-
-function parseSessionStrategy(value: unknown): RtcSessionStrategy | undefined {
-  return value === 'heavy_realtime' || value === 'light_voice'
-    ? value
-    : undefined
-}
-
-function parseScene(value: unknown): RtcScene | undefined {
-  return value === 'medical' ||
-    value === 'family' ||
-    value === 'stranger' ||
-    value === 'emergency' ||
-    value === 'work' ||
-    value === 'interview' ||
-    value === 'outing' ||
-    value === 'home'
-    ? value
-    : undefined
-}
-
-function parseRequestedCapabilities(value: unknown): RtcCapabilityId[] | undefined {
-  if (!Array.isArray(value)) {
-    return undefined
-  }
-
-  const supportedCapabilities: RtcCapabilityId[] = [
-    'transport_send_control',
-    'voice_profile_update',
-    'workspace_snapshot_read',
-    'upload_artifact_persist',
-  ]
-
-  const deduped = new Set<RtcCapabilityId>()
-
-  for (const item of value) {
-    if (
-      typeof item === 'string' &&
-      supportedCapabilities.includes(item as RtcCapabilityId)
-    ) {
-      deduped.add(item as RtcCapabilityId)
-    }
-  }
-
-  return deduped.size > 0 ? [...deduped] : undefined
-}
-
-function parseDeviceContext(value: unknown): RtcDeviceContext | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined
-  }
-
-  const raw = value as Record<string, unknown>
-  const microphoneStatus =
-    raw.microphoneStatus === 'unknown' ||
-    raw.microphoneStatus === 'available' ||
-    raw.microphoneStatus === 'unavailable'
-      ? raw.microphoneStatus
-      : undefined
-
-  return {
-    secureContext:
-      typeof raw.secureContext === 'boolean' ? raw.secureContext : undefined,
-    mediaDevicesSupported:
-      typeof raw.mediaDevicesSupported === 'boolean'
-        ? raw.mediaDevicesSupported
-        : undefined,
-    microphoneStatus,
-    networkOnline:
-      typeof raw.networkOnline === 'boolean' ? raw.networkOnline : undefined,
-  }
-}
-
-function parseSessionIntent(value: unknown): RtcSessionIntentInput | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined
-  }
-
-  const raw = value as Record<string, unknown>
-
-  return {
-    surface: parseSurface(raw.surface),
-    mode: parseMode(raw.mode),
-    sessionStrategy: parseSessionStrategy(raw.sessionStrategy ?? raw.session_strategy),
-    requestedCapabilities: parseRequestedCapabilities(
-      raw.requestedCapabilities ?? raw.requested_capabilities,
-    ),
-    scene: parseScene(raw.scene),
-    deviceContext: parseDeviceContext(raw.deviceContext ?? raw.device_context),
-  }
-}
-
-function parseOptionalInteger(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
-    return value
-  }
-
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Number.parseInt(value, 10)
-    if (Number.isInteger(parsed) && parsed > 0) {
-      return parsed
-    }
-  }
-
-  return undefined
-}
-
 function handleRtcError(res: Response, error: unknown): void {
   if (error instanceof RtcOrchestrationError) {
     res.status(error.statusCode).json({ error: error.message })
@@ -227,27 +87,23 @@ router.use(authMiddleware)
 
 router.post('/session/start', async (req: Request, res: Response) => {
   try {
-    const authenticatedUserId = req.user?.id ?? null
-    const asrAccountId = authenticatedUserId
-      ? resolveAsrAccountId({
-          userId: authenticatedUserId,
-          email: req.user?.email,
-        })
-      : null
+    // RTC credentials must never be issued via the development auth bypass.
+    if (!req.user?.id) {
+      res.status(401).json({ error: 'Unauthorized' })
+      return
+    }
+    let request
+    try {
+      request = parseRtcStartSessionRequest(req.body)
+    } catch {
+      res.status(400).json({ error: 'rtc_session_invalid_request' })
+      return
+    }
+    const authenticatedUserId = req.user.id
     const result = await rtcService.startSession({
-      requestId:
-        typeof req.body?.requestId === 'string' ? req.body.requestId : undefined,
-      channelName:
-        typeof req.body?.channelName === 'string' ? req.body.channelName : undefined,
-      executionBackend: parseExecutionBackend(
-        req.body?.executionBackend ?? req.body?.execution_backend,
-      ),
-      mode: parseMode(req.body?.mode),
-      intent: parseSessionIntent(req.body?.intent),
-      userUid: parseOptionalInteger(req.body?.userUid),
+      intent: request.intent,
       authenticatedUserId,
-      asrAccountId,
-      timeoutSeconds: parseOptionalInteger(req.body?.timeoutSeconds),
+      asrAccountId: resolveAsrAccountId({ userId: authenticatedUserId, email: req.user.email }),
       browserOrigin: deriveBrowserOrigin(req),
     })
 

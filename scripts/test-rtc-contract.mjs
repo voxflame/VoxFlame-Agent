@@ -85,7 +85,7 @@ test('Web/Mobile HTTP clients validate responses and Mobile enforces its surface
     calls.push({ url, init })
     return new Response(JSON.stringify(response), { status })
   }
-  const intent = { ...fixture().intent, scene: undefined }
+  const { grantedCapabilities, scene, ...intent } = fixture().intent
   const options = { apiBaseUrl: 'https://backend.example.test/api', tokenProvider: { getAccessToken: async () => 'test-auth' } }
   try {
     assert.deepEqual(await startRtcSession('communication', intent, { accessToken: 'test-auth' }), response)
@@ -93,6 +93,7 @@ test('Web/Mobile HTTP clients validate responses and Mobile enforces its surface
     assert.equal(calls.length, 2)
     assert.ok(calls.every(({ url }) => url.endsWith('/rtc/session/start')))
     assert.ok(calls.every(({ init }) => init.headers.Authorization === 'Bearer test-auth'))
+    assert.ok(calls.every(({ init }) => Object.keys(JSON.parse(init.body)).join() === 'intent'))
     response = { ...fixture(), transport: {} }
     await assert.rejects(startRtcSession('communication', intent, { accessToken: 'test-auth' }), /invalid_response/)
     await assert.rejects(startMobileRtcSession(intent, options), /invalid_response/)
@@ -104,3 +105,33 @@ test('Web/Mobile HTTP clients validate responses and Mobile enforces its surface
     await assert.rejects(startMobileRtcSession(intent, options), /start_503/)
   } finally { globalThis.fetch = originalFetch }
 })
+
+for (const [client, path] of Object.entries({
+  backend: '../backend/src/contracts/rtc-session.ts',
+  web: '../frontend/src/lib/realtime-audio/generated/rtc-session.ts',
+  mobile: '../apps/mobile-workbench/src/contracts/generated/rtc-session.ts',
+})) {
+  test(`${client}: strict requests reject legacy and authority fields at every level`, async () => {
+    const { parseRtcStartSessionRequest: parse } = await import(path)
+    const { grantedCapabilities, scene, ...intent } = fixture().intent
+    const request = { intent }
+    assert.deepEqual(parse(request), request)
+    for (const field of ['roomName', 'channelName', 'userUid', 'asrAccountId', 'authenticatedUserId', 'mode', 'timeoutSeconds', 'executionBackend']) {
+      assert.throws(() => parse({ ...request, [field]: 'fake' }), /invalid_request/)
+    }
+    for (const field of ['surface', 'mode', 'sessionStrategy', 'requestedCapabilities']) {
+      const copy = structuredClone(request); delete copy.intent[field]
+      assert.throws(() => parse(copy), /invalid_request/)
+    }
+    for (const mutation of [
+      { ...intent, scene: null }, { ...intent, mode: 'unknown' },
+      { ...intent, session_strategy: 'heavy_realtime' },
+      { ...intent, grantedCapabilities: [] },
+      { ...intent, requestedCapabilities: ['admin'] },
+      { ...intent, requestedCapabilities: ['transport_send_control', 'transport_send_control'] },
+      { ...intent, deviceContext: { appState: 'active' } },
+      { ...intent, deviceContext: { networkOnline: 'true' } },
+    ]) assert.throws(() => parse({ intent: mutation }), /invalid_request/)
+    assert.deepEqual(parse({ intent: { ...intent, requestedCapabilities: [] } }).intent.requestedCapabilities, [])
+  })
+}

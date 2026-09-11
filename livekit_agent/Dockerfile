@@ -30,6 +30,12 @@ RUN pip install \
     "websockets>=15.0,<16.0" \
     "httpx>=0.27,<1.0"
 
-COPY . /app
+COPY *.py /app/
+COPY scripts /app/scripts
+
+# Match the fast image payload and reject missing runtime imports at build time.
+RUN PYTHON_DOTENV_DISABLED=1 LIVEKIT_URL=ws://127.0.0.1:7880 \
+    LIVEKIT_API_KEY=build-check LIVEKIT_API_SECRET=build-check-not-a-real-secret \
+    python -c "import app"
 
 CMD ["python", "app.py", "start"]

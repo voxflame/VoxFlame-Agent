@@ -200,3 +200,41 @@ export function parseRtcStartSessionResult(value: unknown): RtcStartSessionResul
     transport: value.transport, intent: value.intent, readiness: value.readiness,
   }
 }
+
+/** Public clients request intent only; room, participant, account and token TTL are server-owned. */
+export interface RtcStartSessionRequest {
+  intent: RtcSessionIntent
+}
+
+function onlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  return Object.keys(value).every((key) => keys.includes(key))
+}
+
+/** Strict public boundary: reject typos/legacy routing fields instead of silently choosing defaults. */
+export function parseRtcStartSessionRequest(value: unknown): RtcStartSessionRequest {
+  if (!record(value) || !onlyKeys(value, ['intent']) || !record(value.intent)) {
+    throw new Error('rtc_session_invalid_request')
+  }
+  const intent = value.intent
+  if (!onlyKeys(intent, ['surface', 'mode', 'sessionStrategy', 'requestedCapabilities', 'scene', 'deviceContext'])
+    || !oneOf(intent.surface, ['home_main', 'communication_workspace', 'training_workspace',
+      'memory_workspace', 'mobile_workbench', 'desktop_companion'])
+    || !oneOf(intent.mode, ['communication', 'training', 'quick_talk'])
+    || !strategy(intent.sessionStrategy)
+    || !capabilities(intent.requestedCapabilities)
+    || intent.requestedCapabilities.length > 4
+    || new Set(intent.requestedCapabilities).size !== intent.requestedCapabilities.length
+    || !(intent.scene === undefined || oneOf(intent.scene,
+      ['medical', 'family', 'stranger', 'emergency', 'work', 'interview', 'outing', 'home']))
+    || !(intent.deviceContext === undefined || (deviceContext(intent.deviceContext)
+      && onlyKeys(intent.deviceContext as Record<string, unknown>,
+        ['secureContext', 'mediaDevicesSupported', 'microphoneStatus', 'networkOnline'])))) {
+    throw new Error('rtc_session_invalid_request')
+  }
+  return { intent: {
+    surface: intent.surface, mode: intent.mode, sessionStrategy: intent.sessionStrategy,
+    requestedCapabilities: [...intent.requestedCapabilities],
+    ...(intent.scene !== undefined ? { scene: intent.scene } : {}),
+    ...(intent.deviceContext !== undefined ? { deviceContext: { ...intent.deviceContext } } : {}),
+  } }
+}

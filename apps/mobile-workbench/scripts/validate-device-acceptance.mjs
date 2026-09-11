@@ -6,6 +6,10 @@ const requiredFlows = [
   'signed_out_quick_expression',
   'quick_expression_tts_copy_large_text',
   'assistant_rtc_voice_and_text',
+  'rtc_cancel_and_quick_reconnect',
+  'rtc_account_switch_and_unmount',
+  'rtc_audio_route_and_interruption',
+  'rtc_ten_utterances_capture_isolation',
   'training_home_eight_topics_and_modern_reading',
   'material_import_select_and_sentence_split',
   'record_review_confirm',
@@ -48,6 +52,7 @@ for (const id of requiredFlows) {
   if (flow.status === 'conditional' && (typeof flow.issue !== 'string' || !flow.issue.trim())) {
     failures.push(`${id}: conditional result requires issue`)
   }
+  if (flow.status === 'conditional') failures.push(`${id}: conditional is not acceptance; resolve the issue and retest`)
   if (flow.status === 'fail') failures.push(`${id}: failed`)
 }
 

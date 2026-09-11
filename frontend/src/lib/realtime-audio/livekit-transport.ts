@@ -9,6 +9,7 @@ import type {
   Room,
 } from 'livekit-client'
 import { RoomEvent, Track } from 'livekit-client'
+import { assertSessionActive, waitForSession } from './session-lifecycle'
 import type {
   RtmMessageEvent,
   RtmStatusEvent,
@@ -18,6 +19,7 @@ import type {
 import { ProductMessageError, toProductMessage } from '@/lib/ui/product-message'
 
 interface ConnectLiveKitTransportOptions {
+  signal: AbortSignal
   session: StartRtcSessionResponse
   onRtmMessage: (event: RtmMessageEvent) => void
   onRtmStatus: (event: RtmStatusEvent) => void
@@ -101,7 +103,9 @@ export async function connectLiveKitTransport(
     throw new Error('LiveKit transport payload is missing from the current session.')
   }
 
+  assertSessionActive(options.signal)
   const { Room } = await import('livekit-client')
+  assertSessionActive(options.signal)
   const room = new Room({
     adaptiveStream: true,
     dynacast: true,
@@ -116,7 +120,7 @@ export async function connectLiveKitTransport(
       publication: RemoteTrackPublication,
       _participant: RemoteParticipant,
     ) => {
-      if (track.kind !== Track.Kind.Audio) {
+      if (options.signal.aborted || track.kind !== Track.Kind.Audio) {
         return
       }
 
@@ -181,12 +185,26 @@ export async function connectLiveKitTransport(
 
   const browserServerUrl = resolveBrowserLiveKitUrl(transport.serverUrl)
 
-  room.prepareConnection(browserServerUrl, transport.participantToken)
-
+  // Closing the owned room cancels an in-progress SDK join. A late completion
+  // is also closed, even if a transport implementation ignores cancellation.
+  const closeRoom = () => room.disconnect().catch(() => undefined)
+  const cancel = () => { void closeRoom() }
+  options.signal.addEventListener('abort', cancel, { once: true })
   try {
-    await room.connect(browserServerUrl, transport.participantToken)
+    assertSessionActive(options.signal)
+    void room.prepareConnection(browserServerUrl, transport.participantToken).catch(() => undefined)
+    const joining = room.connect(browserServerUrl, transport.participantToken).then(async () => {
+      if (options.signal.aborted) await closeRoom()
+      assertSessionActive(options.signal)
+    })
+    await waitForSession(joining, options.signal)
+    assertSessionActive(options.signal)
   } catch (error) {
+    void closeRoom()
+    assertSessionActive(options.signal)
     throw new ProductMessageError(formatRtcConnectionError(error))
+  } finally {
+    options.signal.removeEventListener('abort', cancel)
   }
 
   options.onRtmStatus({ newState: 'CONNECTED' })

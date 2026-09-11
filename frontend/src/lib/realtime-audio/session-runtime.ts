@@ -5,13 +5,12 @@ import type {
   MutableRefObject,
   SetStateAction,
 } from 'react'
-import { config } from '@/lib/config'
+import { assertSessionActive, SessionConnectionCancelledError, waitForSession, waitForSessionRetry } from './session-lifecycle'
 import {
   buildClientDeviceContext,
   defaultCapabilitiesForMode,
   defaultStrategyForMode,
   type RtcCapabilityId,
-  type RtcExecutionBackend,
   type RtcScene,
   type RtcSessionIntent,
   type RtcSessionMode,
@@ -60,6 +59,7 @@ export interface SessionRuntimeRefs {
   inboundRtmChunksRef: MutableRefObject<Map<string, ChunkAccumulator>>
   latestUserTranscriptRef: MutableRefObject<LatestUserTranscriptSnapshot>
   onDecodedEnvelopeRef: MutableRefObject<((message: RtcMessageEnvelope) => void) | null>
+  connectionAbortRef: MutableRefObject<AbortController | null>
 }
 
 interface CreateDecodedRtcMessageHandlerOptions {
@@ -82,9 +82,7 @@ interface StartRtcRuntimeConnectionOptions {
   surface?: RtcSurface
   scene?: RtcScene
   requestedCapabilities?: RtcCapabilityId[]
-  executionBackend?: RtcExecutionBackend
   connectionNotice: string | null
-  timeoutSeconds?: number
   suppressGreeting?: boolean
   setState: Dispatch<SetStateAction<RtcAgentState>>
   cleanupMicrophoneResources: () => void
@@ -189,12 +187,6 @@ export function createSessionInitAckGate(
       }
     },
   }
-}
-
-function waitForDelay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    globalThis.setTimeout(resolve, ms)
-  })
 }
 
 function resetRuntimeRefs(refs: SessionRuntimeRefs): void {
@@ -458,6 +450,8 @@ export async function disconnectRtcRuntime({
   cleanupMicrophoneResources,
   setState,
 }: DisconnectRtcRuntimeOptions): Promise<void> {
+  refs.connectionAbortRef.current?.abort()
+  refs.connectionAbortRef.current = null
   const client = refs.clientRef.current
   const micTrack = refs.micTrackRef.current
 
@@ -466,11 +460,9 @@ export async function disconnectRtcRuntime({
 
   setState((prev) => applyDisconnectedState(prev))
 
-  try {
-    await disconnectSessionExecution({ clientHandle: client, micTrack })
-  } finally {
-    cleanupMicrophoneResources()
-  }
+  // Release shared microphone refs before awaiting old room teardown.
+  cleanupMicrophoneResources()
+  await disconnectSessionExecution({ clientHandle: client, micTrack })
 }
 
 export async function startRtcRuntimeConnection({
@@ -482,9 +474,7 @@ export async function startRtcRuntimeConnection({
   surface,
   scene,
   requestedCapabilities,
-  executionBackend,
   connectionNotice,
-  timeoutSeconds,
   suppressGreeting,
   setState,
   cleanupMicrophoneResources,
@@ -499,6 +489,11 @@ export async function startRtcRuntimeConnection({
   }
 
   setState((prev) => applyConnectingState(prev))
+  refs.connectionAbortRef.current?.abort()
+  const abortController = new AbortController()
+  refs.connectionAbortRef.current = abortController
+  const signal = abortController.signal
+  const ownsConnection = () => refs.connectionAbortRef.current === abortController
 
   const sessionIntent: RtcSessionIntent = {
     surface: surface ?? (mode === 'training' ? 'training_workspace' : 'communication_workspace'),
@@ -517,32 +512,40 @@ export async function startRtcRuntimeConnection({
     let initAckGate: ReturnType<typeof createSessionInitAckGate> | null = null
 
     try {
-      const activeSession = await startRtcSession(mode, sessionIntent, {
-        executionBackend: executionBackend ?? config.rtc.executionBackend,
+      assertSessionActive(signal)
+      const activeSession = await waitForSession(startRtcSession(mode, sessionIntent, {
         accessToken,
-        timeoutSeconds,
-      })
+        signal,
+      }), signal)
+      assertSessionActive(signal)
       initAckGate = createSessionInitAckGate(activeSession.requestId)
+      // Observe timeout immediately, even while the SDK is still connecting.
+      void initAckGate.waitForReady().catch(() => undefined)
       refs.onDecodedEnvelopeRef.current = initAckGate.handleDecodedMessage
       refs.sessionRef.current = activeSession
 
       // Ignore callbacks from an intentionally released or superseded room.
       const transportEventHandlers = createSessionTransportEventHandlers(
         setState,
-        () => refs.sessionRef.current === activeSession,
+        () => !signal.aborted && refs.sessionRef.current === activeSession,
       )
       const transport = await connectSessionExecution({
         session: activeSession,
-        onRtmMessage: handleRtmMessage,
+        signal,
+        onRtmMessage: (event) => {
+          if (!signal.aborted && refs.sessionRef.current === activeSession) handleRtmMessage(event)
+        },
         ...transportEventHandlers,
       })
       client = transport.clientHandle
       rtmClient = transport.rtmClient
+      assertSessionActive(signal)
 
       refs.clientRef.current = client
       refs.rtmClientRef.current = rtmClient
 
-      await initAckGate.waitForReady()
+      await waitForSession(initAckGate.waitForReady(), signal)
+      assertSessionActive(signal)
 
       if (memoryOwnerId) {
         memoryService.updateCurrentSessionMetadata({
@@ -560,20 +563,22 @@ export async function startRtcRuntimeConnection({
         type: string,
         payload: Record<string, unknown> = {},
       ) => {
-        await publishSessionControlMessage({
+        assertSessionActive(signal)
+        await waitForSession(publishSessionControlMessage({
           rtmClient: rtmClient!,
           session: activeSession,
           type,
           payload,
-        })
+        }), signal)
       }
 
-      await syncRtcSessionProfile({
+      await waitForSession(syncRtcSessionProfile({
         session: activeSession,
         userId,
         suppressGreeting,
         sendControl: bootstrapSendControlMessage,
-      })
+      }), signal)
+      assertSessionActive(signal)
 
       refs.onDecodedEnvelopeRef.current = null
       initAckGate.cleanup()
@@ -581,21 +586,21 @@ export async function startRtcRuntimeConnection({
       return
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error))
-      refs.onDecodedEnvelopeRef.current = null
       initAckGate?.cleanup()
-
-      try {
-        refs.micTrackRef.current?.stop()
-      } catch {
-        // ignore cleanup error
+      // Stale attempts may close their own room, never the next session's microphone/refs.
+      const micTrack = ownsConnection() ? refs.micTrackRef.current : null
+      if (ownsConnection()) {
+        resetRuntimeRefs(refs)
+        cleanupMicrophoneResources()
       }
-
-      await disconnectSessionExecution({
-        clientHandle: client,
-        micTrack: refs.micTrackRef.current,
-      })
-      cleanupMicrophoneResources()
-      resetRuntimeRefs(refs)
+      try {
+        await waitForSession(disconnectSessionExecution({ clientHandle: client, micTrack }), signal)
+      } catch (cleanupError) {
+        if (!(cleanupError instanceof SessionConnectionCancelledError)) {
+          reportFrontendDiagnostic('rtc-cleanup', cleanupError)
+        }
+      }
+      if (signal.aborted || !ownsConnection()) throw new SessionConnectionCancelledError()
 
       if (
         lastError instanceof SessionBootstrapTimeoutError &&
@@ -605,7 +610,7 @@ export async function startRtcRuntimeConnection({
           '[useRtcAgentSession] connection retry started',
         )
         setState((prev) => applyConnectingState(prev))
-        await waitForDelay(SESSION_INIT_ACK_RETRY_DELAY_MS)
+        await waitForSessionRetry(SESSION_INIT_ACK_RETRY_DELAY_MS, signal)
         continue
       }
 
@@ -613,6 +618,8 @@ export async function startRtcRuntimeConnection({
     }
   }
 
+  if (signal.aborted || !ownsConnection()) throw new SessionConnectionCancelledError()
+  refs.connectionAbortRef.current = null
   const connectionError =
     lastError instanceof SessionBootstrapTimeoutError
       ? new Error('助手暂未响应，请重新连接。')

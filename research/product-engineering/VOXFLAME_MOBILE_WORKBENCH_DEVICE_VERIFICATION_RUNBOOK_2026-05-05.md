@@ -265,7 +265,7 @@ cd .. && bash scripts/check_ai_docs.sh
 12. 录音中断网仍能停止并保留本机文件；恢复网络后上传成功，重试不产生重复 manifest。
 13. 验证麦克风拒绝、重新授权、蓝牙/有线输入断开后的安全回退。
 
-复制 `apps/mobile-workbench/device-acceptance.example.json`，分别保存 Android 和 iOS 结果。不得写真实姓名、完整手机号、表达正文或音频地址。每项必须有非空证据；`fail` 不能通过，`conditional` 必须说明问题。
+复制 `apps/mobile-workbench/device-acceptance.example.json`，分别保存 Android 和 iOS 结果。不得写真实姓名、完整手机号、表达正文或音频地址。每项必须有非空证据；`fail`、`pending`、`conditional` 都不能通过；conditional 仍须说明问题并修复复测，不得作为完整验收。
 
 ```bash
 cd apps/mobile-workbench
@@ -274,3 +274,9 @@ npm run validate:device-acceptance -- ios-result.json
 ```
 
 只有两条命令都退出码为 0，才可宣称 App 通过双平台完整真机验收。缺实体设备、Apple 签名或真实账号时必须保持 `pending`。
+
+
+### RTC P0 补充场景（2026-09-11，未验收）
+
+验收模板新增四项：`rtc_cancel_and_quick_reconnect`（在权限/连接等待中取消后重连）、`rtc_account_switch_and_unmount`（两账号切换/离开页面后无旧音频和字幕）、`rtc_audio_route_and_interruption`（蓝牙/有线/扬声器路由及打断）、`rtc_ten_utterances_capture_isolation`（连续十句不串capture）。Android/iOS分别记录真实设备、版本与不含PII的证据，不用本地替身结果填写pass。
+延迟、CER、停播尾音、AEC与噪声条件依 `research/voice-agent/VOICE_AGENT_BENCHMARK_PROTOCOL.md` 及既有 RO-014/FB-008 归档；`npm run check:voice-evidence` 仅离线检查，不执行真实调用。未量测的指标保持缺测。

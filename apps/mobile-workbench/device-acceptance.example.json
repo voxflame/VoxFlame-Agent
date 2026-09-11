@@ -7,18 +7,90 @@
   "tested_at": "2026-08-27T00:00:00+08:00",
   "tester_id": "匿名测试人编号",
   "flows": [
-    { "id": "login", "status": "pending", "evidence": "" },
-    { "id": "signed_out_quick_expression", "status": "pending", "evidence": "" },
-    { "id": "quick_expression_tts_copy_large_text", "status": "pending", "evidence": "" },
-    { "id": "assistant_rtc_voice_and_text", "status": "pending", "evidence": "" },
-    { "id": "training_home_eight_topics_and_modern_reading", "status": "pending", "evidence": "" },
-    { "id": "material_import_select_and_sentence_split", "status": "pending", "evidence": "" },
-    { "id": "record_review_confirm", "status": "pending", "evidence": "" },
-    { "id": "strict_replace_recording", "status": "pending", "evidence": "" },
-    { "id": "discard_local_and_uploaded_recording", "status": "pending", "evidence": "" },
-    { "id": "scene_template_selection", "status": "pending", "evidence": "" },
-    { "id": "custom_hotword_crud", "status": "pending", "evidence": "" },
-    { "id": "profile_material_phrase_crud", "status": "pending", "evidence": "" },
-    { "id": "offline_recording_and_retry", "status": "pending", "evidence": "" }
+    {
+      "id": "login",
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "signed_out_quick_expression",
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "quick_expression_tts_copy_large_text",
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "assistant_rtc_voice_and_text",
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "rtc_cancel_and_quick_reconnect",
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "rtc_account_switch_and_unmount",
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "rtc_audio_route_and_interruption",
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "rtc_ten_utterances_capture_isolation",
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "training_home_eight_topics_and_modern_reading",
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "material_import_select_and_sentence_split",
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "record_review_confirm",
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "strict_replace_recording",
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "discard_local_and_uploaded_recording",
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "scene_template_selection",
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "custom_hotword_crud",
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "profile_material_phrase_crud",
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "offline_recording_and_retry",
+      "status": "pending",
+      "evidence": ""
+    }
   ]
 }

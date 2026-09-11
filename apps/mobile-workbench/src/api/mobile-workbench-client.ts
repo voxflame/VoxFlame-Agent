@@ -1,4 +1,4 @@
-import { parseRtcStartSessionResult } from '../contracts/generated/rtc-session'
+import { parseRtcStartSessionResult, parseRtcStartSessionRequest } from '../contracts/generated/rtc-session'
 import type {
   MobileWorkbenchRtcSessionIntent,
   MobileWorkbenchRtcSessionResponse,
@@ -12,6 +12,7 @@ export interface MobileAuthTokenProvider {
 export interface MobileWorkbenchClientOptions {
   apiBaseUrl: string
   tokenProvider: MobileAuthTokenProvider
+  signal?: AbortSignal
 }
 
 function buildApiUrl(apiBaseUrl: string, path: string): string {
@@ -55,18 +56,28 @@ export async function startMobileRtcSession(
   options: MobileWorkbenchClientOptions,
 ): Promise<MobileWorkbenchRtcSessionResponse> {
   const authHeaders = await getAuthorizationHeader(options.tokenProvider)
+  // Authentication can resolve after an account switch; never dispatch the stale request.
+  if (options.signal?.aborted) throw new Error('mobile_connection_cancelled')
   const response = await fetch(
     buildApiUrl(options.apiBaseUrl, '/rtc/session/start'),
     {
       method: 'POST',
+      signal: options.signal,
       headers: {
         ...authHeaders,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        mode: intent.mode,
-        intent,
-      }),
+      body: JSON.stringify(parseRtcStartSessionRequest({
+        intent: {
+          ...intent,
+          deviceContext: intent.deviceContext ? {
+            secureContext: intent.deviceContext.secureContext,
+            mediaDevicesSupported: intent.deviceContext.mediaDevicesSupported,
+            microphoneStatus: intent.deviceContext.microphoneStatus,
+            networkOnline: intent.deviceContext.networkOnline,
+          } : undefined,
+        },
+      })),
     },
   )
 

@@ -14,6 +14,7 @@ import type {
 } from './session-types'
 
 interface ConnectSessionExecutionOptions {
+  signal: AbortSignal
   session: StartRtcSessionResponse
   onRtmMessage: (event: RtmMessageEvent) => void
   onRtmStatus: (event: RtmStatusEvent) => void

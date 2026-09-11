@@ -259,3 +259,7 @@ sudo docker-compose up -d frontend
 - [主项目 README](../README.md)
 - [后端 README](../backend/README.md)
 - [LiveKit Agent README](../livekit_agent/README.md)
+
+### RTC 第二切片（本地未部署）
+
+连接生命周期由单会话 AbortController 持有：disconnect 先使旧任务失效，HTTP/SDK/ACK/profile/重试均可取消；晚到 room 只清理自身，旧音轨禁止播放。`npm run test:rtc-contract`（仓库根）包含延迟替身竞态回归，不代替真实麦克风/RTC 验收。

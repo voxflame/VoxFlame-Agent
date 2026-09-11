@@ -1,4 +1,6 @@
 name: AI Governance Guard
+permissions:
+  contents: read
 
 on:
   pull_request:
@@ -9,12 +11,25 @@ on:
 jobs:
   validate-ai-rules:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install offline validator dependency
+        run: python -m pip install PyYAML==6.0.2
+
       - name: Validate AI documentation harness
-        run: bash scripts/check_ai_docs.sh
+        run: bash scripts/check_ai_docs.sh --checkout-only
 
       - name: Validate AI governance guardrails
         run: bash scripts/check_ai_governance.sh
+
+      - name: Verify guard failure cases and research loop
+        run: |
+          python3 -m unittest discover -s scripts/tests -p 'test_ai_governance.py' -v
+          python3 scripts/research/validate-research-loop.py

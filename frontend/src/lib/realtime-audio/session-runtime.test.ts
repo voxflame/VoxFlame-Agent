@@ -119,6 +119,7 @@ test('session-runtime clears connecting state when session start fails', async (
     await assert.rejects(
       startRtcRuntimeConnection({
         refs: {
+          connectionAbortRef: { current: null },
           clientRef: { current: null },
           rtmClientRef: { current: null },
           micTrackRef: { current: null },
@@ -408,6 +409,7 @@ test('disconnect releases SDK room and local refs without HTTP even with no logi
   const originalFetch = globalThis.fetch
   globalThis.fetch = async () => { throw new Error('disconnect must not perform HTTP') }
   const refs: import('./session-runtime.ts').SessionRuntimeRefs = {
+    connectionAbortRef: { current: null },
     clientRef: { current: { provider: 'livekit', room: {
       disconnect: async () => { disconnectCalls += 1 },
     } as unknown as import('livekit-client').Room } },
@@ -435,6 +437,7 @@ test('disconnect still cleans microphone resources when SDK teardown rejects', a
   const { disconnectRtcRuntime } = await import('./session-runtime.ts')
   let cleaned = false
   const refs: import('./session-runtime.ts').SessionRuntimeRefs = {
+    connectionAbortRef: { current: null },
     clientRef: { current: { provider: 'livekit', room: {
       disconnect: async () => { throw new Error('SDK disconnect failed') },
     } as unknown as import('livekit-client').Room } },
@@ -450,4 +453,35 @@ test('disconnect still cleans microphone resources when SDK teardown rejects', a
   }), /SDK disconnect failed/)
   assert.equal(cleaned, true)
   assert.equal(refs.clientRef.current, null)
+})
+
+test('disconnect invalidates an in-flight connection so it cannot resurrect the room', async () => {
+  const { startRtcRuntimeConnection, disconnectRtcRuntime } = await import('./session-runtime.ts')
+  const harness = createStateHarness()
+  const pending: { resolve?: () => void } = {}
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => new Promise<Response>((resolve) => {
+    pending.resolve = () => resolve(new Response(JSON.stringify(createSession())))
+  })
+  const refs: import('./session-runtime.ts').SessionRuntimeRefs = {
+    clientRef: { current: null }, rtmClientRef: { current: null }, micTrackRef: { current: null },
+    sessionRef: { current: null }, connectPromiseRef: { current: null }, inboundRtmChunksRef: { current: new Map() },
+    latestUserTranscriptRef: { current: { text: '', clientCaptureId: null } }, onDecodedEnvelopeRef: { current: null },
+    connectionAbortRef: { current: null },
+  }
+  try {
+    const connecting = startRtcRuntimeConnection({
+      refs, userId: 'user-1', accessToken: 'token', memoryOwnerId: null,
+      mode: 'communication', connectionNotice: null, setState: harness.setState,
+      cleanupMicrophoneResources: () => undefined, handleRtmMessage: () => undefined,
+    })
+    void connecting.catch(() => undefined)
+    while (!pending.resolve) await new Promise((resolve) => setTimeout(resolve, 0))
+    await disconnectRtcRuntime({ refs, setState: harness.setState, cleanupMicrophoneResources: () => undefined })
+    pending.resolve?.()
+    await assert.rejects(connecting, /rtc_connection_cancelled/)
+    assert.equal(refs.sessionRef.current, null)
+    assert.equal(refs.clientRef.current, null)
+    assert.equal(harness.getState().isConnected, false)
+  } finally { globalThis.fetch = originalFetch }
 })

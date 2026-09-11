@@ -17,7 +17,6 @@ import {
 } from '@/lib/realtime-audio/session-audio'
 import {
   type RtcCapabilityId,
-  type RtcExecutionBackend,
   type RtcScene,
   type RtcSessionMode,
   type RtcSurface,
@@ -54,9 +53,7 @@ interface UseRtcAgentSessionOptions {
   surface?: RtcSurface
   scene?: RtcScene
   requestedCapabilities?: RtcCapabilityId[]
-  executionBackend?: RtcExecutionBackend
   connectionNotice?: string | null
-  timeoutSeconds?: number
 }
 
 interface TranscriptCacheEntry {
@@ -83,11 +80,9 @@ export function useRtcAgentSession(options: UseRtcAgentSessionOptions = {}) {
     surface,
     scene,
     requestedCapabilities,
-    executionBackend,
     connectionNotice = mode === 'training'
       ? null
       : '已连接，请点击下方麦克风开始说话，也可以先用文字或短语沟通。',
-    timeoutSeconds,
   } = options
   const memoryOwnerId = userId ?? null
 
@@ -104,6 +99,7 @@ export function useRtcAgentSession(options: UseRtcAgentSessionOptions = {}) {
   const micAnalyserRef = useRef<AnalyserNode | null>(null)
   const sessionRef = useRef<StartRtcSessionResponse | null>(null)
   const connectPromiseRef = useRef<Promise<void> | null>(null)
+  const connectionAbortRef = useRef<AbortController | null>(null)
   const latestUserTranscriptRef = useRef<LatestUserTranscriptSnapshot>({
     text: '',
     clientCaptureId: null,
@@ -181,26 +177,9 @@ export function useRtcAgentSession(options: UseRtcAgentSessionOptions = {}) {
 
   const disconnect = useCallback(async () => {
     const latestState = latestStateRef.current
+    const latestTranscript = latestUserTranscriptRef.current.text
 
-    if (memoryOwnerId) {
-      const latestAssistantText = [...latestState.messages]
-        .reverse()
-        .find((message) => message.role === 'assistant')?.content
-      memoryService.updateCurrentSessionMetadata({
-        sessionEndedReason: 'rtc_disconnect',
-        latestUserTranscript: latestUserTranscriptRef.current.text || undefined,
-        latestCorrectionText: latestAssistantText,
-        lastVoiceProfileSource: latestState.lastVoiceProfileSync?.source,
-        clarity_score:
-          typeof latestState.lastVoiceProfileSync?.clarityScore === 'number'
-            ? latestState.lastVoiceProfileSync.clarityScore / 100
-            : undefined,
-        sessionTurnCount: latestState.messages.length,
-      })
-      await memoryService.endSession()
-    }
-
-    await disconnectRtcRuntime({
+    const disconnection = disconnectRtcRuntime({
       refs: {
         clientRef,
         rtmClientRef,
@@ -210,10 +189,37 @@ export function useRtcAgentSession(options: UseRtcAgentSessionOptions = {}) {
         inboundRtmChunksRef,
         latestUserTranscriptRef,
         onDecodedEnvelopeRef,
+        connectionAbortRef,
       },
       cleanupMicrophoneResources,
       setState,
     })
+    // Attach rejection handling before memory persistence can yield.
+    void disconnection.catch(() => undefined)
+
+    if (memoryOwnerId) {
+      const latestAssistantText = [...latestState.messages]
+        .reverse()
+        .find((message) => message.role === 'assistant')?.content
+      memoryService.updateCurrentSessionMetadata({
+        sessionEndedReason: 'rtc_disconnect',
+        latestUserTranscript: latestTranscript || undefined,
+        latestCorrectionText: latestAssistantText,
+        lastVoiceProfileSource: latestState.lastVoiceProfileSync?.source,
+        clarity_score:
+          typeof latestState.lastVoiceProfileSync?.clarityScore === 'number'
+            ? latestState.lastVoiceProfileSync.clarityScore / 100
+            : undefined,
+        sessionTurnCount: latestState.messages.length,
+      })
+      try {
+        await memoryService.endSession()
+      } finally {
+        await disconnection
+      }
+    } else {
+      await disconnection
+    }
   }, [cleanupMicrophoneResources, memoryOwnerId])
 
   const ensureMicrophoneTrack = useCallback(async (): Promise<SessionMicrophoneTrack> => {
@@ -243,14 +249,12 @@ export function useRtcAgentSession(options: UseRtcAgentSessionOptions = {}) {
       throw new Error('请先登录后再使用这个功能。')
     }
 
-    if (clientRef.current && sessionRef.current) {
-      return
-    }
-
     if (connectPromiseRef.current) {
       await connectPromiseRef.current
       return
     }
+
+    if (clientRef.current && sessionRef.current) return
 
     const connectPromise = (async () => {
       await startRtcRuntimeConnection({
@@ -263,6 +267,7 @@ export function useRtcAgentSession(options: UseRtcAgentSessionOptions = {}) {
           inboundRtmChunksRef,
           latestUserTranscriptRef,
           onDecodedEnvelopeRef,
+          connectionAbortRef,
         },
         userId,
         accessToken,
@@ -271,9 +276,7 @@ export function useRtcAgentSession(options: UseRtcAgentSessionOptions = {}) {
         surface,
         scene,
         requestedCapabilities,
-        executionBackend,
         connectionNotice,
-        timeoutSeconds,
         suppressGreeting: connectOptions.suppressGreeting,
         setState,
         cleanupMicrophoneResources,
@@ -297,10 +300,8 @@ export function useRtcAgentSession(options: UseRtcAgentSessionOptions = {}) {
     memoryOwnerId,
     mode,
     requestedCapabilities,
-    executionBackend,
     scene,
     surface,
-    timeoutSeconds,
     accessToken,
     userId,
   ])

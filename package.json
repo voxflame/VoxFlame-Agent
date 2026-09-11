@@ -11,7 +11,13 @@
     "sync:android:latest:background": "bash scripts/start-android-preview-release-background.sh publish-latest",
     "build:ios:preview": "npm --prefix apps/mobile-workbench run build:ios:preview",
     "check:rtc-contract": "node scripts/sync-rtc-contract.mjs --check",
-    "test:rtc-contract": "npm run check:rtc-contract && node --import ./frontend/test/register-runtime-test-hooks.mjs --test --experimental-strip-types scripts/test-rtc-contract.mjs"
+    "test:rtc-contract": "npm run check:rtc-contract && node --import ./frontend/test/register-runtime-test-hooks.mjs --test --experimental-strip-types scripts/test-rtc-contract.mjs && node --import ./frontend/test/register-runtime-test-hooks.mjs --test --experimental-strip-types scripts/test-rtc-lifecycle.mjs",
+    "test:mobile-rtc": "node --import ./frontend/test/register-runtime-test-hooks.mjs --test --experimental-strip-types apps/mobile-workbench/scripts/test-mobile-rtc-lifecycle.mjs && node apps/mobile-workbench/scripts/test-device-acceptance.mjs",
+    "check:governance": "bash scripts/check_ai_governance.sh",
+    "test:governance": "python3 -m unittest discover -s scripts/tests -p 'test_ai_governance.py' -v",
+    "check:harness": "bash scripts/check_ai_docs.sh && bash scripts/check_ai_governance.sh && python3 scripts/research/validate-research-loop.py",
+    "check:harness:checkout": "bash scripts/check_ai_docs.sh --checkout-only && bash scripts/check_ai_governance.sh && python3 scripts/research/validate-research-loop.py",
+    "check:voice-evidence": "python3 scripts/research/voice_benchmark.py --check-registered"
   },
   "devDependencies": {
     "js-sha256": "^0.11.1"

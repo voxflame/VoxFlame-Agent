@@ -77,3 +77,7 @@
 ## RTC 契约入口
 
 - RTC HTTP 响应/intent 唯一可编辑源：`backend/src/contracts/rtc-session.ts`；客户端 generated 文件禁止手改。生成与验证：`node scripts/sync-rtc-contract.mjs`、`npm run test:rtc-contract`。并行开发先冻结接口与文件 owner，详见 `research/AI_ENGINEERING_SYSTEM.md` 的 RTC 契约边界。
+
+## CLI 治理入口
+
+- 完整检查：`npm run check:harness`；普通 checkout：`npm run check:harness:checkout`（不验证私有上游正文）；负例回归：`npm run test:governance`、`npm run test:mobile-rtc`。边界以 `research/AI_ENGINEERING_SYSTEM.md` 为准，替身或 checkout 检查不得代替真机/发布验收。

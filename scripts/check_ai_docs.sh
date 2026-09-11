@@ -3,6 +3,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ $# -gt 1 || ( $# -eq 1 && "$1" != '--checkout-only' ) ]]; then
+  echo 'Usage: check_ai_docs.sh [--checkout-only]' >&2
+  exit 2
+fi
 
 required_files=(
   "AGENTS.md"
@@ -64,6 +68,6 @@ assert_contains "AGENTS.md" "HARNESS_ENTRY_CONTRACT.md"
 assert_contains "AGENTS.md" "HARNESS_RULES.yaml"
 assert_contains "research/AI_ENGINEERING_SYSTEM.md" "普通话录音语料"
 
-bash "${ROOT_DIR}/scripts/check_research_system.sh"
+bash "${ROOT_DIR}/scripts/check_research_system.sh" "$@"
 
 echo "AI docs harness check passed."

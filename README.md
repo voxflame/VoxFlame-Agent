@@ -277,3 +277,20 @@ TEN 已退出本项目主链，不再作为接入选项。工具调度沿现役 
 ## License
 
 本项目协议保持不变，详见 [LICENSE](LICENSE)。
+
+### RTC 第二切片（本地未部署）
+
+start 请求只接受严格 `{ intent }`；账号、房间与 JWT TTL 由服务端决定，不接受客户端覆盖。Web 连接取消覆盖 HTTP/SDK/ACK/profile/重试，旧会话不得覆盖新会话状态或播放晚到音轨；Mobile 取消待完成 HTTP 并在重连时重新获取凭证。原生连接生命周期已补隔离回归；真实设备仍待验收。
+
+
+### 本地 P0 / CLI 治理检查
+
+```bash
+npm run test:mobile-rtc      # 原生生命周期16项 + 真机验收门6项替身测试（Node 24+）
+npm run test:governance      # 废弃路径/缺失CLI文件负例
+npm run check:harness       # 完整检查；需要初始化固定研究子模块、Python PyYAML
+npm run check:harness:checkout # 无私有子模块内容的PR检查；不是完整上游验收
+npm run check:voice-evidence # 既有语音证据检查，不调用provider
+```
+
+Native AudioSession 通过共享租约串行启停；取消、账号切换和卸载会使旧连接失效。真机模板已加入取消重连、账号切换、音频路由/打断、连续十句；conditional 不再计为通过。细节见[RTC验证记录](research/product-engineering/RTC_CONTRACT_CLEANUP_2026-09-11.md)。本地未部署，远端CI和真实设备仍待验收。

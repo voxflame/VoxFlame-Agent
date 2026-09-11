@@ -432,8 +432,8 @@ compat 层必须同时具备：
 当前仓库中的最小机械守卫已经落到：
 
 - `scripts/check_ai_docs.sh`：校验入口规则和深文档没有漂移
-- `scripts/check_ai_governance.sh`：阻止 compat 路径和旧页面入口重新被新代码引用
-- `.github/workflows/ai-doc-guard.yml`：在 CI 中同时执行文档 harness 与治理守卫
+- `scripts/check_ai_governance.sh`：离线检查运行时代码的 compat/deprecated 依赖、废弃 RTC HTTP/旧页面入口，以及 package scripts/工作流中直写的 CLI 文件路径；不执行被扫描命令，不替代 AST、动态路径或权限审查
+- `.github/workflows/ai-doc-guard.yml`：执行 checkout-only 文档 harness、治理守卫/负例测试与研究闭环；不向 PR/fork 提供私有子模块凭证。checkout-only 校验固定 gitlink，明确不验证上游实验正文；默认完整检查仍要求本地子模块初始化
 - `scripts/docker-rebuild-core-fast.sh`：生产 Docker 部署 harness；环境变量更新使用 `env-backend` 只重建 backend，单服务代码改动使用 `backend` / `frontend`，只有核心链路共同变化才使用默认 `core`，不先执行 `docker compose down`
 - `scripts/docker_disk_maintenance.sh`：Docker 磁盘维护 harness；`status` 先盘点，`prune-safe` 清理全部 dangling images、7 天前停止容器、未使用网络和全部未使用 Build Cache；Build Cache/停止容器/未使用网络可重建，运行容器、卷、`latest` 和 `pre-*` 回滚镜像保留。持久化卷不自动删除，只盘点并告警
 - `voxflame-docker-disk-maintenance.timer`：每日自动检查根盘；达到 `VOXFLAME_DOCKER_AUTO_PRUNE_ROOT_THRESHOLD_PERCENT`（默认 60%）才调用 `auto -> prune-safe`，不清理运行容器、卷、`latest` 或 `pre-*` 回滚镜像
@@ -625,3 +625,13 @@ bash scripts/check_ai_docs.sh
 - Anthropic, Claude Code common workflows: https://code.claude.com/docs/en/tutorials
 - GitHub, Repository custom instructions for Copilot coding agent: https://docs.github.com/en/copilot/how-tos/agents/copilot-coding-agent/customizing-the-development-environment-for-copilot-coding-agent
 - GitHub, MCP and Copilot coding agent best practices: https://docs.github.com/en/copilot/concepts/coding-agent/mcp-and-coding-agent
+
+
+### 本地 CLI 与原生 RTC 验证入口
+
+- `npm run check:harness`：完整文档/研究检查、治理守卫和研究闭环；需要固定版本的研究子模块及 Python PyYAML。
+- `npm run check:harness:checkout`：供普通 checkout/PR 使用，只验证固定 gitlink，不可当作上游内容或发布验收。
+- `npm run test:governance`：用隔离负例验证旧依赖/入口与缺脚本确实失败；守卫文件不存在不能用空成功脚本绕过。
+- `npm run test:mobile-rtc`：Node 24+ 执行原生 hook 逻辑替身回归与真机证据门负例，不依赖 Next.js 运行时，不证明 React 调度、OS/WebRTC 或 AEC。
+- `npm run check:voice-evidence`：沿已有语音协议检查已登记证据，不发起 provider/真实账号调用，不新增平行评测体系。
+- Native AudioSession 是进程级资源，由共享租约串行启停；Room/HTTP 取消与账号 owner 分离。释放旧 lease 不得停新 lease；原生调用挂起时不以超时假装已回收，保留真实设备验收。

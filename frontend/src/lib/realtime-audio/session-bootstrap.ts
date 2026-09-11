@@ -1,8 +1,7 @@
-import { parseRtcStartSessionResult } from './generated/rtc-session'
+import { parseRtcStartSessionResult, parseRtcStartSessionRequest } from './generated/rtc-session'
 import { config } from '@/lib/config'
 import { getAccessToken } from '@/lib/supabase/client'
 import type {
-  RtcExecutionBackend,
   RtcSessionIntent,
   RtcSessionMode,
 } from './session-contract'
@@ -27,9 +26,8 @@ export async function buildAuthorizedJsonHeaders(
 }
 
 interface StartRtcSessionOptions {
-  executionBackend?: RtcExecutionBackend
   accessToken?: string
-  timeoutSeconds?: number
+  signal?: AbortSignal
 }
 
 export async function startRtcSession(
@@ -37,20 +35,13 @@ export async function startRtcSession(
   intent: RtcSessionIntent,
   options: StartRtcSessionOptions = {},
 ): Promise<StartRtcSessionResponse> {
+  if (mode !== intent.mode) throw new Error('rtc_session_invalid_request')
   const headers = await buildAuthorizedJsonHeaders(options.accessToken)
   const response = await fetch(buildApiUrl('/rtc/session/start'), {
     method: 'POST',
+    signal: options.signal,
     headers,
-    body: JSON.stringify({
-      mode,
-      intent,
-      ...(options.executionBackend
-        ? { executionBackend: options.executionBackend }
-        : {}),
-      ...(typeof options.timeoutSeconds === 'number' && options.timeoutSeconds > 0
-        ? { timeoutSeconds: options.timeoutSeconds }
-        : {}),
-    }),
+    body: JSON.stringify(parseRtcStartSessionRequest({ intent })),
   })
 
   if (!response.ok) {

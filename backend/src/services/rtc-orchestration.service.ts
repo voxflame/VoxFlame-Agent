@@ -149,7 +149,7 @@ export class RtcOrchestrationService {
     input: StartRtcSessionInput,
   ): Promise<RtcStartSessionResult> {
     const intent = resolveSessionIntent(input)
-    const readiness = buildSessionReadiness(intent)
+    const readiness = buildSessionReadiness(intent, input.intent?.sessionStrategy)
 
     if (readiness.blockers.length > 0) {
       throw new RtcOrchestrationError(readiness.blockers[0], 400)
@@ -215,8 +215,8 @@ export class RtcOrchestrationService {
   }
 
   private parseTimeout(value: string | undefined, fallback: number): number {
-    const parsed = Number.parseInt(value || '', 10)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+    const parsed = Number(value)
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback
   }
 
   private assertLiveKitCanStart(): ReturnType<LiveKitConfigService['getStatus']> {
@@ -536,30 +536,21 @@ function resolveRequestedCapabilities(
   mode: RtcSessionMode,
   requestedCapabilities: RtcCapabilityId[] | undefined,
 ): RtcCapabilityId[] {
-  if (!requestedCapabilities || requestedCapabilities.length === 0) {
+  if (requestedCapabilities === undefined) {
     return [...MODE_CAPABILITY_MATRIX[mode]]
   }
 
-  const deduped = new Set<RtcCapabilityId>()
-  for (const capability of requestedCapabilities) {
-    if (MODE_CAPABILITY_MATRIX[mode].includes(capability)) {
-      deduped.add(capability)
-    }
-  }
-
-  return [...deduped]
+  return [...new Set(requestedCapabilities)]
 }
 
 function buildSessionReadiness(
   intent: RtcResolvedSessionIntent,
+  strategy?: RtcSessionStrategy,
 ): RtcSessionReadiness {
   const blockers: string[] = []
   const warnings: string[] = []
   const microphoneRequired = intent.mode === 'training'
-  const requestedStrategy =
-    intent.mode === 'quick_talk'
-      ? 'light_voice'
-      : 'heavy_realtime'
+  const requestedStrategy = strategy ?? (intent.mode === 'quick_talk' ? 'light_voice' : 'heavy_realtime')
   const resolvedStrategy = intent.sessionStrategy
   const recommendedStrategy = requestedStrategy
 

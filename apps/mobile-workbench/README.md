@@ -284,3 +284,13 @@ Huawei / HarmonyOS has two tracks:
 2. HarmonyOS NEXT native app: this React Native Android APK is not enough; a separate HarmonyOS-native implementation or port is required.
 
 Before store submission, prepare privacy policy, user agreement, account deletion/data deletion instructions, microphone permission explanation, screenshots, app icon, app description, ICP/website information if required, and medical wording that says communication/training assistance only.
+
+### RTC 第二切片（本地未部署）
+
+Pending start HTTP is aborted on clear; stale responses cannot restore credentials. Reconnect fetches fresh credentials instead of reusing an old session. Native lifecycle logic now has isolated regression coverage; OS AudioSession and real-device cancellation remain acceptance gates. Bundle exports do not prove audio behavior.
+
+
+### RTC P0 验证与治理
+
+在仓库根运行 `npm run test:mobile-rtc`：执行生产hook代码的权限/audio/join/mic取消、旧事件/控制消息、账号切换、卸载和共享AudioSession租约回归；hook host/SDK/native均为替身，不是React或设备验收。App切换沟通/训练会取消另一路，HTTP到Room交接检查当前凭证归属。
+真机模板新增四项RTC P0场景；`npm run validate:device-acceptance -- <result.json>` 对缺项、缺证据、pending/fail/conditional 返回非零。只有真实证据才能填写pass。完整指标继续使用既有语音Benchmark协议，不将租约回归换算为延迟/AEC效果。

@@ -20,13 +20,14 @@ async function run(): Promise<void> {
   process.env.RTC_ENABLE_LIVEKIT_EXPERIMENT = '1'
   // Stub the auth dependency, not the controller: this tests routing, not Supabase Auth.
   const auth = require('../middlewares/auth.middleware') as typeof import('../middlewares/auth.middleware')
+  let skipIdentity = false
   const originalAuth = auth.authMiddleware
   auth.authMiddleware = async (req, res, next) => {
     if (req.headers.authorization !== 'Bearer test-auth') {
       res.status(401).json({ error: 'Unauthorized' })
       return
     }
-    req.user = { id: 'trusted-user', email: '', userMetadata: {} }
+    if (!skipIdentity) req.user = { id: 'trusted-user', email: '', userMetadata: {} }
     next()
   }
   const router = (await import('./rtc.controller')).default
@@ -47,21 +48,52 @@ async function run(): Promise<void> {
     }
     assert.equal((await fetch(`${base}/graphs`, { headers: { Authorization: 'Bearer test-auth' } })).status, 404)
     assert.equal((await fetch(`${base}/health`)).status, 200)
-    const response = await post('/session/start', {
-      mode: 'communication', intent: { surface: 'mobile_workbench', requestedCapabilities: ['transport_send_control'] },
-      authenticatedUserId: 'attacker', asrAccountId: 'attacker-model',
-    })
+    const request = { intent: {
+      surface: 'mobile_workbench', mode: 'communication', sessionStrategy: 'heavy_realtime',
+      requestedCapabilities: ['transport_send_control'],
+    } }
+    skipIdentity = true
+    assert.equal((await post('/session/start', request)).status, 401)
+    skipIdentity = false
+    for (const field of ['channelName', 'userUid', 'timeoutSeconds', 'requestId', 'authenticatedUserId',
+      'asrAccountId', 'executionBackend', 'execution_backend', 'mode', 'graphName', 'properties']) {
+      const rejected = await post('/session/start', { ...request, [field]: 'untrusted' })
+      assert.equal(rejected.status, 400, field)
+    }
+    for (const body of [{}, { intent: {} }, { intent: { ...request.intent, mode: 'other' } },
+      { intent: { ...request.intent, scene: null } },
+      { intent: { ...request.intent, requestedCapabilities: ['admin'] } },
+      { intent: { ...request.intent, deviceContext: { networkOnline: 'false' } } }]) {
+      assert.equal((await post('/session/start', body)).status, 400)
+    }
+    const response = await post('/session/start', request)
     assert.equal(response.status, 200)
     const session = parseRtcStartSessionResult(await response.json())
     assert.equal(session.intent.scene, null)
     assert.equal(session.intent.surface, 'mobile_workbench')
     const grants = await new TokenVerifier('test-key', 'test-secret').verify(session.transport.participantToken)
     assert.equal(grants.video?.room, session.transport.roomName)
+    assert.ok(Math.abs((grants.exp ?? 0) - Math.floor(Date.now() / 1000) - session.joinTokenTtlSeconds) <= 2)
+    const second = parseRtcStartSessionResult(await (await post('/session/start', request)).json())
+    assert.notEqual(second.transport.roomName, session.transport.roomName)
+    assert.notEqual(second.transport.participantIdentity, session.transport.participantIdentity)
+    const empty = parseRtcStartSessionResult(await (await post('/session/start', {
+      intent: { ...request.intent, requestedCapabilities: [] },
+    })).json())
+    assert.deepEqual(empty.intent.grantedCapabilities, [])
+    const denied = parseRtcStartSessionResult(await (await post('/session/start', {
+      intent: { ...request.intent, requestedCapabilities: ['voice_profile_update'], sessionStrategy: 'light_voice' },
+    })).json())
+    assert.deepEqual(denied.intent.requestedCapabilities, ['voice_profile_update'])
+    assert.deepEqual(denied.intent.grantedCapabilities, [])
+    assert.equal(denied.readiness.requestedStrategy, 'light_voice')
+    assert.equal(denied.readiness.resolvedStrategy, 'heavy_realtime')
+
     assert.equal(grants.video?.roomAdmin, undefined)
     assert.equal(grants.video?.roomList, undefined)
     assert.equal(session.transport.participantMetadata.includes('attacker'), false)
     assert.equal(session.transport.participantMetadata.includes('trusted-user'), false)
-    const blocked = await post('/session/start', { intent: { mode: 'training', deviceContext: { networkOnline: false } } })
+    const blocked = await post('/session/start', { intent: { ...request.intent, mode: 'training', deviceContext: { networkOnline: false } } })
     assert.equal(blocked.status, 400)
     console.log('rtc.controller HTTP tests passed (mock auth, local signing, removed routes, readiness)')
   } finally {

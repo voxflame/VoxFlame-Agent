@@ -143,3 +143,7 @@ QDRANT_URL=http://qdrant:6333  # Phase 3
 - [LiveKit Agent README](../livekit_agent/README.md)
 - [Full-stack 架构学习指南](../research/product-engineering/VOXFLAME_FULLSTACK_ARCHITECTURE_LEARNING_GUIDE_2026-04-29.md)
 - [Voice agent 上下文与记忆研究综合](../research/voice-agent/CONTEXT_AND_MEMORY_RESEARCH_SYNTHESIS_2026-08-14.md)
+
+### RTC 第二切片（本地未部署）
+
+`POST /api/rtc/session/start` 只接受 `{ intent }`，未知/旧字段直接400；账号身份来自认证，房间与凭证TTL由服务端生成。空 requestedCapabilities 不自动扩大为默认能力。开发鉴权旁路缺少用户身份时也返回401。

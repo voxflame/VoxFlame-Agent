@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -18,6 +19,9 @@ import {
 
 import type { MobileWorkbenchRtcSessionResponse } from '../contracts/workbench-contracts'
 import { toMobileProductMessage } from '../ui/product-message'
+import { createNativeAudioLeases, assertMobileConnectionActive, waitForMobileConnection } from './native-audio-lifecycle'
+
+const nativeAudioLeases = createNativeAudioLeases(AudioSession)
 
 export type MobileLiveKitConnectionStatus =
   | 'idle'
@@ -100,8 +104,11 @@ async function requestBluetoothAudioPermission(): Promise<void> {
   }
 }
 
-export function useLiveKitRoomConnection(): MobileLiveKitRoomConnectionState {
+export function useLiveKitRoomConnection(ownerId: string | null): MobileLiveKitRoomConnectionState {
+  const ownerRef = useRef<string | null>(ownerId)
   const roomRef = useRef<Room | null>(null)
+  const connectionRef = useRef<AbortController | null>(null)
+  const audioLeaseRef = useRef<ReturnType<typeof nativeAudioLeases.acquire> | null>(null)
   const transcriptCacheRef = useRef<Map<string, string>>(new Map())
   const [status, setStatus] = useState<MobileLiveKitConnectionStatus>('idle')
   const [roomName, setRoomName] = useState<string | null>(null)
@@ -115,43 +122,52 @@ export function useLiveKitRoomConnection(): MobileLiveKitRoomConnectionState {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const disconnect = useCallback(async (): Promise<void> => {
+    connectionRef.current?.abort()
+    connectionRef.current = null
     const room = roomRef.current
-    setStatus((current) => (
-      current === 'idle' || current === 'disconnected'
-        ? current
-        : 'disconnecting'
-    ))
-
-    try {
-      if (room) {
-        try {
-          await room.localParticipant.setMicrophoneEnabled(false)
-        } catch {
-          // Best effort cleanup; disconnect still needs to run.
-        }
-        await room.disconnect()
-      }
-    } finally {
-      roomRef.current = null
-      setMicrophoneEnabled(false)
-      try {
-        await AudioSession.stopAudioSession()
-      } catch {
-        // Native audio cleanup must not leave UI stuck in disconnecting.
-      }
-      setAudioSessionStarted(false)
-      setRoomName(null)
-      setParticipantIdentity(null)
-      setCurrentUserTranscript('')
-      setLatestUserTranscriptCaptureId(null)
-      transcriptCacheRef.current.clear()
-      setStatus('disconnected')
+    const lease = audioLeaseRef.current
+    roomRef.current = null
+    audioLeaseRef.current = null
+    setMicrophoneEnabled(false)
+    setAudioSessionStarted(false)
+    setRoomName(null)
+    setParticipantIdentity(null)
+    setCurrentUserTranscript('')
+    setLatestUserTranscript('')
+    setLatestAssistantTranscript('')
+    setLatestUserTranscriptCaptureId(null)
+    transcriptCacheRef.current.clear()
+    setErrorMessage(null)
+    setStatus('disconnected')
+    // Never wait for disabling the old microphone before starting room teardown.
+    const results = await Promise.allSettled([
+      room?.localParticipant.setMicrophoneEnabled(false),
+      room?.disconnect(),
+      lease?.release(),
+    ])
+    if (results.some(result => result.status === 'rejected')) {
+      console.warn('[mobile-rtc] resource teardown failed')
     }
   }, [])
+
+  useLayoutEffect(() => {
+    ownerRef.current = ownerId
+    void disconnect()
+    return () => {
+      ownerRef.current = null
+      void disconnect()
+    }
+  }, [ownerId, disconnect])
 
   const connect = useCallback(async (
     session: MobileWorkbenchRtcSessionResponse,
   ): Promise<boolean> => {
+    if (!ownerId || ownerRef.current !== ownerId) return false
+    void disconnect()
+    const controller = new AbortController()
+    connectionRef.current = controller
+    const signal = controller.signal
+    const active = () => !signal.aborted && connectionRef.current === controller
     setErrorMessage(null)
 
     if (!session.readiness.canStart) {
@@ -160,7 +176,6 @@ export function useLiveKitRoomConnection(): MobileLiveKitRoomConnectionState {
       return false
     }
 
-    await disconnect()
     setStatus('connecting')
     setRoomName(session.transport.roomName)
     setParticipantIdentity(session.transport.participantIdentity)
@@ -173,17 +188,19 @@ export function useLiveKitRoomConnection(): MobileLiveKitRoomConnectionState {
 
     room
       .on(RoomEvent.ConnectionStateChanged, (nextState) => {
+        if (!active()) return
         setStatus(mapConnectionState(nextState))
       })
       .on(RoomEvent.Reconnecting, () => {
+        if (!active()) return
         setStatus('reconnecting')
       })
       .on(RoomEvent.Reconnected, () => {
+        if (!active()) return
         setStatus('connected')
       })
       .on(RoomEvent.Disconnected, () => {
-        setMicrophoneEnabled(false)
-        setStatus('disconnected')
+        if (active()) void disconnect()
       })
       .on(
         RoomEvent.DataReceived,
@@ -192,6 +209,7 @@ export function useLiveKitRoomConnection(): MobileLiveKitRoomConnectionState {
           _participant,
           _kind?: DataPacket_Kind,
         ) => {
+          if (!active()) return
           const envelope = decodeRtcEnvelope(payload)
           if (!envelope) {
             return
@@ -228,40 +246,41 @@ export function useLiveKitRoomConnection(): MobileLiveKitRoomConnectionState {
       // Android 12+ protects Bluetooth headset routing behind Nearby devices.
       // Denial does not block communication; the phone mic/speaker still works.
       try {
-        await requestBluetoothAudioPermission()
+        await waitForMobileConnection(requestBluetoothAudioPermission(), signal)
       } catch {
         // AudioSession can continue with the built-in audio route.
       }
-      await AudioSession.startAudioSession()
+      assertMobileConnectionActive(signal)
+      const lease = nativeAudioLeases.acquire()
+      audioLeaseRef.current = lease
+      await waitForMobileConnection(lease.ready, signal)
+      assertMobileConnectionActive(signal)
       setAudioSessionStarted(true)
-      await room.connect(
-        session.transport.serverUrl,
-        session.transport.participantToken,
-      )
+      const joining = room.connect(session.transport.serverUrl, session.transport.participantToken)
+        .then(async () => {
+          if (!active()) await room.disconnect()
+          assertMobileConnectionActive(signal)
+        })
+      await waitForMobileConnection(joining, signal)
+      assertMobileConnectionActive(signal)
       const enableMicrophone = session.intent.mode !== 'training'
-      await room.localParticipant.setMicrophoneEnabled(enableMicrophone)
+      const enabling = room.localParticipant.setMicrophoneEnabled(enableMicrophone).then(async () => {
+        if (!active()) await room.disconnect()
+        assertMobileConnectionActive(signal)
+      })
+      await waitForMobileConnection(enabling, signal)
+      assertMobileConnectionActive(signal)
       setMicrophoneEnabled(enableMicrophone)
       setStatus('connected')
-      return true
+      return roomRef.current === room
     } catch (error) {
+      if (!active()) return false
+      void disconnect()
       setErrorMessage(toMobileProductMessage(error, 'realtime'))
       setStatus('error')
-      try {
-        await room.disconnect()
-      } catch {
-        // The initial connect path already failed; cleanup is best effort.
-      }
-      roomRef.current = null
-      setMicrophoneEnabled(false)
-      try {
-        await AudioSession.stopAudioSession()
-      } catch {
-        // Keep the original connection error visible.
-      }
-      setAudioSessionStarted(false)
       return false
     }
-  }, [disconnect])
+  }, [disconnect, ownerId])
 
   const sendText = useCallback(async (text: string): Promise<boolean> => {
     const room = roomRef.current
@@ -287,9 +306,11 @@ export function useLiveKitRoomConnection(): MobileLiveKitRoomConnectionState {
           topic: room.name,
         },
       )
+      if (roomRef.current !== room) return false
       setLatestUserTranscript(normalized)
-      return true
+      return roomRef.current === room
     } catch (error) {
+      if (roomRef.current !== room) return false
       setErrorMessage(toMobileProductMessage(error, 'realtime'))
       return false
     }
@@ -298,8 +319,10 @@ export function useLiveKitRoomConnection(): MobileLiveKitRoomConnectionState {
   const publishControl = useCallback(async (
     type: string,
     payload: Record<string, unknown>,
+    expectedRoom: Room | null = roomRef.current,
   ): Promise<boolean> => {
     const room = roomRef.current
+    if (room !== expectedRoom) return false
     if (!room || status !== 'connected') {
       return false
     }
@@ -309,8 +332,9 @@ export function useLiveKitRoomConnection(): MobileLiveKitRoomConnectionState {
         new TextEncoder().encode(JSON.stringify({ type, ...payload })),
         { reliable: true, topic: room.name },
       )
-      return true
+      return roomRef.current === room
     } catch (error) {
+      if (roomRef.current !== room) return false
       setErrorMessage(toMobileProductMessage(error, 'realtime'))
       return false
     }
@@ -333,16 +357,21 @@ export function useLiveKitRoomConnection(): MobileLiveKitRoomConnectionState {
       short_utterance_expected: shortUtteranceExpected,
       client_capture_id: captureId,
       detected_at: Date.now(),
-    })
-    if (!announced) {
+    }, room)
+    if (!announced || roomRef.current !== room) {
       return false
     }
 
     try {
       await room.localParticipant.setMicrophoneEnabled(true)
+      if (roomRef.current !== room) {
+        void room.disconnect().catch(() => undefined)
+        return false
+      }
       setMicrophoneEnabled(true)
-      return true
+      return roomRef.current === room
     } catch (error) {
+      if (roomRef.current !== room) return false
       setErrorMessage(toMobileProductMessage(error, 'realtime'))
       return false
     }
@@ -358,8 +387,10 @@ export function useLiveKitRoomConnection(): MobileLiveKitRoomConnectionState {
 
     try {
       await room.localParticipant.setMicrophoneEnabled(false)
+      if (roomRef.current !== room) return false
       setMicrophoneEnabled(false)
     } catch (error) {
+      if (roomRef.current !== room) return false
       setErrorMessage(toMobileProductMessage(error, 'realtime'))
       return false
     }
@@ -369,11 +400,11 @@ export function useLiveKitRoomConnection(): MobileLiveKitRoomConnectionState {
       auto_finalize: true,
       client_capture_id: captureId,
       detected_at: Date.now(),
-    })
+    }, room)
     const committed = await publishControl('end_audio', {
       reason: 'manual_stop',
       client_capture_id: captureId,
-    })
+    }, room)
     return stopped && committed
   }, [publishControl, status])
 
@@ -381,8 +412,9 @@ export function useLiveKitRoomConnection(): MobileLiveKitRoomConnectionState {
     captureId: string,
     timeoutMs = 8_500,
   ): Promise<string> => {
+    const room = roomRef.current
     const deadline = Date.now() + timeoutMs
-    while (Date.now() < deadline) {
+    while (room && roomRef.current === room && Date.now() < deadline) {
       const transcript = transcriptCacheRef.current.get(captureId)?.trim()
       if (transcript) {
         return transcript
@@ -391,7 +423,7 @@ export function useLiveKitRoomConnection(): MobileLiveKitRoomConnectionState {
         setTimeout(resolve, 140)
       })
     }
-    return transcriptCacheRef.current.get(captureId)?.trim() ?? ''
+    return roomRef.current === room ? transcriptCacheRef.current.get(captureId)?.trim() ?? '' : ''
   }, [])
 
   const canConnect = status !== 'connecting' && status !== 'disconnecting'

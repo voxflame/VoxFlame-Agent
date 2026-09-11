@@ -5,6 +5,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UPSTREAM_DIR="${ROOT_DIR}/references/clear-vox-model"
 EXPECTED_UPSTREAM_COMMIT="0997c0dc941ad0cda39e3ab92d5efd783fbfc38f"
+if [[ $# -gt 1 || ( $# -eq 1 && "$1" != '--checkout-only' ) ]]; then
+  echo 'Usage: check_research_system.sh [--checkout-only]' >&2
+  exit 2
+fi
+CHECKOUT_ONLY="${1:-}"
 
 required_files=(
   ".gitmodules"
@@ -58,11 +63,20 @@ if ! grep -qF 'git@github.com:voxflame/CLEAR-VOX-MODEL.git' "${ROOT_DIR}/.gitmod
   exit 1
 fi
 
-if [[ ! -e "${UPSTREAM_DIR}/.git" ]]; then
-  echo "CLEAR-VOX-MODEL is not initialized; run git submodule update --init --recursive" >&2
+# PRs (including forks) can validate the pinned gitlink without private credentials.
+# This explicit mode does not claim to verify upstream experiment contents.
+gitlink="$(git -C "${ROOT_DIR}" ls-files --stage -- references/clear-vox-model)"
+if [[ "${gitlink}" != "160000 ${EXPECTED_UPSTREAM_COMMIT} 0"$'\t'"references/clear-vox-model" ]]; then
+  echo 'Unexpected or missing CLEAR-VOX-MODEL gitlink' >&2
   exit 1
 fi
 
+if [[ "${CHECKOUT_ONLY}" == '--checkout-only' ]]; then
+  echo 'CHECKOUT-ONLY: pinned gitlink verified; private upstream contents NOT verified.'
+elif [[ ! -e "${UPSTREAM_DIR}/.git" ]]; then
+  echo "CLEAR-VOX-MODEL is not initialized; run git submodule update --init --recursive" >&2
+  exit 1
+else
 actual_commit="$(git -C "${UPSTREAM_DIR}" rev-parse HEAD)"
 if [[ "${actual_commit}" != "${EXPECTED_UPSTREAM_COMMIT}" ]]; then
   echo "Unexpected CLEAR-VOX-MODEL commit: ${actual_commit}" >&2
@@ -73,6 +87,7 @@ upstream_exp_index="${UPSTREAM_DIR}/modules/dsr/R&D/Qwen3-ASR/EXP/EXP-INDEX.md"
 if [[ ! -f "${upstream_exp_index}" ]]; then
   echo "Missing upstream Qwen3-ASR experiment index" >&2
   exit 1
+fi
 fi
 
 for status in adopt validate hold reject; do
@@ -87,4 +102,4 @@ if [[ -e "${ROOT_DIR}/docs" ]]; then
   exit 1
 fi
 
-echo "Research system check passed at CLEAR-VOX-MODEL ${actual_commit}."
+echo "Research system check passed (${CHECKOUT_ONLY:-full}; pinned CLEAR-VOX-MODEL ${EXPECTED_UPSTREAM_COMMIT})."

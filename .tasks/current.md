@@ -20,6 +20,7 @@
 
 ## P0：长期录音计时发布
 
+- [ ] **OSS 切换前先修复计时发布契约**：2026-09-11 14:40 只读确认运行中 Backend 已要求 `durable_v1` 与计时账本，但两张表 REST 查询为 `404/PGRST205`，旧 RPC 抽查有历史正时长却无新版标记；进度/上传确认会被拒绝。先核验实际 schema、缓存和迁移历史，备份各账号时长基线并人工确认处置，再做定向修复与真实账号验收。只换 OSS/key 不重建 Supabase 用户、不删除 `voice_contributions`；旧音频迁移与计时保留分开验收。本轮仅诊断，无生产写入。同期 livekit-agent 重启循环需另查原因，不推断由密钥导致。
 - [x] [独立计时账本与累计字段](../research/product-engineering/DURABLE_RECORDING_DURATION_2026-09-08.md)本地实现与隔离验证；Web 待上传不混入云端累计，上传失败保留重试，跨浏览器刷新和错误态已 mock smoke。
 - [ ] 先审核历史去重基线/缺 ID/非法值/无 receipt 的差异并备份，核对 migration history；人工确认后仅应用 `20260908010000`，再发布 Backend/Web。不得恢复臆测 19 小时，禁止广域 db push/repair。
 - [ ] 用同一测试账号完成真实双设备与 Native 上传/重试/新录音验收；普通清理不扣累计、账号注销清除账本仅在隔离或专用测试账号验证。现有原生页面暂无累计卡，未声称已完成原生展示。
@@ -68,7 +69,9 @@
 - [x] 精简 start 响应：凭证只在 `transport` 返回，`joinTokenTtlSeconds` 明确表示 JWT TTL，不再返回 RTM/Agora 兼容别名、botUid/graphName 等空字段。
 - [x] 加入客户端响应运行时校验、跨端契约漂移检查和回归测试；未部署。新客户端要求匹配 Backend；旧 App 的空转调用将失败，发布必须协调切换与旧版阻断，不能先单独升级任一端。
 - 验证：Backend构建/本机HTTP回归、跨端10项、Web153项/类型/生产构建、Agent12项、Mobile类型/守卫/训练/双平台export通过；隔离Playwright确认31秒无HTTP保活、SDK断开/重复连接/无效响应，修复旧room回调覆盖状态。见[执行记录](../research/product-engineering/RTC_CONTRACT_CLEANUP_2026-09-11.md)。
-- [ ] 继续补 RTC data-message schema、全量请求边界、连接进行中取消/重连凭证过期、跨实例事件和真实 Web/Mobile/设备 smoke；本切片不宣称全项目接口已冻结。
+- [x] 第二切片：严格start请求、Web连接中取消/晚到隔离、旧音轨抑制、Mobile HTTP取消/重取凭证；跨端13项+生命周期8项、Web154项/类型/构建、Backend、Mobile双平台export及隔离Playwright通过。详见同一执行记录；本地未部署。
+- [x] 第三切片：Native取消/账号owner/卸载与AudioSession共享租约，16项隔离逻辑回归、6项真机证据门测试和双平台export通过；新增四项P0真机流程，conditional不能过门。
+- [ ] 继续补 RTC data-message schema、原生AudioSession真实路由/并发与卸载、网络断线/重连凭证过期、跨实例事件和真实 Web/Mobile/设备 smoke；替身测试不能关闭AEC/CER/时延缺测。
 
 ## P1：数据与运行时治理
 
@@ -86,7 +89,8 @@
 ## 本次归档边界（2026-09-08）
 
 - PR #19：保留当前分支业务/研究改动，按相同内容发布节点收敛 main 的重放历史，并保留录音确认修复；合并验证不代替 Android/iPhone 真机验收。
-- [ ] 修复现存 AI Governance Guard CI 入口：工作流仍调用 `scripts/check_ai_governance.sh`，但该脚本在当前分支和 main 均不存在；本次合并冲突解决不代表该 CI 已通过。
+- [x] AI Governance Guard本地入口已修复：补静态治理/CLI路径检查和9项负例；工作流明确checkout-only检查与PyYAML依赖，本地完整/无私有子模块场景通过。
+- [ ] 推送后核验远端AI Governance/RTC Contract工作流；checkout-only不等于私有上游正文完整验收。
 
 - `.playwright-mcp/` 全目录忽略并取消旧快照的 Git 跟踪，本地文件保留；需要长期留存的验收证据另行归档到 `research/`。
 - 已复跑前端测试/类型检查/生产构建、Backend、Mobile、文档/研究与 Compose 静态验证；Git 上传不代表生产验收完成。数据库迁移、真实账号录音及真机任务保持未完成；原始研究证据保持字节与哈希不变。

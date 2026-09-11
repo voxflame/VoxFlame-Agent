@@ -19,3 +19,4 @@ jobs:
       - run: cd frontend && npx tsc --noEmit
       - run: npm ci --prefix apps/mobile-workbench
       - run: npm --prefix apps/mobile-workbench run typecheck && npm --prefix apps/mobile-workbench run check
+      - run: npm run test:mobile-rtc

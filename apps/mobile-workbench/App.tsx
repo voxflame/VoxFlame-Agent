@@ -247,17 +247,19 @@ export default function App() {
     mode: 'training',
   })
   const rtcSession = useMobileRtcSession({
+    ownerId: auth.user?.id ?? null,
     apiBaseUrl: config.apiBaseUrl,
     tokenProvider: auth.tokenProvider,
     enabled: auth.status === 'signed_in',
   })
-  const liveKitRoom = useLiveKitRoomConnection()
+  const liveKitRoom = useLiveKitRoomConnection(auth.status === 'signed_in' ? auth.user?.id ?? null : null)
   const trainingRtcSession = useMobileRtcSession({
+    ownerId: auth.user?.id ?? null,
     apiBaseUrl: config.apiBaseUrl,
     tokenProvider: auth.tokenProvider,
     enabled: auth.status === 'signed_in',
   })
-  const trainingLiveKitRoom = useLiveKitRoomConnection()
+  const trainingLiveKitRoom = useLiveKitRoomConnection(auth.status === 'signed_in' ? auth.user?.id ?? null : null)
   const trainingCatalog = useMobileTrainingCatalog({
     apiBaseUrl: config.apiBaseUrl,
     enabled: auth.status === 'signed_in',
@@ -282,8 +284,9 @@ export default function App() {
   const mainScrollRef = useRef<ScrollView>(null)
 
   const selectCommunicationScene = (scene: MobileWorkbenchScene | null): void => {
-    if (scene && scene !== communicationScene) {
+    if (scene !== communicationScene) {
       rtcSession.clear()
+      void liveKitRoom.disconnect()
     }
     setCommunicationScene(scene)
     setTaskRoute(scene ? 'communication_live' : 'communication_setup')
@@ -392,63 +395,46 @@ export default function App() {
   ])
 
   useEffect(() => {
-    if (auth.status === 'signed_in') {
-      return
-    }
-
-    if (
-      liveKitRoom.status === 'connected'
-      || liveKitRoom.status === 'connecting'
-      || liveKitRoom.status === 'reconnecting'
-    ) {
-      void liveKitRoom.disconnect()
-    }
-    rtcSession.clear()
-  }, [
-    auth.status,
-    liveKitRoom.disconnect,
-    liveKitRoom.status,
-    rtcSession.clear,
-  ])
+    setConfirmedOutput('')
+  }, [auth.user?.id])
 
   const startCommunication = async (): Promise<void> => {
-    if (rtcSession.session && rtcSession.status === 'ready') {
-      await liveKitRoom.connect(rtcSession.session)
-      return
-    }
+    if (liveKitRoom.status === 'connected') return
+    trainingRtcSession.clear()
+    void trainingLiveKitRoom.disconnect()
 
     const session = await rtcSession.start(rtcIntent)
-    if (session) {
+    if (session && rtcSession.isCurrent(session)) {
       await liveKitRoom.connect(session)
     }
   }
 
   const stopCommunication = async (): Promise<void> => {
-    await liveKitRoom.disconnect()
     rtcSession.clear()
+    await liveKitRoom.disconnect()
   }
 
   const ensureTrainingConnection = async (): Promise<boolean> => {
     if (trainingLiveKitRoom.status === 'connected') return true
+    rtcSession.clear()
+    void liveKitRoom.disconnect()
     const intent = buildMobileWorkbenchRtcSessionIntent({
       surfaceId: 'practice',
       mode: 'training',
       deviceContext: { microphoneStatus: 'available', networkOnline: true, appState: 'active' },
     })
-    const session = trainingRtcSession.session ?? await trainingRtcSession.start(intent)
-    return session ? await trainingLiveKitRoom.connect(session) : false
+    const session = await trainingRtcSession.start(intent)
+    return session && trainingRtcSession.isCurrent(session) ? await trainingLiveKitRoom.connect(session) : false
   }
 
   const stopTrainingSession = async (): Promise<void> => {
-    await trainingLiveKitRoom.disconnect()
     trainingRtcSession.clear()
+    await trainingLiveKitRoom.disconnect()
   }
 
   const signOut = async (): Promise<void> => {
-    if (rtcSession.session) {
-      await stopCommunication()
-    }
-    if (trainingRtcSession.session) await stopTrainingSession()
+    // Both owners are invalidated synchronously before either teardown can wait.
+    await Promise.all([stopCommunication(), stopTrainingSession()])
     await auth.signOut()
   }
 
