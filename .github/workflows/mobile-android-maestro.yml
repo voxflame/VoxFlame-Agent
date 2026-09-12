@@ -5,8 +5,18 @@ on:
   pull_request:
     paths:
       - 'apps/mobile-workbench/**'
+      - 'frontend/public/icons/**'
+      - 'scripts/mobile-android-smoke.sh'
+      - 'scripts/test-mobile-ci.py'
       - 'backend/src/controllers/mobile-diagnostics.controller.ts'
       - '.github/workflows/mobile-android-maestro.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-maestro-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   android-release-smoke:
@@ -16,12 +26,14 @@ jobs:
       EXPO_PUBLIC_API_BASE_URL: https://voxember.com/api
       EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL || vars.EXPO_PUBLIC_SUPABASE_URL }}
       EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY || vars.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
-      MAESTRO_TEST_EMAIL: ${{ secrets.MAESTRO_TEST_EMAIL }}
-      MAESTRO_TEST_PASSWORD: ${{ secrets.MAESTRO_TEST_PASSWORD }}
+      MAESTRO_CLI_NO_ANALYTICS: "1"
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Verify CI regression guards
+        run: python3 scripts/test-mobile-ci.py
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -53,53 +65,40 @@ jobs:
 
       - name: Generate Android project
         working-directory: apps/mobile-workbench
-        run: npx expo prebuild --platform android --clean --non-interactive
+        run: CI=1 npx expo prebuild --platform android --clean
 
       - name: Build standalone release APK
         working-directory: apps/mobile-workbench/android
-        run: ./gradlew assembleRelease
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=x86_64
 
       - name: Install Maestro CLI
-        run: curl -Ls https://get.maestro.mobile.dev | bash
+        shell: bash
+        run: curl --fail --silent --show-error --location https://get.maestro.mobile.dev | bash
 
-      - name: Install Android emulator system image
+      - name: Enable KVM for the disposable CI emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -r /dev/kvm && test -w /dev/kvm
+
+      - name: Run release smoke on headless Android 33
+        # Pin the SDK/AVD lifecycle action; it installs missing tools and kills
+        # the emulator after the script, including on test failure.
+        uses: reactivecircus/android-emulator-runner@4c44018e59b437e86cdfc41da381398f93ed8808 # v2
+        timeout-minutes: 15
         env:
-          ANDROID_HOME: /usr/local/lib/android/sdk
-          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-        run: |
-          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-33" "system-images;android-33;google_apis;x86_64"
-
-      - name: Start Android emulator
-        env:
-          MAESTRO_CLI_NO_ANALYTICS: "1"
-        run: |
-          "$HOME/.maestro/bin/maestro" start-device --platform android --os-version 33
-
-      - name: Install release APK
-        run: adb install -r apps/mobile-workbench/android/app/build/outputs/apk/release/app-release.apk
-
-      - name: Run configured-release smoke
-        working-directory: apps/mobile-workbench
-        run: |
-          "$HOME/.maestro/bin/maestro" test \
-            --format junit \
-            --output maestro-boot-report.xml \
-            --debug-output maestro-debug/boot \
-            .maestro/release-boot-smoke.yml
-
-      - name: Run authenticated four-surface smoke
-        if: "${{ env.MAESTRO_TEST_EMAIL != '' && env.MAESTRO_TEST_PASSWORD != '' }}"
-        working-directory: apps/mobile-workbench
-        run: |
-          "$HOME/.maestro/bin/maestro" test \
-            -e MAESTRO_TEST_EMAIL="$MAESTRO_TEST_EMAIL" \
-            -e MAESTRO_TEST_PASSWORD="$MAESTRO_TEST_PASSWORD" \
-            --format junit \
-            --output maestro-authenticated-report.xml \
-            --debug-output maestro-debug/authenticated \
-            .maestro/authenticated-release-smoke.yml
+          MAESTRO_TEST_EMAIL: ${{ secrets.MAESTRO_TEST_EMAIL }}
+          MAESTRO_TEST_PASSWORD: ${{ secrets.MAESTRO_TEST_PASSWORD }}
+        with:
+          api-level: 33
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-boot-timeout: 300
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          disable-animations: true
+          script: bash scripts/mobile-android-smoke.sh
 
       - name: Upload APK and test evidence
         if: always()
