@@ -31,7 +31,7 @@ class MobileCI(unittest.TestCase):
         workflow = (ROOT / '.github/workflows/mobile-android-maestro.yml').read_text()
         for required in ['reactivecircus/android-emulator-runner@4c44018e59b437e86cdfc41da381398f93ed8808',
                          '-no-window', 'emulator-boot-timeout: 300', 'api-level: 33',
-                         'arch: x86_64', 'test -r /dev/kvm', 'if: always()',
+                         'arch: x86_64', 'mode=off', 'mode=on', 'if: always()',
                          'bash scripts/mobile-android-smoke.sh', 'contents: read']:
             self.assertIn(required, workflow)
         self.assertNotIn('continue-on-error', workflow)

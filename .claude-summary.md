@@ -173,3 +173,5 @@
 - 后续模拟器失败依次定位为缺Android33镜像、sdkmanager不在PATH。取消临时补丁，改用固定SHA的android-emulator-runner管理SDK/AVD/KVM/无界面启动和退出；5分钟boot上限、15分钟运行上限，不跳过boot smoke，失败先保留logcat。
 - CI只构建模拟器需要的x86_64；不改变EAS网站APK。7项新CI守卫（图标已跟踪、无界面配置、安装/测试错误传播、缺认证明确标为未测）及原7项流水线守卫、文档/Research检查通过。
 - 修复已推送PR #21，最终无界面Android检查等待远端结果；未合并、未发布APK、无真机验收。专用登录测试凭证未配置，boot通过也不得记作登录/录音验收。详细证据见 `research/product-engineering/ANDROID_CANDIDATE_PIPELINE_2026-09-12.md`。
+
+- 最终run `34682044319` 原生APK构建成功，但KVM权限/可用性检查未通过；不算模拟器测试通过。后续改为预先检查真实设备、显式授权现有KVM设备，不可用时运行有超时的软件模拟器，绝不跳过smoke；远端重跑待完成。

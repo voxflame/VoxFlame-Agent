@@ -35,6 +35,21 @@ jobs:
       - name: Verify CI regression guards
         run: python3 scripts/test-mobile-ci.py
 
+      - name: Prepare emulator acceleration
+        id: acceleration
+        run: |
+          # udev rules may not be applied immediately. Set permissions on the
+          # existing disposable runner device; never manufacture a KVM device.
+          if [[ -e /dev/kvm ]]; then
+            sudo chmod a+rw /dev/kvm
+          fi
+          if [[ -r /dev/kvm && -w /dev/kvm ]]; then
+            echo 'mode=on' >> "$GITHUB_OUTPUT"
+          else
+            echo 'mode=off' >> "$GITHUB_OUTPUT"
+            echo '::warning::KVM unavailable; running real emulator tests with software acceleration (slower).'
+          fi
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -75,13 +90,6 @@ jobs:
         shell: bash
         run: curl --fail --silent --show-error --location https://get.maestro.mobile.dev | bash
 
-      - name: Enable KVM for the disposable CI emulator
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-          test -r /dev/kvm && test -w /dev/kvm
-
       - name: Run release smoke on headless Android 33
         # Pin the SDK/AVD lifecycle action; it installs missing tools and kills
         # the emulator after the script, including on test failure.
@@ -96,7 +104,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           emulator-boot-timeout: 300
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          emulator-options: -accel ${{ steps.acceleration.outputs.mode }} -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
           disable-animations: true
           script: bash scripts/mobile-android-smoke.sh
 
