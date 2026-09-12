@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="${VOXFLAME_SOURCE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 APP_DIR="$ROOT_DIR/apps/mobile-workbench"
 RELEASE_DIR="$ROOT_DIR/releases/android"
 APK_PATH="$RELEASE_DIR/VoxFlame-Android.apk"
@@ -63,14 +63,16 @@ if [[ "$MODE" == "build" || "$MODE" == "build-artifact" ]]; then
   echo "[voxflame] Validating Mobile Workbench before release..."
   npm --prefix "$APP_DIR" run check
   npm --prefix "$APP_DIR" run typecheck
+  npm --prefix "$APP_DIR" run test:training
   node "$APP_DIR/scripts/prepare-android-preview-release.mjs" \
     "$latest_build_code" "$latest_app_version"
 
+  git -C "$ROOT_DIR" diff --binary -- apps/mobile-workbench/app.json apps/mobile-workbench/package.json apps/mobile-workbench/package-lock.json > "$work_dir/version.patch"
   echo "[voxflame] Starting EAS Android preview build..."
   (
     cd "$APP_DIR"
     bash scripts/with-expo-token.sh npx --yes eas-cli@latest build \
-      --platform android --profile preview --wait --json \
+      --platform android --profile preview --wait --json --non-interactive \
       --message "VoxFlame website Android preview release"
   ) > "$work_dir/build.json"
 else
@@ -130,12 +132,13 @@ writeFileSync(outputPath, `${JSON.stringify({
   sha256,
   sizeBytes: Number(sizeBytes),
   publicUrl,
-  publishedAt: new Date().toISOString(),
+  artifactCreatedAt: new Date().toISOString(),
 }, null, 2)}\n`)
 NODE
 
 if [[ "$MODE" == "build-artifact" ]]; then
   mkdir -p "$ARTIFACT_OUTPUT_DIR"
+  cp "$work_dir/version.patch" "$ARTIFACT_OUTPUT_DIR/version.patch"
   mv -f "$work_dir/VoxFlame-Android.apk" "$ARTIFACT_OUTPUT_DIR/VoxFlame-Android.apk"
   mv -f "$work_dir/metadata.json" "$ARTIFACT_OUTPUT_DIR/VoxFlame-Android.json"
   echo "[voxflame] Android preview artifact ready"

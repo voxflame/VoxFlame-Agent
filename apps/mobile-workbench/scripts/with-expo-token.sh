@@ -10,6 +10,10 @@ if [ -z "$EXPO_TOKEN" ] && [ -f "$token_file" ]; then
   export EXPO_TOKEN
 fi
 
+# Normalize file/CI secrets alike; a copied trailing newline invalidates HTTP auth.
+EXPO_TOKEN="$(printf '%s' "$EXPO_TOKEN" | tr -d '\r\n')"
+export EXPO_TOKEN
+
 if [ "${#EXPO_TOKEN}" -lt 20 ]; then
   echo "没有可用的 Expo Token。请先运行 npm run eas:save-token。" >&2
   exit 1
