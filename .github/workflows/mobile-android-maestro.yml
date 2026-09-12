@@ -63,7 +63,11 @@ jobs:
         run: curl -Ls https://get.maestro.mobile.dev | bash
 
       - name: Install Android emulator system image
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
         run: |
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platform-tools" "platforms;android-33" "system-images;android-33;google_apis;x86_64"
 
