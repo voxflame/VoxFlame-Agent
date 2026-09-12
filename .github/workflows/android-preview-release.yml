@@ -2,9 +2,17 @@ name: Android Preview Release
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the validated APK to the public download URL
+        required: true
+        default: false
+        type: boolean
+  schedule:
+    # 18:30 Asia/Shanghai = 10:30 UTC; build a candidate, do not publish.
+    - cron: '30 10 * * 1-5'
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - 'apps/mobile-workbench/**'
       - '!apps/mobile-workbench/**/*.md'
@@ -14,26 +22,29 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: android-preview-production
   cancel-in-progress: false
 
+env:
+  PUBLIC_URL: https://voxember.com/download/android
+
 jobs:
-  build-and-publish:
-    if: github.event_name == 'workflow_dispatch' || vars.ANDROID_AUTO_RELEASE_ENABLED == 'true'
+  build-candidate:
+    # Scheduled and push builds are candidates only. Manual runs may opt into
+    # publishing the exact artifact produced by this run.
+    if: github.event_name != 'push' || vars.ANDROID_AUTO_RELEASE_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 75
-    environment: production
-    env:
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
-      PUBLIC_URL: https://voxember.com/download/android
 
     steps:
       - name: Check out main
         uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -46,22 +57,47 @@ jobs:
         working-directory: apps/mobile-workbench
         run: npm ci
 
-      - name: Validate deployment configuration
+      - name: Build and validate EAS preview APK
+        working-directory: .
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: bash scripts/release-android-preview.sh build-artifact "$RUNNER_TEMP/android-release"
+
+      - name: Upload immutable Android candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-preview-${{ github.run_id }}
+          path: ${{ runner.temp }}/android-release
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-candidate:
+    needs: build-candidate
+    if: github.event_name == 'workflow_dispatch' && inputs.publish == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+
+    steps:
+      - name: Download exact candidate artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: android-preview-${{ github.run_id }}
+          path: ${{ runner.temp }}/android-release
+
+      - name: Validate deployment configuration
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
-          test -n "$EXPO_TOKEN"
           test -n "$DEPLOY_HOST"
           test -n "$DEPLOY_USER"
           test -n "$DEPLOY_SSH_KEY"
           test -n "$DEPLOY_KNOWN_HOSTS"
-
-      - name: Build and validate EAS preview APK
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: bash scripts/release-android-preview.sh build-artifact "$RUNNER_TEMP/android-release"
+          echo "Deploying exact candidate from run $GITHUB_RUN_ID"
 
       - name: Configure production SSH identity
         env:
@@ -75,6 +111,10 @@ jobs:
           chmod 600 "$HOME/.ssh/known_hosts"
 
       - name: Upload and atomically publish APK
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
         run: |
           ssh_args=(-i "$HOME/.ssh/voxflame_deploy" -p "$DEPLOY_PORT" -o BatchMode=yes)
           tar -C "$RUNNER_TEMP/android-release" -cf - \
