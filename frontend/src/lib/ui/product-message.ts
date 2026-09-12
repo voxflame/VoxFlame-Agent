@@ -105,6 +105,9 @@ export function toProductMessage(
     || diagnostic.includes('ratelimit')
     || diagnostic.includes('429')
   ) {
+    if (diagnostic.includes('limitexceeded') || diagnostic.includes('sending limit')) {
+      return '短信发送次数已达上限，请稍后再试。'
+    }
     return '操作太频繁，请稍后再试。'
   }
 
@@ -119,6 +122,13 @@ export function toProductMessage(
     return context === 'login'
       ? '该账号尚未注册。'
       : FALLBACK_MESSAGES[context]
+  }
+
+  if (
+    diagnostic.includes('limitexceeded')
+    || diagnostic.includes('sending limit')
+  ) {
+    return '短信发送次数已达上限，请稍后再试。'
   }
 
   if (

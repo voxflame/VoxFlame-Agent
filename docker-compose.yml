@@ -223,7 +223,11 @@ services:
       - all_proxy=
       - NO_PROXY=127.0.0.1,localhost,livekit-server
       - no_proxy=127.0.0.1,localhost,livekit-server
-      - DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+      # Shared Compose provider settings; do not pin the agent to another account/region.
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
+      - DASHSCOPE_BASE_URL=${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      - QWEN_ASR_REALTIME_URL=${QWEN_ASR_REALTIME_URL:-wss://dashscope.aliyuncs.com/api-ws/v1/realtime}
+      - QWEN_TTS_REALTIME_URL=${QWEN_TTS_REALTIME_URL:-wss://dashscope.aliyuncs.com/api-ws/v1/realtime}
       - DASHSCOPE_TIMEOUT_SECONDS=15
       - QWEN_HTTP_ASR_URL=${QWEN_HTTP_ASR_URL:-http://127.0.0.1:8001/transcribe}
       - QWEN_HTTP_ASR_LANGUAGE=${QWEN_HTTP_ASR_LANGUAGE:-Chinese}

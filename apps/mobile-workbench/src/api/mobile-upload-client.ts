@@ -36,10 +36,20 @@ function wait(delayMs: number): Promise<void> {
 async function fetchUploadApiWithRetry(
   input: RequestInfo | URL,
   init: RequestInit,
+  tokenProvider?: MobileAuthTokenProvider,
 ): Promise<Response> {
   let response: Response | null = null
   for (let attempt = 0; attempt < MOBILE_UPLOAD_REQUEST_ATTEMPTS; attempt += 1) {
     response = await fetch(input, init)
+    if (response.status === 401 && attempt < MOBILE_UPLOAD_REQUEST_ATTEMPTS - 1 && tokenProvider) {
+      const token = await tokenProvider.getAccessToken()
+      if (token) {
+        init = {
+          ...init,
+          headers: { ...(init.headers ?? {}), Authorization: `Bearer ${token}` },
+        }
+      }
+    }
     if ((response.status !== 429 && response.status !== 503) || attempt === MOBILE_UPLOAD_REQUEST_ATTEMPTS - 1) {
       return response
     }
@@ -226,6 +236,7 @@ export async function uploadMobileRecorderQueueItem(
         contentType,
       }),
     },
+    options.tokenProvider,
   )
 
   if (!signResponse.ok) {
@@ -268,6 +279,7 @@ export async function uploadMobileRecorderQueueItem(
         metadata: buildUploadMetadata(item, contentType),
       }),
     },
+    options.tokenProvider,
   )
 
   if (!completeResponse.ok) {

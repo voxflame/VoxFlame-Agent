@@ -287,7 +287,7 @@ export function useVoiceUpload() {
             filename: storagePath,
             contentType: normalizedAudioBlob.type || 'audio/wav'
           })
-        })
+        }, { onUnauthorized: getAccessToken })
 
         if (!signRes.ok) throw new Error(`签名请求失败: ${signRes.statusText}`)
         const { url: uploadUrl } = await signRes.json()
@@ -352,7 +352,7 @@ export function useVoiceUpload() {
             ...sanitizeTrainingUploadMetadata(normalizedOptions.metadata),
           }
         })
-      })
+      }, { onUnauthorized: getAccessToken })
 
       if (!completeRes.ok) {
         throw new Error(`后端记录失败: ${completeRes.statusText}`)

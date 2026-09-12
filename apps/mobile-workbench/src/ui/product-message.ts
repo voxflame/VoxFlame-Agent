@@ -78,6 +78,9 @@ export function toMobileProductMessage(
   if (diagnostic.includes('invalid login credentials')) {
     return '账号或密码不正确。'
   }
+  if (diagnostic.includes('mobile_auth_expired') || diagnostic.includes('auth expired')) {
+    return '登录已过期，请重新登录。'
+  }
   if (diagnostic.includes('signup') || diagnostic.includes('user not found')) {
     return '该账号尚未注册。'
   }
@@ -92,8 +95,18 @@ export function toMobileProductMessage(
     || diagnostic.includes('rate limit')
     || diagnostic.includes('429')
   ) {
+    if (diagnostic.includes('limitexceeded') || diagnostic.includes('sending limit')) {
+      return '短信发送次数已达上限，请稍后再试。'
+    }
     return '操作太频繁，请稍后再试。'
   }
+  if (
+    diagnostic.includes('limitexceeded')
+    || diagnostic.includes('sending limit')
+  ) {
+    return '短信发送次数已达上限，请稍后再试。'
+  }
+
   if (
     diagnostic.includes('signatureincorrectorunapproved')
     || diagnostic.includes('sms provider')

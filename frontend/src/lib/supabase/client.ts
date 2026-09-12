@@ -24,7 +24,13 @@ export const getSupabase = (): SupabaseClient | null => {
   if (!hasSupabaseConfig) return null
 
   if (!supabaseInstance) {
-    supabaseInstance = createBrowserClient(supabaseUrl, supabaseAnonKey)
+    supabaseInstance = createBrowserClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+      },
+    })
   }
   return supabaseInstance
 }
@@ -57,7 +63,20 @@ export async function getAccessToken(): Promise<string | null> {
       return null
     }
 
-    return session?.access_token ?? null
+    if (!session) return null
+
+    // Do not hand an about-to-expire JWT to the upload pipeline. A request can
+    // otherwise upload the object successfully and then lose the DB receipt
+    // when /upload/complete rejects the stale token.
+    const expiresAt = session.expires_at ?? 0
+    if (expiresAt > 0 && expiresAt <= Math.floor(Date.now() / 1000) + 90) {
+      const refreshed = await client.auth.refreshSession()
+      if (!refreshed.error && refreshed.data.session) {
+        return refreshed.data.session.access_token
+      }
+    }
+
+    return session.access_token
   } catch {
     console.error('[auth] session lookup failed')
     return null

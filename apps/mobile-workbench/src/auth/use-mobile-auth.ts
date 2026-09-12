@@ -380,9 +380,15 @@ export function useMobileAuth(config: MobileRuntimeConfig): MobileAuthState {
         return null
       }
 
-      const { data, error } = await client.auth.getSession()
+      const { data: current, error: sessionError } = await client.auth.getSession()
+      if (sessionError) return null
+      const expiresAt = current.session?.expires_at ?? 0
+      const shouldRefresh = !current.session || expiresAt <= Math.floor(Date.now() / 1000) + 60
+      const { data, error } = shouldRefresh
+        ? await client.auth.refreshSession()
+        : { data: current, error: null }
       if (error || !data.session) {
-        return null
+        throw new Error('mobile_auth_expired')
       }
 
       return data.session.access_token

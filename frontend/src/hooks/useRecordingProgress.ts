@@ -24,6 +24,10 @@ export interface RecordingProgress extends CloudRecordingProgress {
 }
 
 const RECORDING_PROGRESS_TIMEOUT_MS = 8_000
+// Keep the visible counter fresh for long-running recording sessions while
+// avoiding a request on every render. Upload confirmation remains the source
+// of truth; polling only re-reads the durable aggregate.
+const RECORDING_PROGRESS_POLL_INTERVAL_MS = 60_000
 
 const EMPTY_PROGRESS: CloudRecordingProgress = {
   recordedSentenceIds: [],
@@ -318,14 +322,14 @@ export function useRecordingProgress(
     }
   }, [isAuthenticated, localQueueItems.length, refresh, userId])
 
-  // Other devices can upload while this page stays open. Refresh visible pages,
-  // and refresh immediately on return/reconnection without background polling.
+  // Other devices can upload while this page stays open. Refresh visible pages
+  // once per minute, and immediately on return/reconnection.
   useEffect(() => {
     if (!isAuthenticated || !userId) return
     const refreshVisible = () => {
       if (document.visibilityState === 'visible') void refresh()
     }
-    const interval = window.setInterval(refreshVisible, 30_000)
+    const interval = window.setInterval(refreshVisible, RECORDING_PROGRESS_POLL_INTERVAL_MS)
     window.addEventListener('focus', refreshVisible)
     window.addEventListener('online', refreshVisible)
     document.addEventListener('visibilitychange', refreshVisible)

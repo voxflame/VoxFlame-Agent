@@ -1965,6 +1965,9 @@ function PracticeScreen({
       Alert.alert('账号已经切换', '这条录音已安全保存在原账号的本机队列中，请切回原账号后处理。')
       return
     }
+    // Upload immediately after capture stops. Transcript analysis enriches the
+    // local queue afterward; it must never gate durable audio persistence.
+    void queue.uploadRecording(item.recordingId, item)
     const heardText = stopped || connected
       ? await trainingConnection.waitForFinalTranscript(capture.captureId)
       : ''

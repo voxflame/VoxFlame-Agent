@@ -23,6 +23,7 @@ import {
     type RegistrationProfileInput,
 } from '@/lib/auth/registration-profile'
 import { DialectProfileFields } from '@/components/auth/DialectProfileFields'
+import { CHINA_REGIONS, CHINA_PROVINCES } from '@/lib/auth/china-regions'
 import type { DialectProfile } from '@/lib/auth/dialect-profile'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -82,6 +83,7 @@ export default function LoginPage() {
     const supabase = useMemo(() => createClient(), [])
     const [nextPath, setNextPath] = useState('/contribute')
     const phoneAuthEnabled = process.env.NEXT_PUBLIC_PHONE_AUTH_ENABLED === '1'
+    const cities = province ? Object.keys(CHINA_REGIONS[province] ?? {}) : []
 
     const registrationProfile: RegistrationProfileInput = {
         province,
@@ -441,27 +443,21 @@ export default function LoginPage() {
                                 <div className="grid gap-4 sm:grid-cols-2">
                                   <div className="space-y-2">
                                     <Label htmlFor="province">现居省份</Label>
-                                    <Input
-                                        id="province"
-                                        autoComplete="address-level1"
-                                        placeholder="例如：广东省"
-                                        required
-                                        value={province}
-                                        onChange={(event) => setProvince(event.target.value)}
-                                        className="h-11"
-                                    />
+                                    <select id="province" autoComplete="address-level1" required value={province}
+                                        onChange={(event) => { setProvince(event.target.value); setCity('') }}
+                                        className="h-11 w-full rounded-md border border-input bg-white px-3 text-sm text-stone-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2">
+                                        <option value="">请选择省份</option>
+                                        {CHINA_PROVINCES.map((item) => <option key={item} value={item}>{item}</option>)}
+                                    </select>
                                   </div>
                                   <div className="space-y-2">
                                     <Label htmlFor="city">现居城市</Label>
-                                    <Input
-                                        id="city"
-                                        autoComplete="address-level2"
-                                        placeholder="例如：广州市"
-                                        required
-                                        value={city}
+                                    <select id="city" autoComplete="address-level2" required disabled={!province} value={city}
                                         onChange={(event) => setCity(event.target.value)}
-                                        className="h-11"
-                                    />
+                                        className="h-11 w-full rounded-md border border-input bg-white px-3 text-sm text-stone-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-400">
+                                        <option value="">{province ? '请选择城市' : '请先选择省份'}</option>
+                                        {cities.map((item) => <option key={item} value={item}>{item}</option>)}
+                                    </select>
                                   </div>
                                   <div className="space-y-2">
                                     <Label htmlFor="name">姓名</Label>

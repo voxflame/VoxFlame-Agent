@@ -1,6 +1,10 @@
 export const UPLOAD_REQUEST_TIMEOUT_MS = 20_000
 export const UPLOAD_REQUEST_MAX_ATTEMPTS = 3
 
+export function isRetryableUploadResponse(response: Response): boolean {
+  return response.status === 401 || response.status === 408 || response.status === 429 || response.status === 503
+}
+
 type FetchRequest = (
   input: RequestInfo | URL,
   init?: RequestInit,
@@ -46,13 +50,20 @@ export async function fetchUploadRequestWithRetry(
     attempts?: number
     timeoutMs?: number
     request?: FetchRequest
+    onUnauthorized?: () => Promise<string | null>
   } = {},
 ): Promise<Response> {
   const attempts = Math.max(1, options.attempts ?? UPLOAD_REQUEST_MAX_ATTEMPTS)
   let response: Response | null = null
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     response = await fetchUploadRequest(input, init, options.timeoutMs, options.request)
-    if ((response.status !== 429 && response.status !== 503) || attempt === attempts - 1) {
+    if (response.status === 401 && attempt < attempts - 1 && options.onUnauthorized) {
+      const token = await options.onUnauthorized()
+      if (token) {
+        init = { ...init, headers: { ...(init.headers ?? {}), Authorization: `Bearer ${token}` } }
+      }
+    }
+    if (!isRetryableUploadResponse(response) || attempt === attempts - 1) {
       return response
     }
     await wait(retryDelayMs(response, attempt))
