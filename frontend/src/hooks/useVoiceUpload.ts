@@ -214,7 +214,7 @@ export function useVoiceUpload() {
         }
       }
 
-      const token = await getAccessToken()
+      const token = await getAccessToken({ expectedUserId: userId })
       if (!token) {
         return await saveLocally(options, userId, '登录会话暂时不可用')
       }
@@ -287,7 +287,7 @@ export function useVoiceUpload() {
             filename: storagePath,
             contentType: normalizedAudioBlob.type || 'audio/wav'
           })
-        }, { onUnauthorized: getAccessToken })
+        }, { onUnauthorized: (rejectedToken) => getAccessToken({ expectedUserId: userId, rejectedToken }) })
 
         if (!signRes.ok) throw new Error(`签名请求失败: ${signRes.statusText}`)
         const { url: uploadUrl } = await signRes.json()
@@ -311,12 +311,16 @@ export function useVoiceUpload() {
 
       setUploadProgress(50)
 
+      // A long PUT may cross the JWT expiry boundary. Re-read for this owner.
+      const completionToken = await getAccessToken({ expectedUserId: userId })
+      if (!completionToken) throw new Error('auth_required')
+
       // 3. 通知后端完成 (DB写入 + OSS Manifest追加)
       const completeRes = await fetchUploadRequestWithRetry(`${config.api.baseUrl}/upload/complete`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${completionToken}`,
         },
         body: JSON.stringify({
           audioPath: storagePath,
@@ -352,7 +356,7 @@ export function useVoiceUpload() {
             ...sanitizeTrainingUploadMetadata(normalizedOptions.metadata),
           }
         })
-      }, { onUnauthorized: getAccessToken })
+      }, { onUnauthorized: (rejectedToken) => getAccessToken({ expectedUserId: userId, rejectedToken }) })
 
       if (!completeRes.ok) {
         throw new Error(`后端记录失败: ${completeRes.statusText}`)
@@ -430,7 +434,7 @@ export function useVoiceUpload() {
       }
     }
 
-    const token = await getAccessToken()
+    const token = await getAccessToken({ expectedUserId: userId })
     if (!token) {
       const errorMessage = '登录状态已失效，请重新登录后再撤回。'
       setLastError(errorMessage)

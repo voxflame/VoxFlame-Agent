@@ -33,26 +33,40 @@ function wait(delayMs: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, delayMs))
 }
 
+/** Bound every upload step; the persisted queue owns recovery after a timeout. */
+async function fetchUploadStep(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 20_000)
+  try {
+    return await fetch(input, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 async function fetchUploadApiWithRetry(
   input: RequestInfo | URL,
   init: RequestInit,
-  tokenProvider?: MobileAuthTokenProvider,
+  tokenProvider: MobileAuthTokenProvider,
+  expectedUserId: string,
 ): Promise<Response> {
   let response: Response | null = null
+  let rejectedToken: string | undefined
+  let authRetried = false
   for (let attempt = 0; attempt < MOBILE_UPLOAD_REQUEST_ATTEMPTS; attempt += 1) {
-    response = await fetch(input, init)
-    if (response.status === 401 && attempt < MOBILE_UPLOAD_REQUEST_ATTEMPTS - 1 && tokenProvider) {
-      const token = await tokenProvider.getAccessToken()
-      if (token) {
-        init = {
-          ...init,
-          headers: { ...(init.headers ?? {}), Authorization: `Bearer ${token}` },
-        }
-      }
+    const token = await tokenProvider.getAccessToken({ expectedUserId, rejectedToken })
+    if (!token || token === rejectedToken) throw new Error('mobile_auth_expired')
+    const headers = new Headers(init.headers)
+    headers.set('Authorization', `Bearer ${token}`)
+    response = await fetchUploadStep(input, { ...init, headers })
+    if (response.status === 401) {
+      if (authRetried || attempt === MOBILE_UPLOAD_REQUEST_ATTEMPTS - 1) return response
+      authRetried = true
+      rejectedToken = token
+      continue
     }
-    if ((response.status !== 429 && response.status !== 503) || attempt === MOBILE_UPLOAD_REQUEST_ATTEMPTS - 1) {
-      return response
-    }
+    if ((response.status !== 408 && response.status !== 429 && response.status !== 503)
+      || attempt === MOBILE_UPLOAD_REQUEST_ATTEMPTS - 1) return response
     const retryAfter = Number(response.headers.get('Retry-After'))
     const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
       ? Math.min(10_000, retryAfter * 1000)
@@ -68,8 +82,9 @@ function buildApiUrl(apiBaseUrl: string, path: string): string {
 
 async function getAuthorizationHeader(
   tokenProvider: MobileAuthTokenProvider,
+  expectedUserId: string,
 ): Promise<Record<string, string>> {
-  const token = await tokenProvider.getAccessToken()
+  const token = await tokenProvider.getAccessToken({ expectedUserId })
   if (!token) {
     throw new Error('mobile_auth_required')
   }
@@ -220,7 +235,7 @@ export async function uploadMobileRecorderQueueItem(
   item: MobileWorkbenchRecorderQueueItem,
   options: MobileWorkbenchClientOptions,
 ): Promise<MobileWorkbenchUploadReceipt> {
-  const authHeaders = await getAuthorizationHeader(options.tokenProvider)
+  const authHeaders = await getAuthorizationHeader(options.tokenProvider, item.contributorId)
   const storagePath = buildMobileStoragePath(item)
   const contentType = contentTypeForFormat(item.recording.audio.format)
   const signResponse = await fetchUploadApiWithRetry(
@@ -237,6 +252,7 @@ export async function uploadMobileRecorderQueueItem(
       }),
     },
     options.tokenProvider,
+    item.contributorId,
   )
 
   if (!signResponse.ok) {
@@ -249,7 +265,7 @@ export async function uploadMobileRecorderQueueItem(
     throw new Error('mobile_upload_audio_missing')
   }
 
-  const putResponse = await fetch(signPayload.url, {
+  const putResponse = await fetchUploadStep(signPayload.url, {
     method: 'PUT',
     headers: {
       'Content-Type': contentType,
@@ -280,6 +296,7 @@ export async function uploadMobileRecorderQueueItem(
       }),
     },
     options.tokenProvider,
+    item.contributorId,
   )
 
   if (!completeResponse.ok) {
@@ -308,7 +325,7 @@ export async function discardMobileRecorderQueueItem(
   item: MobileWorkbenchRecorderQueueItem,
   options: MobileWorkbenchClientOptions,
 ): Promise<void> {
-  const authHeaders = await getAuthorizationHeader(options.tokenProvider)
+  const authHeaders = await getAuthorizationHeader(options.tokenProvider, item.contributorId)
   const response = await fetch(
     buildApiUrl(options.apiBaseUrl, '/upload/contribution'),
     {

@@ -2,7 +2,7 @@ export const UPLOAD_REQUEST_TIMEOUT_MS = 20_000
 export const UPLOAD_REQUEST_MAX_ATTEMPTS = 3
 
 export function isRetryableUploadResponse(response: Response): boolean {
-  return response.status === 401 || response.status === 408 || response.status === 429 || response.status === 503
+  return response.status === 408 || response.status === 429 || response.status === 503
 }
 
 type FetchRequest = (
@@ -50,18 +50,24 @@ export async function fetchUploadRequestWithRetry(
     attempts?: number
     timeoutMs?: number
     request?: FetchRequest
-    onUnauthorized?: () => Promise<string | null>
+    onUnauthorized?: (rejectedToken: string) => Promise<string | null>
   } = {},
 ): Promise<Response> {
   const attempts = Math.max(1, options.attempts ?? UPLOAD_REQUEST_MAX_ATTEMPTS)
   let response: Response | null = null
+  let authRetried = false
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     response = await fetchUploadRequest(input, init, options.timeoutMs, options.request)
-    if (response.status === 401 && attempt < attempts - 1 && options.onUnauthorized) {
-      const token = await options.onUnauthorized()
-      if (token) {
-        init = { ...init, headers: { ...(init.headers ?? {}), Authorization: `Bearer ${token}` } }
-      }
+    if (response.status === 401) {
+      if (authRetried || attempt === attempts - 1 || !options.onUnauthorized) return response
+      authRetried = true
+      const headers = new Headers(init.headers)
+      const rejectedToken = (headers.get('Authorization') ?? '').replace(/^Bearer /, '')
+      const token = await options.onUnauthorized(rejectedToken)
+      if (!token || token === rejectedToken) return response
+      headers.set('Authorization', `Bearer ${token}`)
+      init = { ...init, headers }
+      continue
     }
     if (!isRetryableUploadResponse(response) || attempt === attempts - 1) {
       return response

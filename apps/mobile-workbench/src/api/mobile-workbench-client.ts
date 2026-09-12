@@ -1,3 +1,4 @@
+import type { AccessTokenOptions } from '../auth/session-token'
 import { parseRtcStartSessionResult, parseRtcStartSessionRequest } from '../contracts/generated/rtc-session'
 import type {
   MobileWorkbenchRtcSessionIntent,
@@ -6,7 +7,7 @@ import type {
 import type { MobileWorkspaceSnapshotContract } from '../contracts/workspace-read-model'
 
 export interface MobileAuthTokenProvider {
-  getAccessToken(): Promise<string | null>
+  getAccessToken(options?: AccessTokenOptions): Promise<string | null>
 }
 
 export interface MobileWorkbenchClientOptions {

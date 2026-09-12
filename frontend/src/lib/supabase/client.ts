@@ -4,6 +4,7 @@
  */
 import { createBrowserClient } from '@supabase/ssr'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { getSessionAccessToken, type AccessTokenOptions } from './session-token'
 
 // 从环境变量读取配置
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
@@ -47,38 +48,8 @@ export const createClient = (): SupabaseClient => {
   return createBrowserClient(supabaseUrl, supabaseAnonKey)
 }
 
-/**
- * Return the current access token through Supabase's single session owner.
- * `getSession()` already serializes refresh work and rotates expired tokens.
- */
-export async function getAccessToken(): Promise<string | null> {
+/** Get an account-bound token, refreshing near expiry or after an API rejection. */
+export async function getAccessToken(options: AccessTokenOptions = {}): Promise<string | null> {
   const client = getSupabase()
-  if (!client) return null
-
-  try {
-    const { data: { session }, error } = await client.auth.getSession()
-
-    if (error) {
-      console.error('[auth] session unavailable')
-      return null
-    }
-
-    if (!session) return null
-
-    // Do not hand an about-to-expire JWT to the upload pipeline. A request can
-    // otherwise upload the object successfully and then lose the DB receipt
-    // when /upload/complete rejects the stale token.
-    const expiresAt = session.expires_at ?? 0
-    if (expiresAt > 0 && expiresAt <= Math.floor(Date.now() / 1000) + 90) {
-      const refreshed = await client.auth.refreshSession()
-      if (!refreshed.error && refreshed.data.session) {
-        return refreshed.data.session.access_token
-      }
-    }
-
-    return session.access_token
-  } catch {
-    console.error('[auth] session lookup failed')
-    return null
-  }
+  return client ? getSessionAccessToken(client.auth, options) : null
 }

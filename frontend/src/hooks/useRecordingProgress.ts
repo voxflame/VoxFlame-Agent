@@ -201,7 +201,7 @@ export function useRecordingProgress(
     const timeoutId = window.setTimeout(() => controller.abort(), RECORDING_PROGRESS_TIMEOUT_MS)
     const request = (async () => {
       try {
-        const token = await getAccessToken()
+        const token = await getAccessToken({ expectedUserId: requestUserId })
         if (!token) {
           throw new Error('auth_required')
         }

@@ -1,3 +1,4 @@
+import { getSessionAccessToken, type AccessTokenOptions } from './session-token'
 import {
   useCallback,
   useEffect,
@@ -375,25 +376,14 @@ export function useMobileAuth(config: MobileRuntimeConfig): MobileAuthState {
   }, [client])
 
   const tokenProvider = useMemo<MobileAuthTokenProvider>(() => ({
-    async getAccessToken(): Promise<string | null> {
-      if (!client) {
-        return null
-      }
-
-      const { data: current, error: sessionError } = await client.auth.getSession()
-      if (sessionError) return null
-      const expiresAt = current.session?.expires_at ?? 0
-      const shouldRefresh = !current.session || expiresAt <= Math.floor(Date.now() / 1000) + 60
-      const { data, error } = shouldRefresh
-        ? await client.auth.refreshSession()
-        : { data: current, error: null }
-      if (error || !data.session) {
-        throw new Error('mobile_auth_expired')
-      }
-
-      return data.session.access_token
+    async getAccessToken(options: AccessTokenOptions = {}): Promise<string | null> {
+      if (!client || !user?.id) return null
+      return getSessionAccessToken(client.auth, {
+        ...options,
+        expectedUserId: options.expectedUserId ?? user.id,
+      })
     },
-  }), [client])
+  }), [client, user?.id])
 
   return {
     client,
