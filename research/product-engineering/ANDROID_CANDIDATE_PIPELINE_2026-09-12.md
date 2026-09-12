@@ -53,3 +53,14 @@ EAS build `3bc0d383-f4f9-494e-bfc4-2f95fa7fe403`：`ERRORED`，`0.1.11 (12)`，�
 - [部署环境保护](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)
 
 文档确立平台机制；是否配置以GitHub API回读为准；是否发布/验收以产物和真实设备证据为准。
+
+## 后续CI修复（2026-09-12 15:56 +08:00）
+
+- 图标已在分支跟踪；Go清单为空，CodeQL移除空目标后JS/TS、Python成功。公共配置Variables已写入，未上传测试账户或管理密钥。
+- run `34680412833` attempt2：公共配置、检查、原生Prebuild、Gradle release APK通过；模拟器缺system-image而失败。run `34681303183`：同样构建通过，裸sdkmanager不在PATH失败。均不能称smoke通过。
+- `0f8fcc5`改用`reactivecircus/android-emulator-runner`固定提交 `4c44018e59b437e86cdfc41da381398f93ed8808`；根据该项目官方README安装SDK/AVD、启用KVM、显式no-window、boot与任务超时，测试结束关闭模拟器。Maestro源码DeviceService默认以GUI启动，不适合直接用于无显示CI。
+- 测试移入 `scripts/mobile-android-smoke.sh`：安装/boot/auth原有测试保留，失败返回码不被logcat采集覆盖；未配置专用认证账号则只跑boot并明确记录未测。构建仅x86_64以减少CI原生编译，EAS preview渠道不变。
+- `python3 scripts/test-mobile-ci.py`7项替身/结构守卫通过；原7项pipeline守卫、YAML/shell、文档/Research检查通过。远端完整模拟器结果仍需回读；不以这些守卫代替录音真机验收。
+- 回退只revert对应CI提交；无需重启Docker或迁移数据库。新CI公共配置可保留，管理员决定是否移除；不修改production发布审批。
+
+补充官方来源：`ReactiveCircus/android-emulator-runner` README、`mobile-dev-inc/Maestro` DeviceService源码；本地run日志建立实际故障证据，不依赖泛化猜测。

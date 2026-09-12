@@ -168,6 +168,8 @@
 
 ## PR #21 CI修复（2026-09-12）
 
-- CodeQL Go失败根因：仓库没有任何受跟踪Go源码/模块，已从矩阵移除Go，仅保留JavaScript/TypeScript与Python扫描。
-- Android Maestro失败根因：GitHub runner未安装Android 33 system image，已在工作流中显式安装 `platform-tools`、`platforms;android-33` 与 `system-images;android-33;google_apis;x86_64` 后再启动模拟器。Supabase公共URL/anon key已写入GitHub Actions Variables（非Secret）。
-- 修复已推送，等待新的PR检查；未合并、未发布APK。
+- CodeQL Go报错是对空语言目标扫描：`git ls-files`无Go源码/模块；移除空目标，保留JS/TS和Python扫描，两项远端通过，不是禁用整个安全扫描。
+- GitHub两个Supabase公共变量已实际写入并回读名称；Android重跑中配置检查、原生Prebuild与Gradle release APK均通过。上一轮仅改表达式而未写变量，不能算修好。
+- 后续模拟器失败依次定位为缺Android33镜像、sdkmanager不在PATH。取消临时补丁，改用固定SHA的android-emulator-runner管理SDK/AVD/KVM/无界面启动和退出；5分钟boot上限、15分钟运行上限，不跳过boot smoke，失败先保留logcat。
+- CI只构建模拟器需要的x86_64；不改变EAS网站APK。7项新CI守卫（图标已跟踪、无界面配置、安装/测试错误传播、缺认证明确标为未测）及原7项流水线守卫、文档/Research检查通过。
+- 修复已推送PR #21，最终无界面Android检查等待远端结果；未合并、未发布APK、无真机验收。专用登录测试凭证未配置，boot通过也不得记作登录/录音验收。详细证据见 `research/product-engineering/ANDROID_CANDIDATE_PIPELINE_2026-09-12.md`。
