@@ -1,7 +1,7 @@
 // Memory Service
 
 import { config } from '@/lib/config'
-import { getValidToken } from '@/lib/supabase/client'
+import { getAccessToken } from '@/lib/supabase/client'
 import {
   buildTrainingVoiceProfilePayload,
   getTrainingProfileSnapshot,
@@ -151,6 +151,16 @@ function normalizeHotwordProfiles(value: unknown): HotwordProfile[] {
   }
 
   return profiles.sort((left, right) => right.updatedAt - left.updatedAt)
+}
+
+export function mergeConcurrentSyncQueue<T extends { id: string }>(
+  pending: T[],
+  failed: T[],
+  current: T[],
+): T[] {
+  const processedIds = new Set(pending.map((item) => item.id))
+  const queuedDuringRequest = current.filter((item) => !processedIds.has(item.id))
+  return [...failed, ...queuedDuringRequest]
 }
 
 const userKey = (uid: string, k: string) => `${KEYS.PREFIX}${uid}_${k}`
@@ -361,6 +371,7 @@ class MemoryService {
   private sessionQueue: Session[] = []
   private lastProfileUpdateSignature: string | null = null
   private profileUpdatePromise: Promise<boolean> | null = null
+  private syncBackendPromise: Promise<void> | null = null
 
   init(userId: string) {
     if (this.userId && this.userId !== userId) {
@@ -369,6 +380,7 @@ class MemoryService {
       this.sessionQueue = []
       this.lastProfileUpdateSignature = null
       this.profileUpdatePromise = null
+      this.syncBackendPromise = null
     }
     this.userId = userId
     this.loadSession()
@@ -771,7 +783,7 @@ class MemoryService {
       return false
     }
 
-    const token = await getValidToken()
+    const token = await getAccessToken()
     if (!token) {
       return false
     }
@@ -793,41 +805,59 @@ class MemoryService {
     }
   }
 
-  private async syncBackend() {
-    if (!this.queue.length && !this.sessionQueue.length) return
-    const token = await getValidToken()
-    if (!token) {
-      this.saveQueue()
-      this.saveSessionQueue()
-      return
+  private syncBackend(): Promise<void> {
+    if (this.syncBackendPromise) {
+      return this.syncBackendPromise
     }
 
-    const remaining: Memory[] = []
-    for (const m of this.queue) {
-      try {
-        const sessionPayload = this.buildSyncSessionPayload(m)
-        const response = await fetch(`${config.api.baseUrl}/memory/add`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({
-            user_id: m.userId,
-            session_id: sessionPayload.id,
-            content: m.content,
-            metadata: m.metadata,
-            session: sessionPayload,
-          })
-        })
-        if (!response.ok) {
-          remaining.push(m)
+    const request = (async () => {
+      while (this.queue.length || this.sessionQueue.length) {
+        const token = await getAccessToken()
+        if (!token) {
+          this.saveQueue()
+          this.saveSessionQueue()
+          return
         }
-      } catch (e) {
-        console.error('[MemoryService] Sync error:', e)
-        remaining.push(m)
+
+        const pendingMemories = [...this.queue]
+        const remaining: Memory[] = []
+        for (const memory of pendingMemories) {
+          try {
+            const sessionPayload = this.buildSyncSessionPayload(memory)
+            const response = await fetch(`${config.api.baseUrl}/memory/add`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({
+                user_id: memory.userId,
+                session_id: sessionPayload.id,
+                content: memory.content,
+                metadata: memory.metadata,
+                session: sessionPayload,
+              })
+            })
+            if (!response.ok) {
+              remaining.push(memory)
+            }
+          } catch (error) {
+            console.error('[MemoryService] Sync error:', error)
+            remaining.push(memory)
+          }
+        }
+
+        this.queue = mergeConcurrentSyncQueue(pendingMemories, remaining, this.queue)
+        this.saveQueue()
+        const sessionsSynced = await this.syncSessionQueue(token)
+
+        if (remaining.length > 0 || !sessionsSynced) {
+          return
+        }
       }
-    }
-    this.queue = remaining
-    this.saveQueue()
-    await this.syncSessionQueue(token)
+    })().finally(() => {
+      this.syncBackendPromise = null
+    })
+
+    this.syncBackendPromise = request
+    return request
   }
 
   private buildSyncSessionPayload(memory: Memory): Record<string, unknown> {
@@ -865,14 +895,15 @@ class MemoryService {
     return buildSessionSyncPayloadFromSession(session)
   }
 
-  private async syncSessionQueue(token: string) {
+  private async syncSessionQueue(token: string): Promise<boolean> {
     if (!this.sessionQueue.length) {
-      return
+      return true
     }
 
+    const pendingSessions = [...this.sessionQueue]
     const remaining: Session[] = []
 
-    for (const session of this.sessionQueue) {
+    for (const session of pendingSessions) {
       try {
         const response = await fetch(`${config.api.baseUrl}/memory/session`, {
           method: 'POST',
@@ -896,8 +927,9 @@ class MemoryService {
       }
     }
 
-    this.sessionQueue = remaining
+    this.sessionQueue = mergeConcurrentSyncQueue(pendingSessions, remaining, this.sessionQueue)
     this.saveSessionQueue()
+    return remaining.length === 0
   }
 
   private findSessionById(sessionId: string): Session | null {

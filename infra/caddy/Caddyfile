@@ -1,42 +1,92 @@
 {
-    admin off
-    default_sni {$VOXFLAME_PUBLIC_HOST}
-    servers {
-        protocols h1 h2
-    }
+	admin off
+	default_sni {$VOXFLAME_PUBLIC_HOST}
+	servers {
+		protocols h1 h2
+	}
 }
 
 {$VOXFLAME_PUBLIC_HOST} {
-    tls {
-        issuer acme {
-            profile shortlived
-        }
-    }
+	tls {
+		issuer acme {
+			profile shortlived
+		}
+	}
 
-    encode zstd gzip
+	encode zstd gzip
 
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "DENY"
-        Referrer-Policy "strict-origin-when-cross-origin"
-        Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data: blob: https:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https: wss:; media-src 'self' blob: data:; manifest-src 'self'; worker-src 'self' blob:; form-action 'self'; upgrade-insecure-requests"
-        Permissions-Policy "camera=(), display-capture=(), geolocation=(), payment=(), usb=(), microphone=(self)"
-        -Server
-        -X-Powered-By
-    }
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data: blob: https:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https: wss:; media-src 'self' blob: data:; manifest-src 'self'; worker-src 'self' blob:; form-action 'self'; upgrade-insecure-requests"
+		Permissions-Policy "camera=(), display-capture=(), geolocation=(), payment=(), usb=(), microphone=(self)"
+		-Server
+		-X-Powered-By
+	}
 
-    @livekit path /rtc /rtc/*
-    reverse_proxy @livekit 127.0.0.1:7880
+	@livekit path /rtc /rtc/*
+	handle @livekit {
+		reverse_proxy 127.0.0.1:7880
+	}
 
-    handle /download/android {
-        rewrite * /VoxFlame-Android.apk
-        root * /srv/releases/android
-        header Cache-Control "no-store"
-        header Content-Disposition "attachment; filename=VoxFlame-Android.apk"
-        header Content-Type "application/vnd.android.package-archive"
-        file_server
-    }
+	handle /download/android {
+		rewrite * /VoxFlame-Android.apk
+		root * /srv/releases/android
+		header Cache-Control "no-store"
+		header Content-Disposition "attachment; filename=VoxFlame-Android.apk"
+		header Content-Type "application/vnd.android.package-archive"
+		file_server
+	}
 
-    reverse_proxy 127.0.0.1:3000
+	# These routes are implemented by Next.js and must stay with the frontend.
+	@frontend_api path /api/training/catalog /api/corpus-review /api/corpus-review/*
+	handle @frontend_api {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	# Runtime APIs have an independent availability boundary from web releases.
+	handle /api/* {
+		reverse_proxy 127.0.0.1:3001
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
+}
+
+# 第二品牌站只改变产品品牌和入口，账号、Backend、OSS 与数据契约保持共用。
+# DNS 准备好后把 VOXFLAME_COLLECTION_SITE_ADDRESS 设为正式 hostname。
+{$VOXFLAME_COLLECTION_SITE_ADDRESS:http://127.0.0.1} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data: blob: https:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https: wss:; media-src 'self' blob: data:; manifest-src 'self'; worker-src 'self' blob:; form-action 'self'; upgrade-insecure-requests"
+		Permissions-Policy "camera=(), display-capture=(), geolocation=(), payment=(), usb=(), microphone=(self)"
+		-Server
+		-X-Powered-By
+	}
+
+	@livekit path /rtc /rtc/*
+	handle @livekit {
+		reverse_proxy 127.0.0.1:7880
+	}
+
+	@frontend_api path /api/training/catalog /api/corpus-review /api/corpus-review/*
+	handle @frontend_api {
+		reverse_proxy 127.0.0.1:3002
+	}
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:3001
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:3002
+	}
 }

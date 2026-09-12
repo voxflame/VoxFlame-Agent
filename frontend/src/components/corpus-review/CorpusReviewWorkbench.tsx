@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
+import { getSiteBrand } from '@/lib/site-branding'
 import {
   CORE_GAP_REVIEW_FIELDS,
   CORE_GAP_REVIEW_STATUSES,
@@ -32,6 +33,8 @@ import {
   type CoreGapReviewWorkspace,
   type CoreGapWorkspaceItem,
 } from '@/lib/corpus-review/types'
+
+const siteBrand = getSiteBrand()
 
 interface CorpusReviewWorkbenchProps {
   reviewer: string
@@ -84,7 +87,9 @@ function decisionNeedsAttention(decision: CoreGapDraftDecision): boolean {
 }
 
 function sourceLabel(source: string): string {
-  if (source === 'VoxFlame authored candidate') return '燃言自拟候选'
+  if (source.startsWith('VoxFlame authored candidate')) {
+    return source.replace('VoxFlame authored candidate', `${siteBrand.name}自拟候选`)
+  }
   return source
 }
 

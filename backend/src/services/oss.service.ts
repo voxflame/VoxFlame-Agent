@@ -2,6 +2,29 @@ import OSS from 'ali-oss';
 import dotenv from 'dotenv';
 dotenv.config();
 
+interface TextObjectWriter {
+    put(name: string, content: Buffer): Promise<unknown>;
+}
+
+export interface OssObjectInspection {
+    contentLength: number;
+    contentType: string;
+    etag: string | null;
+}
+
+/**
+ * Aliyun OSS PutObject does not support the HTTP If-Match precondition used by
+ * the previous implementation. Callers serialize each account's artifact
+ * mutations before using this overwrite helper.
+ */
+export async function overwriteTextObject(
+    client: TextObjectWriter,
+    name: string,
+    content: Buffer,
+): Promise<void> {
+    await client.put(name, content);
+}
+
 export class OssService {
     private client: OSS | null = null;
     private isConfigured: boolean = false;
@@ -60,6 +83,31 @@ export class OssService {
         }
     }
 
+    /** Read the immutable object facts used by the upload admission gate. */
+    async inspectObject(name: string): Promise<OssObjectInspection | null> {
+        const client = this.getConfiguredClient();
+
+        try {
+            const result = await client.head(name);
+            const headers = (result as {
+                res?: { headers?: Record<string, string | number | string[] | undefined> };
+            }).res?.headers ?? {};
+            const contentLength = Number(headers['content-length']);
+            const contentType = String(headers['content-type'] ?? '').trim();
+            const rawEtag = headers.etag;
+            const etag = typeof rawEtag === 'string' && rawEtag.trim()
+                ? rawEtag.trim()
+                : null;
+
+            return { contentLength, contentType, etag };
+        } catch (error: unknown) {
+            if (isOssNotFoundError(error)) {
+                return null;
+            }
+            throw error;
+        }
+    }
+
     /**
      * Append text line to a file in OSS using AppendObject
      * This is efficient and suitable for logs/transcripts.
@@ -70,6 +118,7 @@ export class OssService {
         const client = this.client;
         const content = line + '\n';
         const buf = Buffer.from(content);
+        let lastError: unknown = null;
 
         // Simple retry logic for concurrency
         for (let i = 0; i < 3; i++) {
@@ -85,7 +134,11 @@ export class OssService {
                     }).res?.headers ?? {};
                     const type = headers['x-oss-object-type'];
                     if (type === 'Normal') {
-                        console.warn(`[OSS] ${name} is Normal type, cannot append. Skipping.`);
+                        const current = await client.get(name);
+                        const currentContent = Buffer.isBuffer(current.content)
+                            ? current.content
+                            : Buffer.from(current.content);
+                        await overwriteTextObject(client, name, Buffer.concat([currentContent, buf]));
                         return;
                     }
                     const nextPosition = headers['x-oss-next-append-position'];
@@ -100,15 +153,20 @@ export class OssService {
                 // Success
                 return;
             } catch (e: unknown) {
+                lastError = e;
                 if (isOssPositionConflictError(e)) {
-                    // Concurrent append happened, retry
-                    console.log(`[OSS] Append position mismatch for ${name}, retrying...`);
+                    // Concurrent append happened, re-read and retry.
+                    console.log(`[OSS] Concurrent text log update for ${name}, retrying...`);
                     continue;
                 }
                 console.error(`[OSS] Failed to append to ${name}:`, e);
-                break;
+                throw e;
             }
         }
+
+        throw lastError instanceof Error
+            ? lastError
+            : new Error(`OSS append retries exhausted for ${name}`);
     }
 
     /**
@@ -148,6 +206,43 @@ export class OssService {
         }
     }
 
+    /** Rewrite one text object inside the caller's per-account serialized operation. */
+    async rewriteTextObject(
+        name: string,
+        rewrite: (content: string) => string,
+    ): Promise<boolean> {
+        if (!this.isConfigured || !this.client) {
+            return false;
+        }
+
+        const client = this.client;
+        let result: Awaited<ReturnType<OSS['get']>>;
+        try {
+            result = await client.get(name);
+        } catch (error: unknown) {
+            if (isOssNotFoundError(error)) return false;
+            throw error;
+        }
+
+        const current = Buffer.isBuffer(result.content)
+            ? result.content.toString('utf8')
+            : Buffer.from(result.content).toString('utf8');
+        const next = rewrite(current);
+        if (next === current) return false;
+
+        await overwriteTextObject(client, name, Buffer.from(next));
+        return true;
+    }
+
+    /** Write a complete text object when the caller already holds its serialized snapshot. */
+    async writeTextObject(name: string, content: string): Promise<void> {
+        if (!this.isConfigured || !this.client) {
+            return;
+        }
+
+        await overwriteTextObject(this.client, name, Buffer.from(content));
+    }
+
     /**
      * Delete an object from OSS. Missing objects are treated as already deleted.
      */
@@ -168,23 +263,6 @@ export class OssService {
         }
     }
 
-    /**
-     * Replace an append log while preserving append-object compatibility.
-     */
-    async replaceTextLog(name: string, lines: string[]): Promise<void> {
-        if (!this.isConfigured || !this.client) {
-            return;
-        }
-
-        await this.deleteObject(name);
-
-        for (const line of lines) {
-            const normalized = line.trim();
-            if (normalized) {
-                await this.appendTextLog(name, normalized);
-            }
-        }
-    }
 }
 
 export const ossService = new OssService();

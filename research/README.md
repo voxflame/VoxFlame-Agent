@@ -1,14 +1,19 @@
-# VoxFlame Research
+# VoxFlame 文档与研究
 
-`research/` 是当前应用的研究唯一入口。这里不复制模型仓库的实验原始事实，而是回答一个更严格的问题：**哪些证据足以改变 VoxFlame 的产品、模型接入、临床边界或工程实现？**
+`research/` 是仓库唯一文档根，统一承接产品、运行时、工程、运维、合规、任务模板和应用研究。模型仓库的实验原始事实仍留在 `references/clear-vox-model`。
 
-## 两层事实源
+## 现役入口
 
 - 上游实验事实源：[CLEAR-VOX-MODEL](../references/clear-vox-model/) submodule。模型代码、数据处理、实验配置、逐实验记录和原始结果都留在那里。
-- 应用研究事实源：本目录。这里只保存经审阅的综合研究、VoxFlame 映射、决策状态和验证要求。
-- 产品与运行时事实源仍是 [产品 PRD](../docs/VOXFLAME_PRODUCT_PRD_2026-03-24.md)、[当前任务](../.tasks/current.md) 和实际代码；研究结论不能自行变成运行时能力。
+- 产品与运行时：[产品 PRD](product-engineering/VOXFLAME_PRODUCT_PRD_2026-03-24.md)、[采集/扩容/控制面](product-engineering/VOICE_COLLECTION_SCALING_CONTROL_PLANE_2026-09-04.md)、[数据库 schema](product-engineering/database/supabase-schema.sql)、[当前任务](../.tasks/current.md) 和实际代码。
+- 工程协作：[AI 工程系统](AI_ENGINEERING_SYSTEM.md)、[Harness 入口](aiprompts/HARNESS_ENTRY_CONTRACT.md)、[执行计划模板](templates/AI_EXECUTION_PLAN_TEMPLATE.md)。
+- 移动端与设备：[真机验证手册](product-engineering/VOXFLAME_MOBILE_WORKBENCH_DEVICE_VERIFICATION_RUNBOOK_2026-05-05.md)、[硬件桥接手册](product-engineering/VOXFLAME_HARDWARE_BRIDGE_DEVELOPMENT_GUIDE_2026-05-05.md)。
+- 数据采集：[产品规范](speech-health/VOXFLAME_VOICE_COLLECTION_PRODUCT_SPEC_2026-08-18.md)、[设备验收](speech-health/VOXFLAME_VOICE_COLLECTION_DEVICE_ACCEPTANCE_CHECKLIST_2026-08-18.md)、[普通话覆盖基线](speech-health/MANDARIN_LINGUISTIC_COVERAGE_AND_COLLECTION_BASELINE_2026-08-22.md)。
+- 安全合规：[内部整改记录](product-engineering/NETWORK_SECURITY_REMEDIATION_2026_267.md)、[正式整改报告](product-engineering/上海生声不息科技有限公司网络安全整改报告_沪浦网信安通2026_267号.md)、[WAIC 安全清单](product-engineering/WAIC_SECURITY_CHECKLIST_2026-07-08.md)。
 
-## 五大主题
+研究结论不能自行变成运行时能力；仍须进入应用回流登记、指定 owner 并完成验证。
+
+## 五个研究主题
 
 | 主题 | 目录 | 研究问题 |
 | --- | --- | --- |
@@ -50,6 +55,7 @@
 ## 端到端 Harness
 
 - [研究 Harness](RESEARCH_HARNESS.md)：统一 `研究 → 发现 → 证据 → 实验 → 学术/专利 → 产品场景 → 反馈优化` 的生命周期、状态和硬门禁。
+- [Harness 规则](HARNESS_RULES.yaml)：阈值、状态、自动动作和人工确认边界的机器可读事实源。
 - [Pipeline registry](PIPELINE.yaml)：每个研究机会的唯一 `research_id` 和阶段索引。
 - [Feedback registry](FEEDBACK_REGISTRY.yaml)：用户、沟通伙伴、专家、遥测和失败样本的优化输入。
 - [Evidence package](evidence/RO-000.yaml)：强证据、独立复核、可复现性和成果/产品门禁的事实包模板。
@@ -58,6 +64,12 @@
 所有论文、专利和产品试点都必须关联同一 `research_id`，并通过独立证据包；没有强证据只能保持候选、内部研究或隔离试点状态。
 
 发布论文、专利、公开数据/代码、产品默认能力，或把 idea 扩大到新用户/病因/语言/设备/场景之前，必须通过证据包中的 `authority_gate`。闸门未通过时只能 `internal_only` 或 `hold`，不能对外宣称或扩大承诺。
+
+### 自动触发与闭环入口
+
+工程遥测和用户反馈可以通过 `scripts/research/check-research-triggers.py` 生成待处理触发信号，再用 `create-feedback-entry.py` 写入反馈登记。触发器只产生证据化输入，不自动执行清理、扩容、发布或把研究标为 `adopted`。每个条目必须继续经过 owner、baseline、停止条件、可回退实现和场景验证；`scripts/research/validate-research-loop.py` 用于阻止缺少证据包、成果审查或反馈关联的研究条目进入闭环。
+
+默认触发条件包括：同类故障 7 天内重复、P95/P99/5xx/429/超时/丢包或 Job 拒绝超过保护阈值、根盘达到 50/60/85% 阈值、修复缺少真实设备证据，以及准备扩大用户/设备/语言/场景范围。真实用户试点、生产流量扩大、扩容采购、数据删除、健康主张和对外发布必须由负责人确认。
 
 国内成果初审规则见 [国内成果初步审查与改进建议](OUTCOME_REVIEW.md)。论文、专利、软件著作权和产品分别使用不同检查项；初步审查报告只能帮助发现材料缺口和改进方向，不能替代版权登记、专利代理/法律意见或期刊同行评审。
 
@@ -86,3 +98,5 @@ git submodule update --init --recursive
 - 未经临床专家复核、目标人群验证和合规评估的结果，只能标为研究或训练反馈。
 - 健康数据坚持最小必要收集、明确授权、可撤回和用途隔离。
 - 任何面向用户的健康提示都必须声明能力边界，并为高风险情况提供人工专业支持路径。
+
+- [语音/Agent 官方工程指标与 Benchmark 协议](voice-agent/VOICE_AGENT_BENCHMARK_PROTOCOL.md)：发现需求 → 实现 → 优化 → 测试 → 迭代；离线检查、RTC 与设备证据分层。

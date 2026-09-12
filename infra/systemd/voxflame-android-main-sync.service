@@ -15,6 +15,11 @@ StateDirectoryMode=0750
 # manually provisioned config directory remains writable by the build user.
 ExecStartPre=+/usr/bin/install -d -m 0750 -o voxflame-android-build -g voxflame-android-build /var/lib/voxflame-android-build/config
 ExecStart=/usr/local/libexec/voxflame-android-main-sync
+TimeoutStartSec=45min
+MemoryHigh=2G
+MemoryMax=3G
+TasksMax=512
+CPUQuota=200%
 UMask=0077
 Nice=10
 NoNewPrivileges=true

@@ -45,6 +45,31 @@ interface StopRtcRecordingActionOptions {
   setState: Dispatch<SetStateAction<RtcAgentState>>
   sendControlMessage: (type: string, payload?: Record<string, unknown>) => Promise<void>
   clientCaptureId?: string
+  operationTimeoutMs?: number
+}
+
+const DEFAULT_RTC_STOP_OPERATION_TIMEOUT_MS = 400
+
+function withOperationTimeout(
+  operation: Promise<void>,
+  timeoutMs: number,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = globalThis.setTimeout(() => {
+      reject(new Error('录音停止信号发送超时'))
+    }, timeoutMs)
+
+    operation.then(
+      () => {
+        globalThis.clearTimeout(timer)
+        resolve()
+      },
+      (error: unknown) => {
+        globalThis.clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
 }
 
 interface SendRtcTextActionOptions {
@@ -95,26 +120,39 @@ export async function stopRtcRecordingAction({
   setState,
   sendControlMessage,
   clientCaptureId,
+  operationTimeoutMs = DEFAULT_RTC_STOP_OPERATION_TIMEOUT_MS,
 }: StopRtcRecordingActionOptions): Promise<void> {
   const micTrack = refs.micTrackRef.current
-  if (!micTrack) {
-    return
+  setState((prev) => applyRecordingStopped(prev))
+
+  const failures: unknown[] = []
+  const runStopOperation = async (operation: Promise<void>) => {
+    try {
+      await withOperationTimeout(operation, operationTimeoutMs)
+    } catch (error) {
+      failures.push(error)
+    }
   }
 
-  await micTrack.setEnabled(false)
-  if (clientCaptureId) {
-    await sendControlMessage('speech_activity', {
-      state: 'speech_stopped',
-      auto_finalize: true,
-      client_capture_id: clientCaptureId,
-      detected_at: Date.now(),
-    })
+  if (micTrack) {
+    await runStopOperation(micTrack.setEnabled(false))
   }
-  await sendControlMessage('end_audio', {
-    reason: 'manual_stop',
-    ...(clientCaptureId ? { client_capture_id: clientCaptureId } : {}),
-  })
-  setState((prev) => applyRecordingStopped(prev))
+  if (clientCaptureId) {
+    await runStopOperation(sendControlMessage('speech_activity', {
+        state: 'speech_stopped',
+        auto_finalize: true,
+        client_capture_id: clientCaptureId,
+        detected_at: Date.now(),
+      }))
+  }
+  await runStopOperation(sendControlMessage('end_audio', {
+      reason: 'manual_stop',
+      ...(clientCaptureId ? { client_capture_id: clientCaptureId } : {}),
+    }))
+
+  if (failures.length > 0) {
+    throw failures[0]
+  }
 }
 
 export async function sendRtcTextAction({

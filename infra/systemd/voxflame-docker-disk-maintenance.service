@@ -1,0 +1,20 @@
+[Unit]
+Description=VoxFlame automatic safe Docker disk maintenance
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/voxflame-docker-disk-maintenance auto
+Environment=DOCKER_CONFIG=/run/voxflame-docker-config
+RuntimeDirectory=voxflame-docker-config
+RuntimeDirectoryMode=0700
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/docker /run/voxflame-docker-config
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=128M
+TasksMax=64

@@ -2,7 +2,7 @@
 
 > 结论：可以开始完整移动端工作台研发。新的判断不是“先做一个薄 companion”，而是把移动端作为第一等产品面来设计；但工程交付仍按可验证切片推进，不能用一次性重写破坏现役 Web / PWA 主链。
 
-Phase 0 已开始落地，当前执行计划见 [VoxFlame Mobile V1 Implementation Plan](../../docs/VOXFLAME_MOBILE_V1_IMPLEMENTATION_PLAN_2026-07-23.md)，代码目录为 [apps/mobile-workbench](../../apps/mobile-workbench)。
+Phase 0 已完成并进入真实设备验收，当前执行依据见 [Mobile Workbench 真机验证手册](VOXFLAME_MOBILE_WORKBENCH_DEVICE_VERIFICATION_RUNBOOK_2026-05-05.md)，代码目录为 [apps/mobile-workbench](../../apps/mobile-workbench)。
 
 ## 1. 当前是否适合开始 App
 

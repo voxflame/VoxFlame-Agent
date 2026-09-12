@@ -9,6 +9,7 @@ import {
   reviewEntriesFromQueue,
   validateMandarinSpokenTextReviewQueue,
 } from './mandarin-spoken-text-review-core.mjs'
+import { resolveActiveRecordingManifestRows } from '../src/lib/corpus/recording-manifest-events.mjs'
 
 function values(name) {
   return process.argv.flatMap((value, index) => value === name ? [process.argv[index + 1]] : []).filter(Boolean)
@@ -56,7 +57,7 @@ function corpusEntries(filePath) {
 }
 
 function manifestReport(paths) {
-  const rows = paths.flatMap(readJsonl)
+  const rows = resolveActiveRecordingManifestRows(paths.flatMap(readJsonl))
   const uniqueRows = new Map()
   for (const row of rows) {
     const key = row.recording_id ?? row.metadata?.recording_id ?? `${row.audio?.path}:${row.created_at}`

@@ -13,6 +13,7 @@ import {
 } from '@/lib/audio/microphone-preferences'
 import { calculateNormalizedInputLevel } from '@/lib/audio/microphone-input-feedback'
 import { LocalPcmWavRecorder } from '@/lib/audio/local-pcm-wav-recorder'
+import { pickPreferredTrainingTranscriptCandidate } from '@/lib/training/final-transcript'
 import { useRtcAgentSession } from './useRtcAgentSession'
 import { reportFrontendDiagnostic, toProductMessage } from '@/lib/ui/product-message'
 
@@ -20,9 +21,12 @@ type SessionStatus = 'idle' | 'connecting' | 'ready' | 'recording' | 'processing
 
 interface StopRecordingResult {
   clientCaptureId: string
-  transcript: string
+  immediateTranscript: string
   recording: VoxFlameRecordingEnvelope | null
-  transcriptLatencyMs: number
+  transcriptCompletion: Promise<{
+    transcript: string
+    transcriptLatencyMs: number
+  }>
 }
 
 interface PracticeTranscriptState {
@@ -80,7 +84,6 @@ export function useMandarinTrainingSession(
     accessToken,
     mode: 'training',
     surface: 'training_workspace',
-    executionBackend: 'livekit',
     requestedCapabilities: [
       'transport_send_control',
       'workspace_snapshot_read',
@@ -298,8 +301,9 @@ export function useMandarinTrainingSession(
   const waitForFinalTranscript = useCallback(async (
     baseline: LatestUserTranscriptSnapshot,
     clientCaptureId: string,
+    latestInterim: string,
+    bestObserved: string,
   ): Promise<string> => {
-    void baseline
     const deadline = Date.now() + (shortUtteranceMode ? 8_500 : 7_000)
 
     while (Date.now() < deadline) {
@@ -313,7 +317,12 @@ export function useMandarinTrainingSession(
       })
     }
 
-    return readScopedFinalTranscript(baseline, clientCaptureId)
+    return pickPreferredTrainingTranscriptCandidate({
+      baseline: baseline.text,
+      latestFinal: readScopedFinalTranscript(baseline, clientCaptureId),
+      latestInterim,
+      bestObserved,
+    })
   }, [readScopedFinalTranscript, shortUtteranceMode])
 
   const startRecording = useCallback(async () => {
@@ -357,25 +366,47 @@ export function useMandarinTrainingSession(
     try {
       const finalizeStartedAt = Date.now()
       const clientCaptureId = activeClientCaptureIdRef.current ?? crypto.randomUUID()
+      const baseline = recordingBaselineRef.current
+      const latestInterim = currentASRTextRef.current
+      const bestObserved = bestObservedTranscriptRef.current
       const recordingPromise = stopLocalRecording()
-      await stopRtcRecording(clientCaptureId)
-      const [recording, transcript] = await Promise.all([
+      const rtcStopPromise = stopRtcRecording(clientCaptureId).catch((stopError: unknown) => {
+        reportFrontendDiagnostic('training-rtc-stop', stopError)
+        setError('录音已保留，连接正在自动恢复。')
+        void disconnectRtc()
+      })
+      const transcriptCompletion = waitForFinalTranscript(
+        baseline,
+        clientCaptureId,
+        latestInterim,
+        bestObserved,
+      ).then((transcript) => ({
+        transcript: transcript.trim(),
+        transcriptLatencyMs: Math.max(0, Date.now() - finalizeStartedAt),
+      }))
+      const [recording] = await Promise.all([
         recordingPromise,
-        waitForFinalTranscript(recordingBaselineRef.current, clientCaptureId),
+        rtcStopPromise,
       ])
+      const immediateTranscript = pickPreferredTrainingTranscriptCandidate({
+        baseline: baseline.text,
+        latestFinal: readScopedFinalTranscript(baseline, clientCaptureId),
+        latestInterim,
+        bestObserved,
+      })
 
       return {
         clientCaptureId,
-        transcript: transcript.trim(),
+        immediateTranscript: immediateTranscript.trim(),
         recording,
-        transcriptLatencyMs: Math.max(0, Date.now() - finalizeStartedAt),
+        transcriptCompletion,
       }
     } finally {
       activeClientCaptureIdRef.current = null
       updateActiveTranscriptState(null, '')
       setIsProcessing(false)
     }
-  }, [stopLocalRecording, stopRtcRecording, waitForFinalTranscript])
+  }, [disconnectRtc, readScopedFinalTranscript, stopLocalRecording, stopRtcRecording, waitForFinalTranscript])
 
   const disconnect = useCallback(() => {
     setError(null)

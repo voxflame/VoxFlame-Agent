@@ -1,0 +1,120 @@
+version: 1
+updated_at: 2026-09-10
+schema: voxflame-research-harness-rules-v1
+entrypoint: AGENTS.md
+registries:
+  pipeline: research/PIPELINE.yaml
+  feedback: research/FEEDBACK_REGISTRY.yaml
+  application_feedback: research/APPLICATION_FEEDBACK_REGISTRY.md
+  evidence_dir: research/evidence
+  outcome_review_dir: research/outcome-reviews
+  trigger_scripts: scripts/research
+states:
+  research: [discovered, evidence_review, experiment_ready, experimenting, outcome_review, authority_review, scholarly_ip, software_copyright_review, scenario_pilot, adopted, improving, hold, rejected]
+  feedback: [new, triaged, experiment_ready, validating, resolved, rejected, accepted_risk]
+  terminal_research: [adopted, hold, rejected]
+  terminal_feedback: [resolved, rejected, accepted_risk]
+automatic_actions:
+  allowed: [create_feedback, update_feedback, request_evidence, mark_threshold_breached]
+  forbidden: [delete_data, expand_production, purchase_capacity, publish_claim, mark_adopted, change_runtime_config]
+manual_confirmation_required:
+  - real_device_or_target_user_pilot
+  - production_traffic_expansion
+  - capacity_purchase_or_server_resize
+  - database_object_storage_deletion
+  - medical_or_health_claim
+  - public_release_or_scope_expansion
+cross_platform_contracts:
+  rule: Web 与 App 的注册字段、授权语义、版本号和数据用途必须共享同一事实源；UI 可按平台适配，但不得出现一端有功能、另一端缺失或语义不同。
+  legal_consent_version: '2026-09-03'
+  required_registration_consents: [privacy, sensitive_data, data_collection, commercial_use]
+  commercial_use_scope: [model_training, evaluation, product_improvement, service_operations]
+  prohibited_use: [illegal_use, sale_of_identity_information, undisclosed_purpose_expansion]
+  user_controls: [separate_explicit_consent, withdrawal, deletion_request, export_request]
+upload_admission:
+  runtime_config: backend/src/config/upload-admission.json
+  required_server_checks: [current_legal_consent, contributor_path_ownership, stable_recording_id, object_exists, positive_object_size, extension_content_type_match, target_present, positive_duration]
+training_dataset_export:
+  runtime_config: backend/src/config/training-dataset-export.json
+  required_hard_gates: [current_legal_consent, server_admitted, training_consent_scope, valid_target_and_duration, verified_object_size_type_etag, fully_synced_active_manifest_recording, allowed_quality_state, immutable_versioned_snapshot, speaker_disjoint_split]
+  raw_recording_policy: preserve_and_classify_do_not_delete
+triggers:
+  disk:
+    warning_percent: 50
+    safe_cleanup_percent: 60
+    human_escalation_percent: 85
+  training_progress:
+    p95_ms: 2000
+    recovery_rate_min: 0.99
+  realtime:
+    job_reject_rate_max: 0.01
+    asr_p95_ms: 2000
+    tts_first_byte_p95_ms: 1500
+    packet_loss_rate_max: 0.01
+    provider_429_rate_max: 0
+  repeated_failure:
+    window_days: 7
+    count_min: 2
+completion:
+  required_artifacts: [problem, evidence_package, feedback_ref, baseline, metrics, stop_conditions, rollback, outcome_review, next_review_date]
+  required_verification: [mechanism_or_engineering, product_or_scenario_when_claimed]
+  prohibited_shortcuts: [analysis_only, deployed_without_verification, single_http_test_as_rtc_capacity, single_user_as_population_proof]
+
+engineering_cycle:
+  stages: [发现需求, 实现, 优化, 测试, 迭代]
+  required_iteration_fields: [decision, next_action, owner, review_date]
+  decisions: [continue, hold, stop, ready_for_review]
+voice_benchmark:
+  schema: voxflame-voice-benchmark-v1
+  protocol: research/voice-agent/VOICE_AGENT_BENCHMARK_PROTOCOL.md
+  sample_outcomes: [completed, failed, cancelled]
+  domains: [synthetic, offline_audio, rtc, device]
+  metadata_fields: [run_id, code_version, config_sha256, dataset_sha256, protocol_sha256, scenario, population, device, model_version, seed, concurrency, temperature_state]
+  metric_catalog:
+    asr_request_ms:
+      unit: ms
+      basis: livekit-data/STTMetrics.duration/non-streaming
+      domains: [offline_audio, rtc, device]
+      threshold: triggers.realtime.asr_p95_ms
+    end_of_turn_ms:
+      unit: ms
+      basis: livekit-data/EOUMetrics.end_of_utterance_delay
+      domains: [rtc, device]
+    llm_full_ms:
+      unit: ms
+      basis: livekit-data/LLMMetrics.duration
+      domains: [offline_audio, rtc, device]
+    llm_ttft_ms:
+      unit: ms
+      basis: livekit-data/LLMMetrics.ttft
+      domains: [offline_audio, rtc, device]
+    tts_ttfb_ms:
+      unit: ms
+      basis: livekit-data/TTSMetrics.ttfb
+      domains: [offline_audio, rtc, device]
+      threshold: triggers.realtime.tts_first_byte_p95_ms
+    rtc_first_frame_after_input_ms:
+      unit: ms
+      basis: project/rtc-receive-proxy-not-speaker
+      domains: [rtc, device]
+    audible_response_ms:
+      unit: ms
+      basis: project/acoustic-end-of-speech-to-speaker-onset
+      domains: [device]
+    cancel_to_clear_ms:
+      unit: ms
+      basis: project/cancel-to-producer-joined-and-source-cleared
+      domains: [synthetic, rtc, device]
+    jitter_buffer_ms:
+      unit: ms
+      basis: w3c-webrtc-stats/delta-jitterBufferDelay-over-delta-jitterBufferEmittedCount
+      domains: [rtc, device]
+    concealed_sample_rate:
+      unit: ratio
+      basis: w3c-webrtc-stats/delta-concealedSamples-over-delta-totalSamplesReceived
+      domains: [rtc, device]
+  # Quality targets require a frozen corpus/device protocol, not invented constants.
+  percentile_method: nearest_rank
+  incomplete_measurement_policy: not_measured
+  missing_threshold_policy: not_evaluated
+  promotion: manual_review_only

@@ -4,6 +4,7 @@ import path from 'node:path'
 import { NextResponse } from 'next/server'
 
 import { getCorpusReviewerAccess } from '@/lib/corpus-review/reviewer-access'
+import { resolveActiveRecordingManifestRows } from '@/lib/corpus/recording-manifest-events.mjs'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,24 +24,27 @@ function safeRecordingId(value: string): boolean {
 }
 
 function findAudioPath(recordingId: string): string | null {
-  for (const manifestPath of configuredManifestPaths()) {
-    if (!fs.existsSync(manifestPath)) continue
-    const lines = fs.readFileSync(manifestPath, 'utf8').split(/\r?\n/u).filter(Boolean)
-    for (const line of lines) {
-      let row: { recording_id?: string; metadata?: { recording_id?: string }; audio?: { path?: string } }
+  const rows = configuredManifestPaths().flatMap((manifestPath) => {
+    if (!fs.existsSync(manifestPath)) return []
+    return fs.readFileSync(manifestPath, 'utf8').split(/\r?\n/u).filter(Boolean).flatMap((line) => {
       try {
-        row = JSON.parse(line) as typeof row
+        return [{
+          ...(JSON.parse(line) as { recording_id?: string; metadata?: { recording_id?: string }; audio?: { path?: string } }),
+          manifestPath,
+        }]
       } catch {
-        continue
+        return []
       }
-      const rowId = row.recording_id ?? row.metadata?.recording_id
-      const audioPath = row.audio?.path
-      if (rowId !== recordingId || !audioPath || path.isAbsolute(audioPath)) continue
-      const root = manifestArtifactRoot(manifestPath)
-      const resolved = path.resolve(root, audioPath)
-      if (resolved === root || !resolved.startsWith(`${root}${path.sep}`)) continue
-      return resolved
-    }
+    })
+  })
+  for (const row of resolveActiveRecordingManifestRows(rows)) {
+    const rowId = row.recording_id ?? row.metadata?.recording_id
+    const audioPath = row.audio?.path
+    if (rowId !== recordingId || !audioPath || path.isAbsolute(audioPath)) continue
+    const root = manifestArtifactRoot(row.manifestPath)
+    const resolved = path.resolve(root, audioPath)
+    if (resolved === root || !resolved.startsWith(`${root}${path.sep}`)) continue
+    return resolved
   }
   return null
 }

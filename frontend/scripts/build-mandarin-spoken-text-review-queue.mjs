@@ -4,22 +4,17 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { buildMandarinSpokenTextReviewQueue } from './mandarin-spoken-text-review-core.mjs'
+import {
+  parseRecordingManifestJsonl,
+  resolveActiveRecordingManifestRows,
+} from '../src/lib/corpus/recording-manifest-events.mjs'
 
 function values(name) {
   return process.argv.flatMap((value, index) => value === name ? [process.argv[index + 1]] : []).filter(Boolean)
 }
 
 function readJsonl(filePath) {
-  return fs.readFileSync(filePath, 'utf8')
-    .split(/\r?\n/u)
-    .filter(Boolean)
-    .map((line, index) => {
-      try {
-        return JSON.parse(line)
-      } catch (error) {
-        throw new Error(`${filePath}:${index + 1}: ${error.message}`)
-      }
-    })
+  return parseRecordingManifestJsonl(fs.readFileSync(filePath, 'utf8'), filePath)
 }
 
 const manifestPaths = values('--manifest')
@@ -29,7 +24,7 @@ if (manifestPaths.length === 0 || !outputPath) {
 }
 
 const payload = buildMandarinSpokenTextReviewQueue(
-  manifestPaths.flatMap(readJsonl),
+  resolveActiveRecordingManifestRows(manifestPaths.flatMap(readJsonl)),
   { sourceManifestFiles: manifestPaths },
 )
 fs.mkdirSync(path.dirname(outputPath), { recursive: true })

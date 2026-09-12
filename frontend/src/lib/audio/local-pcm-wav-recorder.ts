@@ -173,7 +173,7 @@ export class LocalPcmWavRecorder {
 
     const audioContext = this.audioContext
     this.audioContext = null
-    await audioContext?.close().catch(() => undefined)
+    void audioContext?.close().catch(() => undefined)
 
     if (sampleCount === 0) {
       return null

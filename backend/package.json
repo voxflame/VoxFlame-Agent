@@ -6,15 +6,18 @@
   "scripts": {
     "dev": "ts-node src/index.ts",
     "build": "tsc",
-    "test": "ts-node src/services/livekit-config.service.test.ts",
-    "test:upload-metadata": "ts-node src/services/upload-artifact.service.test.ts",
+    "test": "ts-node src/services/livekit-config.service.test.ts && ts-node src/controllers/rtc.controller.test.ts",
+    "test:upload-metadata": "ts-node src/services/quality-review.service.test.ts && ts-node src/services/upload-admission.service.test.ts && ts-node src/services/upload-path-policy.test.ts && ts-node src/services/oss.service.test.ts && ts-node src/services/recording-quality.service.test.ts && ts-node src/services/upload-capacity.service.test.ts && ts-node src/middlewares/quality-reviewer.middleware.test.ts && ts-node src/services/upload-artifact.service.test.ts && ts-node src/services/upload-duration-persistence.test.ts && ts-node src/services/training-dataset-export.service.test.ts",
+    "test:oss-identity": "ts-node src/services/oss-account-identity.test.ts && ts-node src/services/oss-account-document.test.ts",
     "test:sms-auth": "ts-node src/services/sms-auth.service.test.ts",
     "start": "node dist/index.js",
     "reconcile:artifacts": "ts-node scripts/reconcile_upload_artifacts.ts",
     "export:audio-target": "ts-node scripts/export_audio_target_dataset.ts",
     "download:oss-by-account": "ts-node scripts/download_oss_by_account.ts",
     "cleanup:prepared-expression": "ts-node scripts/cleanup_prepared_expression_data.ts",
-    "clear:uploaded-training-corpus": "ts-node scripts/clear_uploaded_training_corpus.ts"
+    "clear:uploaded-training-corpus": "ts-node scripts/clear_uploaded_training_corpus.ts",
+    "load:upload-control": "ts-node scripts/load_upload_control_plane.ts",
+    "audit:asr-models": "ts-node scripts/audit_asr_account_models.ts"
   },
   "dependencies": {
     "@alicloud/pop-core": "^1.7.13",

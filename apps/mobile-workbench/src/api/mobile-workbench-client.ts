@@ -1,3 +1,5 @@
+import type { AccessTokenOptions } from '../auth/session-token'
+import { parseRtcStartSessionResult, parseRtcStartSessionRequest } from '../contracts/generated/rtc-session'
 import type {
   MobileWorkbenchRtcSessionIntent,
   MobileWorkbenchRtcSessionResponse,
@@ -5,12 +7,13 @@ import type {
 import type { MobileWorkspaceSnapshotContract } from '../contracts/workspace-read-model'
 
 export interface MobileAuthTokenProvider {
-  getAccessToken(): Promise<string | null>
+  getAccessToken(options?: AccessTokenOptions): Promise<string | null>
 }
 
 export interface MobileWorkbenchClientOptions {
   apiBaseUrl: string
   tokenProvider: MobileAuthTokenProvider
+  signal?: AbortSignal
 }
 
 function buildApiUrl(apiBaseUrl: string, path: string): string {
@@ -54,18 +57,28 @@ export async function startMobileRtcSession(
   options: MobileWorkbenchClientOptions,
 ): Promise<MobileWorkbenchRtcSessionResponse> {
   const authHeaders = await getAuthorizationHeader(options.tokenProvider)
+  // Authentication can resolve after an account switch; never dispatch the stale request.
+  if (options.signal?.aborted) throw new Error('mobile_connection_cancelled')
   const response = await fetch(
     buildApiUrl(options.apiBaseUrl, '/rtc/session/start'),
     {
       method: 'POST',
+      signal: options.signal,
       headers: {
         ...authHeaders,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        mode: intent.mode,
-        intent,
-      }),
+      body: JSON.stringify(parseRtcStartSessionRequest({
+        intent: {
+          ...intent,
+          deviceContext: intent.deviceContext ? {
+            secureContext: intent.deviceContext.secureContext,
+            mediaDevicesSupported: intent.deviceContext.mediaDevicesSupported,
+            microphoneStatus: intent.deviceContext.microphoneStatus,
+            networkOnline: intent.deviceContext.networkOnline,
+          } : undefined,
+        },
+      })),
     },
   )
 
@@ -73,42 +86,7 @@ export async function startMobileRtcSession(
     throw new Error(`rtc_session_start_${response.status}`)
   }
 
-  return await response.json() as MobileWorkbenchRtcSessionResponse
-}
-
-async function updateMobileRtcSession(
-  action: 'ping' | 'stop',
-  channelName: string,
-  options: MobileWorkbenchClientOptions,
-): Promise<void> {
-  const authHeaders = await getAuthorizationHeader(options.tokenProvider)
-  const response = await fetch(
-    buildApiUrl(options.apiBaseUrl, `/rtc/session/${action}`),
-    {
-      method: 'POST',
-      headers: {
-        ...authHeaders,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ channelName }),
-    },
-  )
-
-  if (!response.ok) {
-    throw new Error(`rtc_session_${action}_${response.status}`)
-  }
-}
-
-export async function pingMobileRtcSession(
-  channelName: string,
-  options: MobileWorkbenchClientOptions,
-): Promise<void> {
-  await updateMobileRtcSession('ping', channelName, options)
-}
-
-export async function stopMobileRtcSession(
-  channelName: string,
-  options: MobileWorkbenchClientOptions,
-): Promise<void> {
-  await updateMobileRtcSession('stop', channelName, options)
+  const session = parseRtcStartSessionResult(await response.json())
+  if (session.intent.surface !== 'mobile_workbench') throw new Error('rtc_session_invalid_surface')
+  return session
 }

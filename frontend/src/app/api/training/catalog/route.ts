@@ -6,6 +6,11 @@ import {
   getExercisesByCategory,
   type MandarinTrainingCategory,
 } from '@/lib/corpus/mandarin-training'
+import {
+  MANDARIN_READING_ARTICLES,
+  getReadingArticle,
+  getReadingArticleExercises,
+} from '@/lib/corpus/reading-articles'
 
 const DEFAULT_PAGE_SIZE = 60
 const MAX_PAGE_SIZE = 120
@@ -25,6 +30,8 @@ function parseBoundedInteger(value: string | null, fallback: number, maximum: nu
 export function GET(request: NextRequest) {
   const categoryValue = request.nextUrl.searchParams.get('category')?.trim() ?? ''
   const category = isTrainingCategory(categoryValue) ? categoryValue : null
+  const readingArticleId = request.nextUrl.searchParams.get('readingArticleId')?.trim() ?? ''
+  const readingArticle = readingArticleId ? getReadingArticle(readingArticleId) : null
   const query = request.nextUrl.searchParams.get('query')?.trim().toLowerCase() ?? ''
   const offset = parseBoundedInteger(request.nextUrl.searchParams.get('offset'), 0, 100_000)
   const limit = parseBoundedInteger(
@@ -33,7 +40,9 @@ export function GET(request: NextRequest) {
     MAX_PAGE_SIZE,
   )
 
-  const exercises = category
+  const exercises = readingArticle
+    ? getReadingArticleExercises(readingArticle)
+    : category
     ? getExercisesByCategory(category).filter((exercise) => (
         !query || exercise.text.toLowerCase().includes(query)
       ))
@@ -49,6 +58,23 @@ export function GET(request: NextRequest) {
       kind: item === '评估筛查' ? 'assessment' : 'collection',
     })),
     selectedCategory: category,
+    selectedReadingArticle: readingArticle ? {
+      id: readingArticle.id,
+      version: readingArticle.version,
+      title: readingArticle.title,
+      author: readingArticle.author,
+      summary: readingArticle.summary,
+      fullText: readingArticle.fullText,
+      sourceLabel: readingArticle.source.label,
+      sourceUrl: readingArticle.source.sourceUrl,
+      segmentCount: readingArticle.segments.length,
+    } : null,
+    readingArticles: MANDARIN_READING_ARTICLES.map((article) => ({
+      id: article.id,
+      version: article.version,
+      title: article.title,
+      segmentCount: article.segments.length,
+    })),
     total: exercises.length,
     offset,
     limit,

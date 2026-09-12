@@ -34,6 +34,12 @@ import {
 
 type JsonRecord = Record<string, unknown>;
 
+const TRAINING_ACTIVITY_CACHE_TTL_MS = 60_000;
+let trainingActivityCache: {
+  expiresAt: number;
+  value: WorkspaceMemorySnapshot['training_activity'];
+} | null = null;
+
 export interface Memory {
   id?: string;
   user_id: string;
@@ -67,6 +73,16 @@ export interface UserProfile {
   name?: string;
   age?: number;
   condition?: string;
+  contact_phone?: string;
+  province?: string;
+  city?: string;
+  disability_category?: string;
+  etiology?: string;
+  has_dialect?: boolean;
+  dialect_profiles?: Array<{ name: string; region: string }> | null;
+  dialect_name?: string;
+  identity_document_type?: 'disability_certificate' | 'id_card';
+  identity_document_number?: string;
   hotwords?: string[];
   preferences?: JsonRecord;
   created_at?: string;
@@ -178,6 +194,17 @@ export interface ExpressionKitSuggestion {
 }
 
 export interface WorkspaceMemorySnapshot {
+  registration_profile: {
+    full_name?: string;
+    province?: string;
+    city?: string;
+    disability_category?: string;
+    condition?: string;
+    etiology?: string;
+    has_dialect?: boolean;
+    dialect_profiles?: Array<{ name: string; region: string }> | null;
+    dialect_name?: string;
+  };
   user_profile_memory: UserProfileMemoryRecord;
   scene_templates: {
     selected_ids: string[];
@@ -680,6 +707,10 @@ export class SupabaseService {
 
   async getHotwordProfiles(userId: string): Promise<HotwordProfileRecord[]> {
     const userProfile = await this.getUserProfile(userId);
+    return this.getHotwordProfilesFromProfile(userProfile);
+  }
+
+  private getHotwordProfilesFromProfile(userProfile: UserProfile | null): HotwordProfileRecord[] {
     const selectedTemplateIds = this.getSelectedSceneTemplateIdsFromProfile(userProfile);
     const preferences = isRecord(userProfile?.preferences) ? userProfile.preferences : {};
     const customProfiles = normalizeHotwordProfiles(preferences.hotword_profiles);
@@ -1302,7 +1333,7 @@ export class SupabaseService {
   async getMemories(userId: string, limit: number = 50): Promise<Memory[]> {
     const { data, error } = await this.adminClient
       .from('memories')
-      .select('*')
+      .select('id, user_id, session_id, content, metadata, created_at, updated_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(limit);
@@ -1378,12 +1409,20 @@ export class SupabaseService {
     memoryLimit: number = 400,
     sessionLimit: number = 120,
   ): Promise<MemoryProfileSnapshot> {
-    const [memories, sessions, userProfile, hotwordProfiles] = await Promise.all([
+    const [memories, sessions, userProfile] = await Promise.all([
       this.getMemories(userId, memoryLimit),
       this.getUserSessions(userId, sessionLimit),
       this.getUserProfile(userId),
-      this.getHotwordProfiles(userId),
     ]);
+    return this.buildMemoryProfileSnapshot(memories, sessions, userProfile);
+  }
+
+  private buildMemoryProfileSnapshot(
+    memories: Memory[],
+    sessions: Session[],
+    userProfile: UserProfile | null,
+  ): MemoryProfileSnapshot {
+    const hotwordProfiles = this.getHotwordProfilesFromProfile(userProfile);
     const collectedHotwords = this.collectHotwords(memories, sessions);
     const profileHotwords = Array.isArray(userProfile?.hotwords)
       ? userProfile.hotwords.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
@@ -1518,7 +1557,11 @@ export class SupabaseService {
     userProfile: UserProfile | null,
   ): UserProfileMemoryRecord {
     const preferences = isRecord(userProfile?.preferences) ? userProfile.preferences : undefined;
-    return normalizeUserProfileMemory(preferences?.user_profile_memory);
+    const memory = normalizeUserProfileMemory(preferences?.user_profile_memory);
+    return {
+      ...memory,
+      etiology: memory.etiology ?? userProfile?.etiology,
+    };
   }
 
   private async getTrainingResultSamples(
@@ -1621,6 +1664,10 @@ export class SupabaseService {
   }
 
   private async getTrainingActivitySnapshot(): Promise<WorkspaceMemorySnapshot['training_activity']> {
+    if (trainingActivityCache && trainingActivityCache.expiresAt > Date.now()) {
+      return trainingActivityCache.value;
+    }
+
     const yesterday = this.getChinaDayWindow(-1);
     const pageSize = 1000;
     const counts = new Map<string, number>();
@@ -1669,7 +1716,7 @@ export class SupabaseService {
         recording_count: recordingCount,
       }));
 
-    return {
+    const value = {
       daily_target_count: 20,
       slogan: '每天先练 20 句',
       yesterday: {
@@ -1678,18 +1725,25 @@ export class SupabaseService {
         top_contributors: topContributors,
       },
     };
+    trainingActivityCache = {
+      expiresAt: Date.now() + TRAINING_ACTIVITY_CACHE_TTL_MS,
+      value,
+    };
+    return value;
   }
 
   async getWorkspaceMemorySnapshot(
     userId: string,
     options: { sceneId?: WorkspaceSceneId } = {},
   ): Promise<WorkspaceMemorySnapshot> {
-    const [profileSnapshot, rawUserProfile, quickPhrases, trainingActivity] = await Promise.all([
-      this.getUserMemoryProfile(userId, 400, 120),
+    const [memories, sessions, rawUserProfile, quickPhrases, trainingActivity] = await Promise.all([
+      this.getMemories(userId, 400),
+      this.getUserSessions(userId, 120),
       this.getUserProfile(userId),
       this.getUserPhrases(userId, undefined, 40),
       this.getTrainingActivitySnapshot(),
     ]);
+    const profileSnapshot = this.buildMemoryProfileSnapshot(memories, sessions, rawUserProfile);
     const userProfile = await this.migratePreparedExpressionLibraryIfNeeded(
       userId,
       rawUserProfile,
@@ -1704,6 +1758,17 @@ export class SupabaseService {
     const selectedSceneTemplateIds = this.getSelectedSceneTemplateIdsFromProfile(userProfile);
 
     return {
+      registration_profile: {
+        full_name: userProfile?.name,
+        province: userProfile?.province,
+        city: userProfile?.city,
+        disability_category: userProfile?.disability_category,
+        condition: userProfile?.condition,
+        etiology: userProfile?.etiology,
+        has_dialect: userProfile?.has_dialect,
+        dialect_name: userProfile?.dialect_name,
+        dialect_profiles: userProfile?.dialect_profiles,
+      },
       user_profile_memory: this.readUserProfileMemoryFromProfile(userProfile),
       scene_templates: {
         selected_ids: selectedSceneTemplateIds,
@@ -2049,6 +2114,17 @@ export class SupabaseService {
       preferences?.communication_preferences,
     );
     const userProfileMemory = this.readUserProfileMemoryFromProfile(userProfile);
+
+    if (userProfile?.province || userProfile?.city) {
+      staticItems.push({
+        id: 'registered-location',
+        title: '所在地区',
+        content: [userProfile.province, userProfile.city].filter(Boolean).join(' '),
+        source: 'user_profile',
+        emphasis: 'low',
+        updated_at: userProfile.updated_at ?? nowIso,
+      });
+    }
 
     if (userProfile?.condition) {
       staticItems.push({

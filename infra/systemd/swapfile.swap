@@ -1,0 +1,10 @@
+[Unit]
+Description=VoxFlame emergency swap buffer
+Before=swap.target
+
+[Swap]
+What=/swapfile
+Priority=-1
+
+[Install]
+WantedBy=swap.target

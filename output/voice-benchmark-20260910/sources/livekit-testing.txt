@@ -1,0 +1,233 @@
+LiveKit docs › Build Agents › Testing & evaluation › Overview
+
+---
+
+# Testing and evaluation
+
+> Test, evaluate, and simulate your agent to catch regressions before deployment.
+
+## Overview
+
+Testing and evaluation help ensure your agent behaves as expected as your application evolves. LiveKit Agents includes tools for validating individual behaviors during development and evaluating complete conversations before deployment.
+
+Behavioral tests verify specific interactions and expected outcomes. They integrate with your existing test suite using [pytest](https://docs.pytest.org/en/stable/) (Python) or [Vitest](https://vitest.dev/) (Node.js), making them suitable for unit and integration testing.
+
+Agent simulations run end-to-end conversations between your agent and an LLM-driven user, then evaluate the results across the full interaction. Use simulations to test multi-turn behavior, reproduce edge cases, and compare changes to your agent over time.
+
+Together, these tools help you validate changes, identify regressions, and iterate on your agent without breaking existing functionality.
+
+## Testing options
+
+LiveKit Agents supports several approaches to testing, depending on what you want to validate.
+
+| Approach | What it tests | How it runs |
+| [Test framework](https://docs.livekit.io/agents/start/testing/test-framework.md) | Specific messages, tool calls, arguments, and handoffs that you assert on, turn by turn. | Runs locally or in CI with `pytest` or `Vitest`. Text-based tests with deterministic results. |
+| [Agent simulations](https://docs.livekit.io/agents/start/testing/simulations.md) | Complete conversations between your agent and a simulated user, evaluated against expected outcomes. | Runs on LiveKit Cloud, in parallel, over text or audio. Scenarios are generated from your agent's source or loaded from a checked-in `scenarios.yaml` file. |
+| [Third-party tools](#third-party-testing-tools) | End-to-end behavior through the full audio pipeline. | Available through partner services, including Bluejay, Cekura, Coval, and Hamming. |
+
+## What to test
+
+Test your agent in the following areas:
+
+- **Expected behavior**: Does your agent respond with the right intent and tone for common use cases?
+- **Tool usage**: Are tools called with the expected arguments and context?
+- **Error handling**: How does your agent respond to invalid input or tool failures?
+- **Grounding**: Does your agent stay factual and avoid hallucinating information?
+- **Misuse resistance**: How does your agent respond to attempts to misuse or manipulate it?
+
+Use the test framework for turn-level behaviors such as tool usage and error handling. Use simulations to evaluate behaviors that span multiple turns, such as conversation flow, memory, and misuse resistance.
+
+> 💡 **Text-first testing**
+> 
+> The test framework runs in text mode, using an LLM through [LiveKit Inference](https://docs.livekit.io/agents/models/inference.md) or a model plugin. Simulations communicate with your agent using text by default, and can also run over [audio](https://docs.livekit.io/agents/start/testing/simulations.md#audio-simulations) to exercise the full STT-LLM-TTS pipeline.
+> 
+> Text mode is the most cost-effective and deterministic way to test agent behavior, so use it while you iterate and reserve audio runs for turn-taking and speech-specific issues. For other options, see [Third-party testing tools](#third-party-testing-tools).
+
+## Example test
+
+Here is a simple behavioral test for the agent created in the [voice AI quickstart](https://docs.livekit.io/agents/start/voice-ai.md). It ensures that the agent responds with a friendly greeting and offers assistance.
+
+**Python**:
+
+```python
+from livekit.agents import AgentSession, inference
+
+from agent import Assistant
+
+@pytest.mark.asyncio
+async def test_assistant_greeting() -> None:
+    async with (
+        inference.LLM(model="google/gemma-4-31b-it") as llm,
+        AgentSession(llm=llm) as session,
+    ):
+        await session.start(Assistant())
+
+        result = await session.run(user_input="Hello")
+
+        await result.expect.next_event().is_message(role="assistant").judge(
+            llm, intent="Makes a friendly introduction and offers assistance."
+        )
+
+        result.expect.no_more_events()
+
+
+```
+
+---
+
+**Node.js**:
+
+```typescript
+import { inference, initializeLogger, voice } from '@livekit/agents';
+import { describe, it, beforeAll, afterAll } from 'vitest';
+// Import your agent class
+import { Agent } from './agent';
+
+// Initialize logger to suppress CLI output
+initializeLogger({ pretty: false, level: 'warn' });
+
+const { AgentSession } = voice;
+
+describe('Assistant', () => {
+  let session: voice.AgentSession;
+  let llm: inference.LLM;
+
+  beforeAll(async () => {
+    llm = new inference.LLM({ model: 'google/gemma-4-31b-it' });
+    session = new AgentSession({ llm });
+    await session.start({ agent: new Agent() });
+  });
+
+  afterAll(async () => {
+    await session?.close();
+  });
+
+  it('should greet and offer assistance', async () => {
+    const result = await session.run({ userInput: 'Hello' }).wait();
+
+    await result.expect
+      .nextEvent()
+      .isMessage({ role: 'assistant' })
+      .judge(llm, {
+        intent: 'Makes a friendly introduction and offers assistance.',
+      });
+
+    result.expect.noMoreEvents();
+  });
+});
+
+```
+
+For the full testing API, including setup, assertions, mocking, and multi-turn testing, see [Test framework](https://docs.livekit.io/agents/start/testing/test-framework.md).
+
+## Verbose output
+
+Environment variables can turn on detailed output for each agent execution.
+
+**Python**:
+
+The `LIVEKIT_EVALS_VERBOSE` environment variable turns on detailed output for each agent execution. To use it with pytest, you must also set the `-s` flag to disable pytest's automatic capture of stdout:
+
+```shell
+LIVEKIT_EVALS_VERBOSE=1 uv run pytest -s -o log_cli=true <your-test-file>
+
+```
+
+---
+
+**Node.js**:
+
+The `LIVEKIT_EVALS_VERBOSE` environment variable turns on detailed output for each agent execution.
+
+```shell
+LIVEKIT_EVALS_VERBOSE=1
+
+```
+
+Sample verbose output:
+
+**Python**:
+
+```shell
+evals/test_agent.py::test_offers_assistance 
++ RunResult(
+   user_input=`Hello`
+   events:
+     [0] ChatMessageEvent(item={'role': 'assistant', 'content': ['Hi there! How can I assist you today?']})
+)
+- Judgment succeeded for `Hi there! How can I assist...`: `The message provides a friendly greeting and explicitly offers assistance, fulfilling the intent.`
+PASSED
+
+```
+
+---
+
+**Node.js**:
+
+```shell
+stdout | conversation-history.test.ts > RunResult > should greet user by name
+
++ RunResult {
+    userInput: "What's my name?"
+    events: [
+      [0] { type: "message", role: "assistant", content: "Your name is Alice.", interrupted: false }
+    ]
+  }
+
+stdout | conversation-history.test.js > RunResult > should greet user by name
+- Judgment succeeded for `Your name is Alice.`: `The message explicitly states the user's name is Alice, fulfilling the intent to remember and mention the user's name.`
+
+```
+
+## Integrating with CI
+
+The testing helpers work live against your LLM provider to test real agent behavior. If you're using [LiveKit Inference](https://docs.livekit.io/agents/models/inference.md), set `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` in your CI environment. If you're using a plugin directly, set the appropriate provider API keys instead. Testing does not make a LiveKit room connection.
+
+For GitHub Actions, see the guide on [using secrets in GitHub Actions](https://docs.github.com/en/actions/how-tos/security-for-github-actions/security-guides/using-secrets-in-github-actions).
+
+Agent simulations also fit into CI. A checked-in [`scenarios.yaml`](https://docs.livekit.io/agents/start/testing/simulations.md) is reproducible, so you can run the same scenarios on every change. Simulations run on LiveKit Cloud through the authenticated CLI rather than against your LLM provider directly.
+
+> ⚠️ **Warning**
+> 
+> Never commit API keys to your repository. Use environment variables and CI secrets instead.
+
+## Considerations
+
+The following considerations apply when testing agents:
+
+- `get_job_context()` is unavailable in test environments and raises a `RuntimeError` when called. If your agent uses `get_job_context()`, avoid testing code paths that invoke it, or [mock](https://docs.livekit.io/agents/start/testing/test-framework.md#mock-tools) the call using `unittest.mock` (Python-only).
+- When testing agents that use task groups, consider testing each task in isolation as well as the overall flow. Test transitions between tasks, regression to previous steps, and proper completion with summarized results. For specific guidelines, see [Best practices for testing task groups](https://docs.livekit.io/agents/logic/tasks.md#testing-task-groups).
+- [Agent simulations](https://docs.livekit.io/agents/start/testing/simulations.md) are in beta and currently support Python agents only. Simulations run on LiveKit Cloud, in parallel up to your project's concurrency limit.
+
+## Third-party testing tools
+
+First-party [simulations](https://docs.livekit.io/agents/start/testing/simulations.md) run in text mode. To test the full audio pipeline or monitor deployed agents in production, consider these third-party services:
+
+- **[Bluejay](https://getbluejay.ai/)**: End-to-end testing for voice agents powered by real-world simulations.
+
+- **[Cekura](https://www.cekura.ai/)**: Testing and monitoring for voice AI agents.
+
+- **[Coval](https://www.coval.dev/)**: Manage your AI conversational agents. Simulation & evaluations for voice and chat agents.
+
+- **[Hamming](https://hamming.ai/)**: At-scale testing & production monitoring for AI voice agents.
+
+## Additional resources
+
+These examples and resources provide more help with testing and evaluation.
+
+- **[Agent starter project](https://github.com/livekit-examples/agent-starter-python)**: Starter project with a complete testing integration.
+
+- **[Agent starter project (Node.js)](https://github.com/livekit-examples/agent-starter-node)**: Starter project with a complete testing integration.
+
+- **[Testing framework API reference (Python)](https://docs.livekit.io/reference/python/livekit/agents/voice/run_result.html.md)**: API reference for the `RunResult` class.
+
+- **[Testing framework API reference (Node.js)](https://docs.livekit.io/reference/agents-js/modules/agents.voice.testing.html.md)**: API reference for the `RunResult` class.
+
+- **[Agent simulations](https://docs.livekit.io/agents/start/testing/simulations.md)**: Run your agent end to end against a simulated user and grade the whole conversation.
+
+---
+
+This document was rendered at 2026-09-10T13:37:36.476Z.
+For the latest version of this document, see [https://docs.livekit.io/agents/start/testing.md](https://docs.livekit.io/agents/start/testing.md).
+
+To explore all LiveKit documentation, see [llms.txt](https://docs.livekit.io/llms.txt).

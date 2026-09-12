@@ -13,15 +13,21 @@ export function IcpBeianFooter() {
   return (
     <footer className="border-t border-stone-200 bg-[#f4efe6] px-5 py-5 text-xs text-stone-500 sm:px-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <span>{icpBeianCompany}</span>
-        <a
-          href={icpBeianUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="w-fit underline-offset-4 hover:text-stone-800 hover:underline"
-        >
-          {icpBeianNumber}
-        </a>
+        <span>运营主体：{icpBeianCompany}</span>
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
+          <a className="underline-offset-4 hover:text-stone-800 hover:underline" href="/privacy">用户隐私</a>
+          <a className="underline-offset-4 hover:text-stone-800 hover:underline" href="/terms">用户协议</a>
+          <a className="underline-offset-4 hover:text-stone-800 hover:underline" href="/data-collection">数据采集说明</a>
+          <a className="underline-offset-4 hover:text-stone-800 hover:underline" href="/third-party-services">第三方服务与 SDK</a>
+          <a
+            href={icpBeianUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-fit underline-offset-4 hover:text-stone-800 hover:underline"
+          >
+            {icpBeianNumber}
+          </a>
+        </div>
       </div>
     </footer>
   )

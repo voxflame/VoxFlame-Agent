@@ -53,3 +53,19 @@ export function summarizeRecorderQueue(
         : '清理已同步缓存',
   }
 }
+
+/** A shared device may keep several accounts offline, but one account never sees another account's queue. */
+export function recorderQueueItemsForContributor(
+  items: MobileWorkbenchRecorderQueueItem[],
+  contributorId: string | null,
+): MobileWorkbenchRecorderQueueItem[] {
+  if (!contributorId) return []
+  return items.filter((item) => item.contributorId === contributorId)
+}
+
+export function recorderQueueItemBelongsToContributor(
+  item: MobileWorkbenchRecorderQueueItem,
+  contributorId: string | null,
+): boolean {
+  return Boolean(contributorId) && item.contributorId === contributorId
+}

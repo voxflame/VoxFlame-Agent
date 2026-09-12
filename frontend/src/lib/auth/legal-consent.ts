@@ -1,12 +1,14 @@
 import type { User } from '@supabase/supabase-js'
 
-export const LEGAL_CONSENT_VERSION = '2026-03-28'
+export const LEGAL_CONSENT_VERSION = '2026-09-06'
 
 const LOCAL_STORAGE_KEY = 'voxflame_legal_consent'
 
 export interface LegalConsentSnapshot {
   privacyAccepted: boolean
+  sensitiveDataAccepted: boolean
   dataCollectionAccepted: boolean
+  commercialUseAccepted: boolean
   acceptedAt: string
   version: string
 }
@@ -24,10 +26,12 @@ function readString(record: Record<string, unknown>, key: string): string | null
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
-export function buildLegalConsentSnapshot(): LegalConsentSnapshot {
+export function buildLegalConsentSnapshot(overrides: Partial<Pick<LegalConsentSnapshot, 'privacyAccepted' | 'sensitiveDataAccepted' | 'dataCollectionAccepted' | 'commercialUseAccepted'>> = {}): LegalConsentSnapshot {
   return {
-    privacyAccepted: true,
-    dataCollectionAccepted: true,
+    privacyAccepted: overrides.privacyAccepted ?? false,
+    sensitiveDataAccepted: overrides.sensitiveDataAccepted ?? false,
+    dataCollectionAccepted: overrides.dataCollectionAccepted ?? false,
+    commercialUseAccepted: overrides.commercialUseAccepted ?? false,
     acceptedAt: new Date().toISOString(),
     version: LEGAL_CONSENT_VERSION,
   }
@@ -37,7 +41,9 @@ export function buildLegalConsentUserData(snapshot: LegalConsentSnapshot): Recor
   return {
     legal_consent: {
       privacy_accepted: snapshot.privacyAccepted,
+      sensitive_data_accepted: snapshot.sensitiveDataAccepted,
       data_collection_accepted: snapshot.dataCollectionAccepted,
+      commercial_use_accepted: snapshot.commercialUseAccepted,
       accepted_at: snapshot.acceptedAt,
       version: snapshot.version,
     },
@@ -70,7 +76,9 @@ export function readLocalLegalConsent(): LegalConsentSnapshot | null {
 
     return {
       privacyAccepted: readBoolean(parsed, 'privacyAccepted'),
+      sensitiveDataAccepted: readBoolean(parsed, 'sensitiveDataAccepted'),
       dataCollectionAccepted: readBoolean(parsed, 'dataCollectionAccepted'),
+      commercialUseAccepted: readBoolean(parsed, 'commercialUseAccepted'),
       acceptedAt: readString(parsed, 'acceptedAt') ?? '',
       version: readString(parsed, 'version') ?? '',
     }
@@ -91,7 +99,9 @@ export function readUserLegalConsent(user: User | null | undefined): LegalConsen
 
   return {
     privacyAccepted: readBoolean(legalConsent, 'privacy_accepted'),
+    sensitiveDataAccepted: readBoolean(legalConsent, 'sensitive_data_accepted'),
     dataCollectionAccepted: readBoolean(legalConsent, 'data_collection_accepted'),
+    commercialUseAccepted: readBoolean(legalConsent, 'commercial_use_accepted'),
     acceptedAt: readString(legalConsent, 'accepted_at') ?? '',
     version: readString(legalConsent, 'version') ?? '',
   }
@@ -99,10 +109,12 @@ export function readUserLegalConsent(user: User | null | undefined): LegalConsen
 
 export function hasRequiredLegalConsent(user: User | null | undefined): boolean {
   const userConsent = readUserLegalConsent(user)
-  if (userConsent?.privacyAccepted && userConsent.dataCollectionAccepted) {
-    return true
-  }
-
-  const localConsent = readLocalLegalConsent()
-  return Boolean(localConsent?.privacyAccepted && localConsent.dataCollectionAccepted)
+  return Boolean(
+    userConsent?.version === LEGAL_CONSENT_VERSION
+    &&
+    userConsent?.privacyAccepted
+    && userConsent.sensitiveDataAccepted
+    && userConsent.dataCollectionAccepted
+    && userConsent.commercialUseAccepted,
+  )
 }

@@ -1,0 +1,105 @@
+name: LiveKit upgrade watch
+
+on:
+  schedule:
+    - cron: '20 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check-livekit-versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare pinned and stable LiveKit versions
+        id: version-check
+        run: |
+          python3 scripts/check_livekit_upgrades.py | tee livekit-upgrade-report.json
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("livekit-upgrade-report.json").read_text())
+          available = any(
+              item["update_available"]
+              for key, item in report.items()
+              if key in {"livekit_agents", "livekit_server"}
+          )
+          print(f"update_available={'true' if available else 'false'}")
+          PY
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: livekit-upgrade-report
+          path: livekit-upgrade-report.json
+          retention-days: 30
+      - name: Write workflow summary
+        run: |
+          echo '## LiveKit weekly upgrade audit' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo 'This workflow reports only. Production promotion remains manual after staging RTC/TURN tests.' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo '\`\`\`json' >> "$GITHUB_STEP_SUMMARY"
+          cat livekit-upgrade-report.json >> "$GITHUB_STEP_SUMMARY"
+          echo '\`\`\`' >> "$GITHUB_STEP_SUMMARY"
+      - name: Create or refresh upgrade reminder issue
+        if: steps.version-check.outputs.update_available == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync('livekit-upgrade-report.json', 'utf8'));
+            const title = 'LiveKit 稳定版升级待评估';
+            const details = [
+              `检查时间：${new Date().toISOString()}`,
+              '',
+              `- LiveKit Agents：${report.livekit_agents.current} → ${report.livekit_agents.latest}`,
+              `- LiveKit Server：${report.livekit_server.current} → ${report.livekit_server.latest}`,
+              '',
+              '处理规则：先审发布说明，再做预发布 Agent 全量测试、RTC/TURN smoke、滚动 drain 和回滚验证；不要直接自动升级生产。',
+              '',
+              `Agents release：${report.livekit_agents.release_url}`,
+              `Server release：${report.livekit_server.release_url}`,
+              '',
+              `工作流：${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            ].join('\n');
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const existing = issues.find(issue => !issue.pull_request && issue.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: details,
+              });
+              return;
+            }
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body: details,
+            });
+            try {
+              await github.rest.issues.addAssignees({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.data.number,
+                assignees: [context.repo.owner],
+              });
+            } catch (error) {
+              core.warning(`Issue 已创建，但自动指派失败：${error.message}`);
+            }
+      - name: Fail when review is required
+        if: steps.version-check.outputs.update_available == 'true'
+        run: |
+          echo 'A stable LiveKit update is available. Review release notes and run staging validation.' >&2
+          exit 1

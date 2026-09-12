@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PIPELINE = ROOT / "research" / "PIPELINE.yaml"
 FEEDBACK = ROOT / "research" / "FEEDBACK_REGISTRY.yaml"
 EVIDENCE = ROOT / "research" / "evidence"
+RULES = ROOT / "research" / "HARNESS_RULES.yaml"
 
 STATES = {
     "discovered", "evidence_review", "experiment_ready", "experimenting", "outcome_review",
@@ -35,6 +36,8 @@ def main() -> int:
             errors.append(f"missing harness file: {path.relative_to(ROOT)}")
     if not EVIDENCE.is_dir():
         errors.append("missing research/evidence directory")
+    if not RULES.is_file():
+        errors.append("missing research/HARNESS_RULES.yaml")
     if errors:
         print("\n".join(f"ERROR: {item}" for item in errors), file=sys.stderr)
         return 1

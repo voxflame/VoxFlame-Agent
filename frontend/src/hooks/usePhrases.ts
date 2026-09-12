@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { createClient, getValidToken } from '@/lib/supabase/client'
+import { createClient, getAccessToken } from '@/lib/supabase/client'
 import { config } from '@/lib/config'
 import { reportFrontendDiagnostic, toProductMessage } from '@/lib/ui/product-message'
 import type {
@@ -54,7 +54,7 @@ export function usePhrases(options: UsePhrasesOptions = {}) {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<unknown> => {
-    const token = await getValidToken()
+    const token = await getAccessToken()
     const url = `${config.api.baseUrl}${endpoint}`
 
     const headers: Record<string, string> = {

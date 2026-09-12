@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+from collections.abc import Coroutine
 
 from dotenv import load_dotenv
 from livekit import rtc
@@ -16,6 +17,7 @@ from assistant_runtime import (
     estimate_clarity_score,
 )
 from asr_runtime import LiveKitASRRuntime
+from capacity import WorkerLoadPolicy
 from config import load_config, should_bypass_proxy_for_livekit
 from data_contract import (
     build_audio_input_telemetry_output,
@@ -38,13 +40,13 @@ from session_userdata import (
     build_session_userdata,
 )
 from tts_runtime import LiveKitAudioReplyRuntime
+from turn_runtime import ReplyTurn, ReplyTurnRunner
 
 load_dotenv()
 
 logger = logging.getLogger("voxflame-livekit-agent")
 config = load_config()
 logging.basicConfig(level=getattr(logging, config.log_level.upper(), logging.INFO))
-REPLY_QUEUE_MAXSIZE = 8
 
 
 def _sanitize_proxy_env_for_local_livekit() -> None:
@@ -74,7 +76,27 @@ _sanitize_proxy_env_for_local_livekit()
 # Self-hosted LiveKit worker registration should bypass shell-level HTTP proxies.
 # The default AgentServer behavior inherits HTTP_PROXY/HTTPS_PROXY, which caused
 # local `/agent` websocket registration to be routed to 127.0.0.1:7897 and fail.
-server = AgentServer(host="127.0.0.1", http_proxy=None)
+worker_load_threshold = float(os.getenv("VOXFLAME_AGENT_LOAD_THRESHOLD", "0.7"))
+worker_load_policy = WorkerLoadPolicy(
+    max_active_jobs=int(os.getenv("VOXFLAME_AGENT_MAX_ACTIVE_JOBS", "8")),
+    load_threshold=worker_load_threshold,
+    memory_limit_percent=float(os.getenv("VOXFLAME_AGENT_MEMORY_PRESSURE_PERCENT", "85")),
+)
+
+# LiveKit asks this parent Worker for availability before starting each Job.
+# Additional Workers increase total capacity; a saturated machine stops taking
+# new rooms before it degrades every already-active conversation.
+server = AgentServer(
+    host="127.0.0.1",
+    http_proxy=None,
+    load_threshold=worker_load_threshold,
+    load_fnc=worker_load_policy,
+    drain_timeout=int(os.getenv("VOXFLAME_AGENT_DRAIN_TIMEOUT_SECONDS", "1800")),
+    num_idle_processes=int(os.getenv("VOXFLAME_AGENT_IDLE_PROCESSES", "2")),
+    job_memory_warn_mb=float(os.getenv("VOXFLAME_AGENT_JOB_MEMORY_WARN_MB", "450")),
+    job_memory_limit_mb=float(os.getenv("VOXFLAME_AGENT_JOB_MEMORY_LIMIT_MB", "700")),
+    prometheus_port=(int(os.getenv("VOXFLAME_AGENT_PROMETHEUS_PORT", "0")) or None),
+)
 
 
 @server.on("worker_started")
@@ -145,23 +167,39 @@ async def entrypoint(ctx: JobContext) -> None:
         session_context.mode == "training"
         or session_context.surface == "training_workspace"
     )
-    reply_queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue(
-        maxsize=REPLY_QUEUE_MAXSIZE,
-    )
+    control_tasks: set[asyncio.Task[None]] = set()
+    closing = False
+
+    def schedule_control(coro: Coroutine[object, object, None]) -> None:
+        if closing or len(control_tasks) >= 16:
+            coro.close()
+            logger.warning("Session control rejected: closed or overloaded")
+            return
+        task = asyncio.create_task(coro)
+        control_tasks.add(task)
+        def done(completed: asyncio.Task[None]) -> None:
+            control_tasks.discard(completed)
+            if not completed.cancelled() and completed.exception() is not None:
+                logger.warning("Session control failed type=%s", type(completed.exception()).__name__)
+        task.add_done_callback(done)
 
     async def publish_payload(payload: dict[str, object]) -> None:
-        await ctx.room.local_participant.publish_data(
-            json.dumps(payload, ensure_ascii=True).encode("utf-8"),
-            reliable=True,
-            topic=ctx.room.name,
+        await asyncio.wait_for(
+            ctx.room.local_participant.publish_data(
+                json.dumps(payload, ensure_ascii=True).encode("utf-8"),
+                reliable=True,
+                topic=ctx.room.name,
+            ),
+            timeout=1.0,
         )
 
     async def handle_speech_activity(state: str, auto_finalize: bool) -> None:
         interruption_requested = False
 
         if state == "barge_in_triggered":
-            interrupted = await audio_runtime.interrupt()
-            interruption_requested = interrupted
+            turn_runner.interrupt()
+            interruption_requested = True
+            interrupted = audio_runtime.is_speaking
             logger.info(
                 "LiveKit barge-in room=%s participant=%s interrupted_tts=%s",
                 session_context.room_name,
@@ -233,6 +271,7 @@ async def entrypoint(ctx: JobContext) -> None:
                 original_text=correction_original,
             ),
         )
+        assistant_runtime.accept_reply(user_text, reply_text, source)
         if correction_original and source != CAPTION_ASR_FALLBACK_SOURCE:
             clarity_score = estimate_clarity_score(correction_original, reply_text)
             await publish_payload(
@@ -293,93 +332,62 @@ async def entrypoint(ctx: JobContext) -> None:
         )
         await audio_runtime.speak(normalized)
 
-    async def reply_worker() -> None:
-        while True:
-            user_text, correction_original = await reply_queue.get()
-            try:
-                await process_user_text(
-                    user_text,
-                    correction_original=correction_original,
-                )
-            except Exception:
-                logger.exception(
-                    "LiveKit reply worker failed room=%s participant=%s",
-                    session_context.room_name,
-                    session_context.participant_identity,
-                )
-            finally:
-                reply_queue.task_done()
+    async def process_turn(turn: ReplyTurn) -> None:
+        if use_training_transcript_tts:
+            await handle_training_transcript_tts(turn.text)
+        else:
+            await process_user_text(turn.text, correction_original=turn.correction_original)
 
-    def enqueue_user_text(
-        user_text: str,
-        *,
-        correction_original: str | None = None,
-    ) -> None:
-        normalized = user_text.strip()
-        if not normalized:
-            return
+    turn_runner = ReplyTurnRunner(process_turn)
 
-        if reply_queue.full():
-            try:
-                dropped_text, _ = reply_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                dropped_text = ""
-            else:
-                reply_queue.task_done()
-                logger.warning(
-                    "LiveKit reply queue full, dropped oldest pending transcript room=%s participant=%s chars=%s",
-                    session_context.room_name,
-                    session_context.participant_identity,
-                    len(dropped_text),
-                )
+    def enqueue_user_text(user_text: str, *, correction_original: str | None = None) -> None:
+        turn_runner.submit(ReplyTurn(user_text.strip(), correction_original))
 
-        try:
-            reply_queue.put_nowait((normalized, correction_original))
-        except asyncio.QueueFull:
-            logger.warning(
-                "LiveKit reply queue still full, dropped latest transcript room=%s participant=%s chars=%s",
-                session_context.room_name,
-                session_context.participant_identity,
-                len(normalized),
-            )
-            return
-
-        logger.info(
-            "LiveKit transcript enqueued room=%s participant=%s queue_size=%s chars=%s",
-            session_context.room_name,
-            session_context.participant_identity,
-            reply_queue.qsize(),
-            len(normalized),
-        )
-
-    async def enqueue_user_text_async(
-        user_text: str,
-        *,
-        correction_original: str | None = None,
-    ) -> None:
-        enqueue_user_text(
-            user_text,
-            correction_original=correction_original,
-        )
+    async def handle_final_transcript(transcript: str) -> None:
+        if use_training_transcript_tts:
+            # Training finals are all published by ASR; do not let old echo tasks
+            # replace a newer recording or serialize the ASR callback on playout.
+            if session_userdata.should_skip_tts():
+                await handle_training_transcript_tts(transcript)
+                return
+        enqueue_user_text(transcript, correction_original=transcript)
 
     asr_runtime = LiveKitASRRuntime(
         config=config,
         ctx=session_context,
         participant=participant,
         publish_payload=publish_payload,
-        on_final_transcript=(
-            handle_training_transcript_tts
-            if use_training_transcript_tts
-            else lambda transcript: enqueue_user_text_async(
-                transcript,
-                correction_original=transcript,
-            )
-        ),
+        on_final_transcript=handle_final_transcript,
+        input_allowed=lambda: audio_runtime.input_allowed,
         on_speech_activity=handle_speech_activity,
         on_audio_telemetry=handle_audio_input_telemetry,
     )
+    async def shutdown() -> None:
+        nonlocal closing
+        closing = True
+        turn_runner.interrupt()
+        for task in tuple(control_tasks):
+            task.cancel()
+        await asyncio.gather(*control_tasks, return_exceptions=True)
+        # Stop intake before releasing the clients used by recognition/replies.
+        results = await asyncio.gather(asr_runtime.stop(), turn_runner.aclose(), return_exceptions=True)
+        results += await asyncio.gather(audio_runtime.aclose(), assistant_runtime.aclose(), return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException):
+                logger.warning("Session shutdown cleanup failed type=%s", type(result).__name__)
+
+    ctx.add_shutdown_callback(shutdown)
+
+    @ctx.room.on("participant_disconnected")
+    def participant_disconnected(remote: rtc.RemoteParticipant) -> None:
+        if remote.identity == session_context.participant_identity:
+            turn_runner.interrupt()
+            ctx.shutdown(reason="session participant disconnected")
+
     await asr_runtime.start()
-    asyncio.create_task(reply_worker())
+
+    async def stop_audio() -> None:
+        await audio_runtime.interrupt()
 
     async def publish_init_ack() -> None:
         await publish_payload(build_session_init_ack(session_context))
@@ -394,6 +402,8 @@ async def entrypoint(ctx: JobContext) -> None:
 
     @ctx.room.on("data_received")
     def _on_data_received(packet: rtc.DataPacket) -> None:
+        if closing:
+            return
         if packet.topic != ctx.room.name:
             return
         if packet.participant is None:
@@ -427,6 +437,8 @@ async def entrypoint(ctx: JobContext) -> None:
         client_speech_activity = extract_client_speech_activity(message)
         if client_speech_activity is not None:
             state, auto_finalize, short_utterance_expected, client_capture_id = client_speech_activity
+            if state == "speech_started":
+                turn_runner.interrupt()
             asr_runtime.note_client_recording_event(
                 state,
                 auto_finalize,
@@ -454,7 +466,7 @@ async def entrypoint(ctx: JobContext) -> None:
                 caption_mode_enabled,
             )
             if caption_mode_enabled:
-                asyncio.create_task(audio_runtime.interrupt())
+                schedule_control(stop_audio())
             return
 
         preparation_update = extract_preparation_context_update(message)
@@ -481,7 +493,7 @@ async def entrypoint(ctx: JobContext) -> None:
                 len(next_preparation.document_content),
                 len(next_preparation.training_pairs),
             )
-            asyncio.create_task(
+            schedule_control(
                 publish_payload(
                     build_session_userdata_ack(
                         session_context,
@@ -503,7 +515,7 @@ async def entrypoint(ctx: JobContext) -> None:
                 end_audio_reason,
                 client_capture_id,
             )
-            asyncio.create_task(
+            schedule_control(
                 asr_runtime.commit_audio(
                     end_audio_reason,
                     client_capture_id=client_capture_id,

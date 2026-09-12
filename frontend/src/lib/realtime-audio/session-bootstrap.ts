@@ -1,7 +1,7 @@
+import { parseRtcStartSessionResult, parseRtcStartSessionRequest } from './generated/rtc-session'
 import { config } from '@/lib/config'
-import { getValidToken } from '@/lib/supabase/client'
+import { getAccessToken } from '@/lib/supabase/client'
 import type {
-  RtcExecutionBackend,
   RtcSessionIntent,
   RtcSessionMode,
 } from './session-contract'
@@ -14,7 +14,7 @@ function buildApiUrl(path: string): string {
 export async function buildAuthorizedJsonHeaders(
   accessToken?: string,
 ): Promise<Record<string, string>> {
-  const token = await getValidToken() || accessToken
+  const token = await getAccessToken() || accessToken
   if (!token) {
     throw new Error('当前登录态还没有准备好，请刷新页面后再试。')
   }
@@ -26,9 +26,8 @@ export async function buildAuthorizedJsonHeaders(
 }
 
 interface StartRtcSessionOptions {
-  executionBackend?: RtcExecutionBackend
   accessToken?: string
-  timeoutSeconds?: number
+  signal?: AbortSignal
 }
 
 export async function startRtcSession(
@@ -36,49 +35,18 @@ export async function startRtcSession(
   intent: RtcSessionIntent,
   options: StartRtcSessionOptions = {},
 ): Promise<StartRtcSessionResponse> {
+  if (mode !== intent.mode) throw new Error('rtc_session_invalid_request')
   const headers = await buildAuthorizedJsonHeaders(options.accessToken)
   const response = await fetch(buildApiUrl('/rtc/session/start'), {
     method: 'POST',
+    signal: options.signal,
     headers,
-    body: JSON.stringify({
-      mode,
-      intent,
-      ...(options.executionBackend
-        ? { executionBackend: options.executionBackend }
-        : {}),
-      ...(typeof options.timeoutSeconds === 'number' && options.timeoutSeconds > 0
-        ? { timeoutSeconds: options.timeoutSeconds }
-        : {}),
-    }),
+    body: JSON.stringify(parseRtcStartSessionRequest({ intent })),
   })
 
   if (!response.ok) {
     throw new Error(`rtc_session_start_${response.status}`)
   }
 
-  return response.json() as Promise<StartRtcSessionResponse>
-}
-
-export async function pingRtcSession(
-  channelName: string,
-  accessToken?: string,
-): Promise<void> {
-  const headers = await buildAuthorizedJsonHeaders(accessToken)
-  await fetch(buildApiUrl('/rtc/session/ping'), {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ channelName }),
-  })
-}
-
-export async function stopRtcSession(
-  channelName: string,
-  accessToken?: string,
-): Promise<void> {
-  const headers = await buildAuthorizedJsonHeaders(accessToken)
-  await fetch(buildApiUrl('/rtc/session/stop'), {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ channelName }),
-  })
+  return parseRtcStartSessionResult(await response.json())
 }

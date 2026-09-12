@@ -13,6 +13,10 @@ import { buildCoverageProductStatus } from './mandarin-coverage-product-status-c
 import { buildMandarinCollectionEvidence } from './mandarin-collection-evidence-core.mjs'
 import { auditEntries } from './mandarin-coverage-core.mjs'
 import { buildMandarinSpeakerDisjointSplit } from './mandarin-speaker-disjoint-split-core.mjs'
+import {
+  parseRecordingManifestJsonl,
+  resolveActiveRecordingManifestRows,
+} from '../src/lib/corpus/recording-manifest-events.mjs'
 
 const frontendRoot = process.cwd()
 const repoRoot = path.resolve(frontendRoot, '..')
@@ -28,9 +32,7 @@ function readJson(filePath) {
 }
 
 function readJsonl(filePath) {
-  return fs.readFileSync(filePath, 'utf8').split(/\r?\n/u).filter(Boolean).map((line, index) => {
-    try { return JSON.parse(line) } catch (error) { throw new Error(`${filePath}:${index + 1}: ${error.message}`) }
-  })
+  return parseRecordingManifestJsonl(fs.readFileSync(filePath, 'utf8'), filePath)
 }
 
 function collectManifestFiles(directory) {
@@ -60,7 +62,7 @@ for (const manifestFile of manifestFiles) {
   if (!fs.existsSync(manifestFile)) throw new Error(`manifest does not exist: ${manifestFile}`)
 }
 
-const manifestRows = manifestFiles.flatMap(readJsonl)
+const manifestRows = resolveActiveRecordingManifestRows(manifestFiles.flatMap(readJsonl))
 const uniqueManifestRecordings = new Set(manifestRows.map((row) => {
   const stableId = row?.recording_id ?? row?.metadata?.recording_id
   if (typeof stableId === 'string' && stableId.trim()) return `recording:${stableId}`

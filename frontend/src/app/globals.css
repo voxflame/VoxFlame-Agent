@@ -2,50 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* PWA 动画 */
-@keyframes slide-up {
-  from {
-    opacity: 0;
-    transform: translateY(100%);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes pulse-ring {
-  0% {
-    transform: scale(1);
-    opacity: 0.5;
-  }
-  100% {
-    transform: scale(1.5);
-    opacity: 0;
-  }
-}
-
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.animate-slide-up {
-  animation: slide-up 0.3s ease-out;
-}
-
-.animate-pulse-ring {
-  animation: pulse-ring 1.5s ease-out infinite;
-}
-
-.animate-fade-in {
-  animation: fade-in 0.2s ease-out;
-}
-
 /* 录音按钮呼吸效果 */
 @keyframes recording-pulse {
   0%, 100% {
@@ -62,9 +18,6 @@
 
 /* 无障碍：减少动画 */
 @media (prefers-reduced-motion: reduce) {
-  .animate-slide-up,
-  .animate-pulse-ring,
-  .animate-fade-in,
   .animate-recording-pulse {
     animation: none;
   }
@@ -169,6 +122,81 @@
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
   }
+}
+
+/* 科菲白标站使用独立的海绿色视觉令牌；业务组件仍与主站共用。 */
+[data-site-mode="collection"] .bg-orange-50 {
+  background-color: #e6f4ef;
+}
+
+[data-site-mode="collection"] .bg-amber-50 {
+  background-color: #e6f4ef;
+}
+
+[data-site-mode="collection"] .bg-orange-100 {
+  background-color: #d8f3dc;
+}
+
+[data-site-mode="collection"] .bg-amber-100 {
+  background-color: #d8f3dc;
+}
+
+[data-site-mode="collection"] .bg-orange-700,
+[data-site-mode="collection"] .bg-orange-800 {
+  background-color: #176b61;
+}
+
+[data-site-mode="collection"] .bg-amber-500,
+[data-site-mode="collection"] .bg-amber-600,
+[data-site-mode="collection"] .bg-amber-700 {
+  background-color: #176b61;
+}
+
+[data-site-mode="collection"] .text-orange-700,
+[data-site-mode="collection"] .text-orange-800 {
+  color: #176b61;
+}
+
+[data-site-mode="collection"] .text-amber-600,
+[data-site-mode="collection"] .text-amber-700,
+[data-site-mode="collection"] .text-amber-800,
+[data-site-mode="collection"] .text-amber-900 {
+  color: #176b61;
+}
+
+[data-site-mode="collection"] .text-orange-200 {
+  color: #b7e4c7;
+}
+
+[data-site-mode="collection"] .text-amber-200 {
+  color: #b7e4c7;
+}
+
+[data-site-mode="collection"] .border-orange-200,
+[data-site-mode="collection"] .border-orange-300 {
+  border-color: #b7e4c7;
+}
+
+[data-site-mode="collection"] .border-amber-200,
+[data-site-mode="collection"] .border-amber-300,
+[data-site-mode="collection"] .border-amber-400 {
+  border-color: #b7e4c7;
+}
+
+[data-site-mode="collection"] .hover\:bg-orange-50:hover,
+[data-site-mode="collection"] .hover\:bg-orange-100:hover {
+  background-color: #d8f3dc;
+}
+
+[data-site-mode="collection"] .hover\:bg-amber-50:hover,
+[data-site-mode="collection"] .hover\:bg-amber-100:hover,
+[data-site-mode="collection"] .hover\:bg-amber-600:hover {
+  background-color: #d8f3dc;
+}
+
+[data-site-mode="collection"] .focus-visible\:ring-orange-500:focus-visible,
+[data-site-mode="collection"] .focus-visible\:ring-orange-600:focus-visible {
+  --tw-ring-color: #2a9d8f;
 }
 
 

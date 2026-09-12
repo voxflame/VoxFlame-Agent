@@ -5,6 +5,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UPSTREAM_DIR="${ROOT_DIR}/references/clear-vox-model"
 EXPECTED_UPSTREAM_COMMIT="0997c0dc941ad0cda39e3ab92d5efd783fbfc38f"
+if [[ $# -gt 1 || ( $# -eq 1 && "$1" != '--checkout-only' ) ]]; then
+  echo 'Usage: check_research_system.sh [--checkout-only]' >&2
+  exit 2
+fi
+CHECKOUT_ONLY="${1:-}"
 
 required_files=(
   ".gitmodules"
@@ -16,6 +21,7 @@ required_files=(
   "research/OUTCOME_REVIEW.md"
   "research/PIPELINE.yaml"
   "research/FEEDBACK_REGISTRY.yaml"
+  "research/HARNESS_RULES.yaml"
   "research/evidence/RO-000.yaml"
   "research/outcome-reviews/RO-000.md"
   "research/templates/RESEARCH_OPPORTUNITY_TEMPLATE.md"
@@ -44,6 +50,8 @@ done
 
 python3 "${ROOT_DIR}/scripts/check_research_sources.py"
 python3 "${ROOT_DIR}/scripts/check_research_harness.py"
+python3 "${ROOT_DIR}/scripts/research/voice_benchmark.py" --check-registered
+python3 -m unittest discover -s "${ROOT_DIR}/scripts/research/tests" -q
 
 if ! grep -qF 'path = references/clear-vox-model' "${ROOT_DIR}/.gitmodules"; then
   echo "CLEAR-VOX-MODEL submodule path is not registered" >&2
@@ -55,11 +63,20 @@ if ! grep -qF 'git@github.com:voxflame/CLEAR-VOX-MODEL.git' "${ROOT_DIR}/.gitmod
   exit 1
 fi
 
-if [[ ! -e "${UPSTREAM_DIR}/.git" ]]; then
-  echo "CLEAR-VOX-MODEL is not initialized; run git submodule update --init --recursive" >&2
+# PRs (including forks) can validate the pinned gitlink without private credentials.
+# This explicit mode does not claim to verify upstream experiment contents.
+gitlink="$(git -C "${ROOT_DIR}" ls-files --stage -- references/clear-vox-model)"
+if [[ "${gitlink}" != "160000 ${EXPECTED_UPSTREAM_COMMIT} 0"$'\t'"references/clear-vox-model" ]]; then
+  echo 'Unexpected or missing CLEAR-VOX-MODEL gitlink' >&2
   exit 1
 fi
 
+if [[ "${CHECKOUT_ONLY}" == '--checkout-only' ]]; then
+  echo 'CHECKOUT-ONLY: pinned gitlink verified; private upstream contents NOT verified.'
+elif [[ ! -e "${UPSTREAM_DIR}/.git" ]]; then
+  echo "CLEAR-VOX-MODEL is not initialized; run git submodule update --init --recursive" >&2
+  exit 1
+else
 actual_commit="$(git -C "${UPSTREAM_DIR}" rev-parse HEAD)"
 if [[ "${actual_commit}" != "${EXPECTED_UPSTREAM_COMMIT}" ]]; then
   echo "Unexpected CLEAR-VOX-MODEL commit: ${actual_commit}" >&2
@@ -71,6 +88,7 @@ if [[ ! -f "${upstream_exp_index}" ]]; then
   echo "Missing upstream Qwen3-ASR experiment index" >&2
   exit 1
 fi
+fi
 
 for status in adopt validate hold reject; do
   if ! grep -qF "\`${status}\`" "${ROOT_DIR}/research/APPLICATION_FEEDBACK_REGISTRY.md"; then
@@ -79,22 +97,9 @@ for status in adopt validate hold reject; do
   fi
 done
 
-retired_docs=(
-  "docs/FASTER_WHISPER_MEMORY_AND_CONTEXT_ESSENCE_2026-04-14.md"
-  "docs/EVER_OS_MEMORY_AND_CONTEXT_ESSENCE_2026-04-14.md"
-  "docs/VOICEITT_FEATURE_SETTINGS_ANALYSIS_AND_VOXFLAME_INSPIRATION_2026-05-15.md"
-  "docs/VOXFLAME_APP_COMPANION_BEST_PRACTICES_AND_OPPORTUNITY_2026-05-04.md"
-  "docs/VOXFLAME_FULLSTACK_ARCHITECTURE_LEARNING_GUIDE_2026-04-29.md"
-  "docs/VOXFLAME_LIVEKIT_MEMORY_BEST_PRACTICES_2026-04-05.md"
-  "docs/VOXFLAME_REHAB_THERAPY_PRODUCT_MAPPING_BY_ETIOLOGY_2026-05-15.md"
-  "docs/VOXFLAME_RESTSEND_RUST_STACK_AND_HARDWARE_AUDIO_BRIDGE_RESEARCH_2026-05-16.md"
-)
+if [[ -e "${ROOT_DIR}/docs" ]]; then
+  echo "Legacy docs directory has returned; use research/ as the only documentation root." >&2
+  exit 1
+fi
 
-for rel in "${retired_docs[@]}"; do
-  if [[ -e "${ROOT_DIR}/${rel}" ]]; then
-    echo "Retired research path has returned: ${rel}" >&2
-    exit 1
-  fi
-done
-
-echo "Research system check passed at CLEAR-VOX-MODEL ${actual_commit}."
+echo "Research system check passed (${CHECKOUT_ONLY:-full}; pinned CLEAR-VOX-MODEL ${EXPECTED_UPSTREAM_COMMIT})."

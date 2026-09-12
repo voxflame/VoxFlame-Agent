@@ -1,0 +1,76 @@
+research_id: RO-016
+status: outcome_review
+evidence_class: engineering
+claim: 并行化独立清理、复用工作区 profile、短 TTL 目录/活动缓存可减少跨端查表延迟和请求放大；真实生产 P95 尚待埋点验证。
+sources:
+  - source_id: local-repository-query-audit-2026-09-03
+    url: internal://repository-query-audit
+    evidence_level: primary
+    accessed_at: 2026-09-03
+    published_or_version: working tree
+    supports: duplicate profile reads, serialized discard steps, repeated mobile catalog requests
+    limitations: static audit; no network timing sample
+  - source_id: supabase-schema-indexes
+    url: internal://supabase-migrations
+    evidence_level: primary
+    accessed_at: 2026-09-03
+    published_or_version: migrations through 20260903010000
+    supports: existing account and timestamp indexes; progress RPC baseline
+    limitations: does not prove workspace/activity query P95
+  - source_id: oss-client-contract
+    url: internal://ali-oss-client
+    evidence_level: primary
+    accessed_at: 2026-09-03
+    published_or_version: ali-oss 6.x adapter
+    supports: object read/write/delete operations and unsupported conditional header failure
+    limitations: provider latency varies by region and object size
+independent_review:
+  required: true
+  reviewer: pending platform/device review
+  relationship_to_author: separate operator required
+  completed_at: pending
+  result: pending
+authority_gate:
+  status: pending
+  release_or_expansion: product_default
+  claim_scope: current authenticated Web/App training and workspace flows
+  authority_sources:
+    - source_id: local-repository-query-audit-2026-09-03
+      url: internal://repository-query-audit
+      tier: primary
+      independence_basis: source and call-chain inspection
+      supports: optimization targets
+      limitations: no user outcome
+    - source_id: supabase-schema-indexes
+      url: internal://supabase-migrations
+      tier: primary
+      independence_basis: deployed schema artifacts
+      supports: index/RPC constraints
+      limitations: no broad load test
+  independent_review:
+    reviewer: pending
+    institution_or_scope: production timing and device smoke
+    conflict_of_interest: maintainer implements; independent reviewer verifies
+    result: pending
+    reviewed_at: pending
+  counterevidence_recorded: true
+  population_device_scenario_bounds_recorded: true
+  failure_conditions: cross-account cache reuse, stale catalog beyond TTL, discard partial cleanup, P95 thresholds breached
+  rollback_or_withdrawal: disable caches; revert parallel cleanup while retaining DB-last safety
+  recheck_date: 2026-09-10
+reproducibility:
+  code_or_protocol: backend tests/build; frontend tests; mobile typecheck/training tests
+  data_version_and_license: repository source and aggregate production metadata only
+  commit_or_release: working tree 2026-09-03
+  run_command: backend npm run test:upload-metadata; backend npm run build; frontend npm test; mobile npm run typecheck; mobile npm run test:training; mobile npm run test:memory
+  seed_or_determinism: deterministic fixtures; cache TTL behavior time-dependent
+  raw_artifacts: research/product-engineering/RO-016-cross-surface-lookup-efficiency-2026-09-03.md
+uncertainty_and_counterevidence:
+  uncertainty: no stage timing, no large-history benchmark, no real-device cache behavior
+  counterevidence: prior discard failures and 6.2s full progress reads
+  out_of_scope: RTC concurrency and model accuracy
+outcome_gates:
+  scholarly: not_applicable
+  patent: not_applicable
+  software_copyright: not_applicable
+  product: pending

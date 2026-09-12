@@ -44,3 +44,25 @@ test('selectTrainingExercises falls back to the full set only after the whole ro
   assert.equal(result.stage, 'revisit')
   assert.deepEqual(result.exercises.map((exercise) => exercise.id), ['a', 'b', 'c'])
 })
+
+test('selectTrainingExercises resumes after the last cloud-backed exercise instead of restarting', () => {
+  const result = selectTrainingExercises({
+    exercises: EXERCISES,
+    recordedExerciseIds: ['a', 'b', 'c'],
+    resumeAfterExerciseId: 'b',
+  })
+
+  assert.equal(result.stage, 'unrepeated')
+  assert.deepEqual(result.exercises.map((exercise) => exercise.id), ['c', 'a', 'b'])
+})
+
+test('selectTrainingExercises finds the next unrecorded exercise after the resume anchor', () => {
+  const result = selectTrainingExercises({
+    exercises: EXERCISES,
+    recordedExerciseIds: ['a'],
+    resumeAfterExerciseId: 'c',
+  })
+
+  assert.equal(result.stage, 'unrecorded')
+  assert.deepEqual(result.exercises.map((exercise) => exercise.id), ['b', 'c'])
+})

@@ -1,6 +1,7 @@
 export type MobileProductMessageContext =
   | 'generic'
   | 'auth'
+  | 'register'
   | 'phone'
   | 'microphone'
   | 'realtime'
@@ -11,6 +12,7 @@ export type MobileProductMessageContext =
 const FALLBACK_MESSAGES: Record<MobileProductMessageContext, string> = {
   generic: '操作失败，请稍后再试。',
   auth: '登录失败，请重试。',
+  register: '注册失败，请重试。',
   phone: '短信暂不可用，请稍后再试。',
   microphone: '麦克风不可用，请检查权限。',
   realtime: '连接失败，请重试。',
@@ -76,6 +78,9 @@ export function toMobileProductMessage(
   if (diagnostic.includes('invalid login credentials')) {
     return '账号或密码不正确。'
   }
+  if (diagnostic.includes('mobile_auth_expired') || diagnostic.includes('auth expired')) {
+    return '登录已过期，请重新登录。'
+  }
   if (diagnostic.includes('signup') || diagnostic.includes('user not found')) {
     return '该账号尚未注册。'
   }
@@ -90,8 +95,18 @@ export function toMobileProductMessage(
     || diagnostic.includes('rate limit')
     || diagnostic.includes('429')
   ) {
+    if (diagnostic.includes('limitexceeded') || diagnostic.includes('sending limit')) {
+      return '短信发送次数已达上限，请稍后再试。'
+    }
     return '操作太频繁，请稍后再试。'
   }
+  if (
+    diagnostic.includes('limitexceeded')
+    || diagnostic.includes('sending limit')
+  ) {
+    return '短信发送次数已达上限，请稍后再试。'
+  }
+
   if (
     diagnostic.includes('signatureincorrectorunapproved')
     || diagnostic.includes('sms provider')

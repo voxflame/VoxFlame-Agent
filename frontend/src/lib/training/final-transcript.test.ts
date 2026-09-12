@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   isRepetitiveTranscriptNoise,
+  mergeCaptureBoundResult,
   pickPreferredTrainingTranscriptCandidate,
 } from './final-transcript.ts'
 
@@ -53,4 +54,30 @@ test('training transcript selection drops repeated-character noise tails', () =>
 test('repetitive transcript noise keeps normal short repetitions', () => {
   assert.equal(isRepetitiveTranscriptNoise('我想我想喝水。'), false)
   assert.equal(isRepetitiveTranscriptNoise('我我我我我我我我我我我我我我我我'), true)
+})
+
+test('a late transcript only updates the attempt with the same capture id', () => {
+  const currentAttempt = {
+    clientCaptureId: 'capture-2',
+    transcript: '第二句',
+  }
+  const lateFirstAttempt = {
+    clientCaptureId: 'capture-1',
+    transcript: '第一句最终结果',
+  }
+
+  assert.equal(
+    mergeCaptureBoundResult(currentAttempt, lateFirstAttempt),
+    currentAttempt,
+  )
+  assert.deepEqual(
+    mergeCaptureBoundResult(currentAttempt, {
+      clientCaptureId: 'capture-2',
+      transcript: '第二句最终结果',
+    }),
+    {
+      clientCaptureId: 'capture-2',
+      transcript: '第二句最终结果',
+    },
+  )
 })

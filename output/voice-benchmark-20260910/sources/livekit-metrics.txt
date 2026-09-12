@@ -1,0 +1,44 @@
+LiveKit docs › Manage & Deploy › Agent Observability › Overview
+
+---
+
+# Observability overview
+
+> An overview of observability features for LiveKit Agents.
+
+## Overview
+
+Monitor and analyze your agent's behavior with comprehensive observability tools. Use built-in LiveKit Cloud insights to view transcripts, traces, logs, and audio recordings, or collect custom data with data hooks for integration with external systems.
+
+> ℹ️ **Note**
+> 
+> Agent observability is only available for LiveKit Cloud projects. It works for agents deployed to LiveKit Cloud and for self-hosted agents that connect to LiveKit Cloud media servers. It doesn't work with self-hosted media servers or entirely self-hosted deployments.
+
+## Observability components
+
+Monitor agent sessions, collect metrics, and analyze behavior with these observability tools.
+
+| Component | Description | Use cases |
+| **Insights in LiveKit Cloud** | Built-in observability stack in LiveKit Cloud with transcripts, traces, logs, and audio recordings in a unified timeline for each agent session. | Viewing session transcripts, analyzing agent behavior, and debugging issues. |
+| **PII redaction** | Remove personally identifiable information from session transcripts, audio, and telemetry before it's stored in LiveKit Cloud. | Reducing exposure of sensitive data in stored session recordings. |
+| **Data hooks** | Collect session recordings, transcripts, metrics, and other data within the LiveKit Agents SDK for custom logging and integration with external systems. | Custom data collection, integration with external observability tools, and exporting data to your own systems. |
+| **Export traces** | Export the OpenTelemetry traces from each session to any compatible backend, such as [Langfuse](https://langfuse.com/), using the LiveKit Agents SDK. | Tracing agent behavior in third-party LLM observability tools. |
+| **Log drains** (LiveKit Cloud) | Forward runtime logs (stdout/stderr) from agents deployed to LiveKit Cloud to external monitoring services like Datadog, CloudWatch, Sentry, and New Relic. | Server-level logging, crash debugging, cross-replica log aggregation, and long-term retention. |
+| **Logs** | View runtime, build, and session logs for your deployed agents using the LiveKit CLI or the Cloud dashboard. | Tailing runtime logs, viewing build output, and accessing per-session logs. |
+
+## In this section
+
+- **[Insights in LiveKit Cloud](https://docs.livekit.io/deploy/observability/insights.md)**: View transcripts, traces, logs, and audio recordings in LiveKit Cloud.
+
+- **[Data hooks](https://docs.livekit.io/deploy/observability/data.md)**: Collect metrics, session reports, and recordings within the Agents SDK.
+
+- **[Export traces](https://docs.livekit.io/deploy/observability/tracing.md)**: Export session traces to any OpenTelemetry-compatible backend.
+
+- **[PII redaction](https://docs.livekit.io/deploy/observability/pii-redaction.md)**: Redact personally identifiable information from stored agent observability data.
+
+---
+
+This document was rendered at 2026-09-10T13:34:39.337Z.
+For the latest version of this document, see [https://docs.livekit.io/deploy/observability.md](https://docs.livekit.io/deploy/observability.md).
+
+To explore all LiveKit documentation, see [llms.txt](https://docs.livekit.io/llms.txt).

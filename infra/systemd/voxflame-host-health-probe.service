@@ -1,0 +1,19 @@
+[Unit]
+Description=VoxFlame host, network and container health evidence probe
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/voxflame-host-health-probe
+StateDirectory=voxflame-host-health
+StateDirectoryMode=0750
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/voxflame-host-health
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+MemoryMax=64M
+TasksMax=64

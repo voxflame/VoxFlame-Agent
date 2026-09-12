@@ -35,5 +35,5 @@
 - `.claude-summary.md`
   只放会影响项目阶段、产品方向和长期路线图的内容。
 
-- `docs/AI_EXECUTION_PLAN_TEMPLATE.md`
+- `research/templates/AI_EXECUTION_PLAN_TEMPLATE.md`
   当某个想法已经决定进入实现时，再写执行计划。

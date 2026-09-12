@@ -1,6 +1,0 @@
-- generic [active] [ref=e1]:
-  - link "跳转到主要内容" [ref=e2] [cursor=pointer]:
-    - /url: "#main-content"
-  - generic [ref=e4]: 正在准备训练页...
-  - region "Notifications (F8)":
-    - list

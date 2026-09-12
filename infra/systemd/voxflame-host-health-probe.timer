@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the VoxFlame host health evidence probe every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=10s
+Persistent=true
+Unit=voxflame-host-health-probe.service
+
+[Install]
+WantedBy=timers.target

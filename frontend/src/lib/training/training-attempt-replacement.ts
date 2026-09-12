@@ -2,7 +2,7 @@ export type TrainingAttemptUploadStatus =
   | 'idle'
   | 'saving'
   | 'uploaded'
-  | 'retrying'
+  | 'local_only'
   | 'auth_required'
   | 'failed'
   | 'discarding'

@@ -143,6 +143,17 @@ export interface MobileHotwordProfile {
 }
 
 export interface MobileWorkspaceSnapshotContract {
+  registration_profile: {
+    full_name?: string
+    province?: string
+    city?: string
+    disability_category?: string
+    condition?: string
+    etiology?: string
+    has_dialect?: boolean
+    dialect_profiles?: Array<{ name: string; region: string }> | null
+    dialect_name?: string
+  }
   user_profile_memory: MobileUserProfileMemory
   scene_templates: {
     selected_ids: string[]

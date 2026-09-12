@@ -37,6 +37,15 @@ interface TrainingTranscriptCandidateInput {
   bestObserved: string
 }
 
+export function mergeCaptureBoundResult<T extends { clientCaptureId: string }>(
+  current: T | null,
+  finalized: T,
+): T | null {
+  return current?.clientCaptureId === finalized.clientCaptureId
+    ? finalized
+    : current
+}
+
 export function pickPreferredTrainingTranscriptCandidate(
   input: TrainingTranscriptCandidateInput,
 ): string {

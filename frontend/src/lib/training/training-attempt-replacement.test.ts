@@ -12,7 +12,7 @@ test('retry waits for an in-flight save so the uploaded sample can be withdrawn'
 
 test('retry withdraws an existing local or uploaded sample before starting again', () => {
   assert.equal(planTrainingAttemptReplacement('uploaded', true), 'discard_then_start')
-  assert.equal(planTrainingAttemptReplacement('retrying', true), 'discard_then_start')
+  assert.equal(planTrainingAttemptReplacement('local_only', true), 'discard_then_start')
   assert.equal(planTrainingAttemptReplacement('failed', true), 'discard_then_start')
 })
 

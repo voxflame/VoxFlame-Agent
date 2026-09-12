@@ -25,7 +25,7 @@ export function getMobileCollectionPlanId(options: {
   category?: string | null
   usesPreparedMaterial: boolean
 }): MobileCollectionPlanId {
-  if (options.usesPreparedMaterial || options.category === '现代文章朗读') {
+  if (options.usesPreparedMaterial || options.category === '现代文章朗读' || options.category === '完整文章') {
     return 'connected_reading'
   }
   if (options.category === '音系强化') {

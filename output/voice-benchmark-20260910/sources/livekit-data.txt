@@ -1,0 +1,935 @@
+LiveKit docs › Manage & Deploy › Agent Observability › Data hooks
+
+---
+
+# Data hooks
+
+> Collect session recordings, transcripts, metrics, and other data within the LiveKit Agents SDK.
+
+## Overview
+
+The LiveKit Agents SDK includes access to extensive detail about each session, which you can collect locally and integrate with other systems. For information about data collected in LiveKit Cloud, see the [Insights in LiveKit Cloud](https://docs.livekit.io/deploy/observability/insights.md) overview. To choose which observability data is collected per session (audio, transcript, traces, logs), see [Session recording options](https://docs.livekit.io/deploy/observability/insights.md#recording-options).
+
+## Session transcripts and reports
+
+Session transcripts, logs, and history are available in the [Agent insights](https://docs.livekit.io/deploy/observability/insights.md) tab for each session. It provides a unified timeline that combines turn-by-turn transcripts (including tool calls and handoffs), traces capturing the execution flow of each stage in the voice pipeline, runtime logs from the agent server, and audio recordings that you can play back or download directly in the browser. All of this data streams in realtime during the session, with transcripts and recordings uploaded once the session completes.
+
+If you need to collect data locally, you can use the following to build live dashboards, save conversation history, or create a detailed session report:
+
+- The `session.history` object contains the full conversation. Use this to persist a [transcript](#conversation-history) after the session ends.
+- SDKs emit events as turns progress, for example, `conversation_item_added` and `user_input_transcribed`. Use these to build live dashboards.
+- A [session report](#session-reports) gathers identifiers, history, events, and recording metadata in one JSON payload. Use this to create a structured post-session artifact.
+
+### Conversation history
+
+The `session.history` object contains the full conversation. While you can use it to persist a transcript after the session ends, it's an advanced use case and _not_ recommended for most applications.
+
+> 🔥 **Realtime model transcript delays**
+> 
+> When using a realtime model without a separate STT plugin, `session.history` transcripts might be incomplete or arrive after the agent has already responded. For details and workarounds, see [Delayed transcription](https://docs.livekit.io/agents/models/realtime.md#delayed-transcription).
+
+Instead, view the conversation history in the [Agent insights](https://docs.livekit.io/deploy/observability/insights.md) tab for each session. It includes turn-by-turn transcripts, tool calls, handoffs, audio recordings, and more. The following screenshot shows a portion of a conversation history in Agent insights with a tool call:
+
+![Conversation history in Agent insights.](/images/agents/agent-insights.jpg)
+
+To create a live dashboard or collect conversation history as it happens, subscribe to the `conversation_item_added` event. For more information, see [conversation_item_added](https://docs.livekit.io/reference/agents/events.md#conversation_item_added).
+
+To collect the complete conversation history when a session ends, read [`session.history`](https://docs.livekit.io/agents/logic/chat-context.md) in a [`close` event](https://docs.livekit.io/reference/agents/events.md#close) handler.
+
+### Session reports
+
+Call `ctx.make_session_report()` inside the `on_session_end` callback to capture a structured `SessionReport` with identifiers, conversation history, events, recording metadata, and agent configuration.
+
+> ℹ️ **Self-hosted deployment compatibility**
+> 
+> `make_session_report()` and `to_dict()` run entirely in your agent process from data already collected by the SDK. They don't make requests to LiveKit Cloud, so the same code works for self-hosted deployments.
+
+** Filename: `agent.py`**
+
+```python
+import json
+from datetime import datetime
+from livekit.agents import JobContext, AgentServer
+
+server = AgentServer()
+
+async def on_session_end(ctx: JobContext) -> None:
+    report = ctx.make_session_report()
+    report_dict = report.to_dict()
+
+    current_date = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"/tmp/session_report_{ctx.room.name}_{current_date}.json"
+
+    with open(filename, 'w') as f:
+        json.dump(report_dict, f, indent=2)
+
+    print(f"Session report for {ctx.room.name} saved to {filename}")
+
+@server.rtc_session(agent_name="my-agent", on_session_end=on_session_end)
+async def entrypoint(ctx: JobContext):
+    await ctx.connect()
+    # ...
+
+```
+
+** Filename: `agent.ts`**
+
+```ts
+import { defineAgent, type JobContext } from '@livekit/agents';
+import { writeFile } from 'node:fs/promises';
+
+const onSessionEnd = async (ctx: JobContext) => {
+  const report = ctx.makeSessionReport();
+
+  const currentDate = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+  const filename = `/tmp/session_report_${ctx.room.name}_${currentDate}.json`;
+
+  await writeFile(filename, JSON.stringify(report, null, 2));
+
+  console.log(`Session report for ${ctx.room.name} saved to ${filename}`);
+};
+
+export default defineAgent({
+  entry: async (ctx: JobContext) => {
+    await ctx.connect();
+    // ...
+
+    ctx.addShutdownCallback(async () => {
+      await onSessionEnd(ctx);
+    });
+  },
+});
+
+```
+
+These examples use `print()` and `console.log` for clarity. In production, use a structured logger such as Python's standard `logging` module so report records are searchable alongside the rest of your agent logs.
+
+The report includes fields such as:
+
+- Job, room, and participant identifiers
+- Complete conversation history with timestamps
+- All session events (transcription, speech detection, handoffs, etc.)
+- Audio recording metadata and paths (when recording is enabled)
+- Agent session options and configuration
+
+> ℹ️ **Note**
+> 
+> The per-message `llm_node_ttft` and `tts_node_ttfb` fields in session reports are only populated by the STT-LLM-TTS pipeline. These fields are always empty when using a realtime model.
+
+#### Session report lifecycle
+
+The SDK calls your `on_session_end` callback after the voice pipeline closes. At this point, `session.history` and all metrics are finalized. After your callback returns, the SDK uploads its own telemetry and cleans up resources.
+
+1. The agent connects to the room and begins the voice pipeline.
+2. When the session ends (for example, the participant disconnects), the SDK fires the `on_session_end` callback.
+3. Inside `on_session_end`, call `ctx.make_session_report()` to collect all session data into a single `SessionReport` object.
+4. After `on_session_end` returns, the SDK flushes telemetry to LiveKit Cloud (traces, logs, recordings) and cleans up resources.
+
+> ℹ️ **Session end timeout**
+> 
+> `session_end_timeout` (default 5 minutes) bounds how long your `on_session_end` callback can run. If your post-session work (such as writing a report or calling an external API) might exceed this limit, increase `session_end_timeout` in your `WorkerOptions`. The separate `shutdown_process_timeout` (default 10 seconds) bounds the overall job process shutdown after all callbacks complete. See the [JobContext reference](https://docs.livekit.io/reference/agents/job-context.md) for details.
+
+## Record audio or video
+
+Audio recordings are automatically collected and uploaded to LiveKit Cloud for each session. These files are recorded after background voice cancellation (BVC) is applied and are available for playback and download on the [Agent insights](https://docs.livekit.io/deploy/observability/insights.md) tab for the session.
+
+If you need to have more fine-grained control over audio recordings and don't require BVC, or want to record both audio and video, you can use [LiveKit Egress](https://docs.livekit.io/transport/media/ingress-egress/egress.md) to capture audio and video directly to your storage provider. The simplest pattern is to start a [room composite recorder](https://docs.livekit.io/transport/media/ingress-egress/egress/composite-recording.md) when your agent joins the room.
+
+** Filename: `agent.py`**
+
+```python
+from livekit import api
+
+async def entrypoint(ctx: JobContext):
+    req = api.RoomCompositeEgressRequest(
+        room_name=ctx.room.name,
+        audio_only=True,
+        file_outputs=[
+            api.EncodedFileOutput(
+                file_type=api.EncodedFileType.OGG,
+                filepath="livekit/my-room-test.ogg",
+                s3=api.S3Upload(
+                    bucket=os.getenv("AWS_BUCKET_NAME"),
+                    region=os.getenv("AWS_REGION"),
+                    access_key=os.getenv("AWS_ACCESS_KEY_ID"),
+                    secret=os.getenv("AWS_SECRET_ACCESS_KEY"),
+                ),
+            )
+        ],
+    )
+
+    lkapi = api.LiveKitAPI()
+    await lkapi.egress.start_room_composite_egress(req)
+    await lkapi.aclose()
+    # ... continue with your agent logic
+
+```
+
+** Filename: `agent.ts`**
+
+```ts
+import {
+  LiveKitAPI,
+  EncodedFileOutput,
+  EncodedFileType,
+  EncodingOptionsPreset,
+} from 'livekit-server-sdk';
+
+// Reads LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET from the environment
+// (a wss:// URL is converted to https:// internally).
+const api = new LiveKitAPI();
+
+const output = new EncodedFileOutput({
+  fileType: EncodedFileType.MP4,
+  filepath: 'livekit/my-room-test.mp4',
+  output: {
+    case: 's3',
+    value: {
+      accessKey: process.env.AWS_ACCESS_KEY_ID,
+      secret: process.env.AWS_SECRET_ACCESS_KEY,
+      bucket: process.env.AWS_BUCKET_NAME,
+      region: process.env.AWS_REGION,
+      forcePathStyle: true,
+    },
+  },
+});
+
+export default defineAgent({
+  entry: async (ctx: JobContext) => {
+    await api.egress.startRoomCompositeEgress(
+      ctx.room.name ?? 'open-room',
+      output,
+      {
+        layout: 'grid',
+        encodingOptions: EncodingOptionsPreset.H264_1080P_30,
+        audioOnly: false,
+      },
+    );
+
+    // ... continue with your agent logic
+  },
+});
+
+```
+
+## Metrics and usage data
+
+The Agents SDK provides four surfaces for collecting metrics and usage data, each scoped differently. Pick the surface that matches the granularity your use case needs.
+
+| Scope | Surface | Use for |
+| Per component | Per-plugin `metrics_collected` event | Latency and usage for a single STT, LLM, TTS, or VAD call. Subscribe on the plugin instance, for example `llm.on("metrics_collected", ...)`. See [Metrics reference](#metrics-reference). |
+| Per turn | `ChatMessage.metrics` (`MetricsReport`) | Latency breakdowns for one user or agent turn. See [Per-turn latency](#per-turn-latency). |
+| Per session, live | `session_usage_updated` event and `session.usage` | Cumulative per-model token and duration totals, updated as the session runs. See [Session usage](#session-usage). |
+| Per session, final | `SessionReport` from `ctx.make_session_report()` | Single end-of-session snapshot with identifiers, history, events, and model usage. See [Session reports](#session-reports). |
+
+> ℹ️ **Note**
+> 
+> A session-level `metrics_collected` event also exists but is deprecated. The per-plugin event described above is not deprecated. See [Subscribe to metrics events (deprecated)](#metrics-collected) for migration guidance.
+
+Per-turn latency and session usage are also included in LiveKit Cloud [Agent insights](https://docs.livekit.io/deploy/observability/insights.md).
+
+### Per-turn latency
+
+Every `ChatMessage` in the conversation history includes a `metrics` field containing a `MetricsReport` with latency measurements for that turn. The available fields depend on the message role.
+
+#### User messages
+
+**Python**:
+
+| Field | Description |
+| `transcription_delay` | Time (in seconds) to obtain the transcript after the user stopped speaking. |
+| `end_of_turn_delay` | Time (in seconds) between end of speech and the decision to end the user's turn. |
+| `on_user_turn_completed_delay` | Time (in seconds) to execute the `Agent.on_user_turn_completed` callback. |
+
+---
+
+**Node.js**:
+
+| Field | Description |
+| `transcriptionDelay` | Time (in seconds) to obtain the transcript after the user stopped speaking. |
+| `endOfTurnDelay` | Time (in seconds) between end of speech and the decision to end the user's turn. |
+| `onUserTurnCompletedDelay` | Time (in seconds) to execute the `Agent.onUserTurnCompleted` callback. |
+
+#### Assistant messages
+
+**Python**:
+
+| Field | Description |
+| `llm_node_ttft` | Time (in seconds) for the LLM to return the first token. |
+| `tts_node_ttfb` | Time (in seconds) for the TTS to return the first audio chunk after receiving the first text token. |
+| `playback_latency` | Time (in seconds) between forwarding the first audio frame and the `AudioOutput` reporting playback started. |
+| `e2e_latency` | Time (in seconds) from when the user stopped speaking to when the agent began responding. |
+
+---
+
+**Node.js**:
+
+| Field | Description |
+| `llmNodeTtft` | Time (in seconds) for the LLM to return the first token. |
+| `ttsNodeTtfb` | Time (in seconds) for the TTS to return the first audio chunk after receiving the first text token. |
+| `playbackLatency` | Time (in seconds) between forwarding the first audio frame and the `AudioOutput` reporting playback started. |
+| `e2eLatency` | Time (in seconds) from when the user stopped speaking to when the agent began responding. |
+
+> ℹ️ **Note**
+> 
+> `llm_node_ttft` and `tts_node_ttfb` are only populated by the STT-LLM-TTS pipeline. These fields are empty when using a realtime model. `playback_latency` is near-zero unless a remote avatar worker is in the chain and reports playback via the `lk.playback_started` RPC. See [Custom avatar workers](https://docs.livekit.io/agents/models/avatar.md#custom-avatar-workers) for details.
+
+#### Both roles
+
+**Python**:
+
+| Field | Description |
+| `started_speaking_at` | Timestamp when speaking began. |
+| `stopped_speaking_at` | Timestamp when speaking ended. |
+
+---
+
+**Node.js**:
+
+| Field | Description |
+| `startedSpeakingAt` | Timestamp when speaking began. |
+| `stoppedSpeakingAt` | Timestamp when speaking ended. |
+
+Per-turn metrics are available from the conversation history or from the `conversation_item_added` event. The following example subscribes to the event and logs end-to-end latency:
+
+**Python**:
+
+```python
+from livekit.agents import ConversationItemAddedEvent
+from livekit.agents.llm import ChatMessage
+
+@session.on("conversation_item_added")
+def on_conversation_item_added(ev: ConversationItemAddedEvent):
+    if not isinstance(ev.item, ChatMessage):
+        return
+    m = ev.item.metrics
+    if ev.item.role == "assistant" and m.get("e2e_latency") is not None:
+        print(f"E2E latency: {m['e2e_latency']:.3f}s")
+
+```
+
+---
+
+**Node.js**:
+
+```ts
+import { voice } from '@livekit/agents';
+
+session.on(voice.AgentSessionEventTypes.ConversationItemAdded, (ev) => {
+  const m = ev.item.metrics;
+  if (ev.item.role === 'assistant' && m?.e2eLatency !== undefined) {
+    console.log(`E2E latency: ${m.e2eLatency.toFixed(3)}s`);
+  }
+});
+
+```
+
+### Session usage
+
+Subscribe to the `session_usage_updated` event to receive per-model usage data for cost estimation or billing exports. The event fires whenever new usage data is available during a session.
+
+**Python**:
+
+```python
+from livekit.agents import SessionUsageUpdatedEvent
+
+@session.on("session_usage_updated")
+def on_session_usage_updated(ev: SessionUsageUpdatedEvent):
+    for usage in ev.usage.model_usage:
+        print(f"{usage.provider}/{usage.model}: {usage}")
+
+```
+
+---
+
+**Node.js**:
+
+```ts
+import { voice } from '@livekit/agents';
+
+session.on(voice.AgentSessionEventTypes.SessionUsageUpdated, (ev) => {
+  for (const usage of ev.usage.modelUsage) {
+    console.log(`${usage.provider}/${usage.model}:`, usage);
+  }
+});
+
+```
+
+You can also access cumulative usage at any time through `session.usage`:
+
+**Python**:
+
+```python
+# ctx is the JobContext from your entrypoint function
+async def log_usage():
+    for usage in session.usage.model_usage:
+        print(f"{usage.provider}/{usage.model}: {usage}")
+
+ctx.add_shutdown_callback(log_usage)
+
+```
+
+---
+
+**Node.js**:
+
+```ts
+const logUsage = async () => {
+  for (const usage of session.usage.modelUsage) {
+    console.log(`${usage.provider}/${usage.model}:`, usage);
+  }
+};
+
+ctx.addShutdownCallback(logUsage);
+
+```
+
+Each entry in the `model_usage` list is a cumulative usage summary for a single model and provider combination. The entry type depends on the pipeline component (`LLMModelUsage`, `TTSModelUsage`, `STTModelUsage`, or `InterruptionModelUsage`), each with the fields listed in the following sections.
+
+#### LLMModelUsage
+
+**Python**:
+
+| Field | Description |
+| `provider` | Provider name (for example, `openai`, `anthropic`). |
+| `model` | Model name (for example, `gpt-4o`, `claude-3-5-sonnet`). |
+| `input_tokens` | Total input tokens. |
+| `input_cached_tokens` | Input tokens served from cache. |
+| `input_cached_audio_tokens` | Input audio tokens served from cache (multimodal models). |
+| `input_cached_text_tokens` | Input text tokens served from cache. |
+| `input_cached_image_tokens` | Input image tokens served from cache (multimodal models). |
+| `input_audio_tokens` | Input audio tokens (multimodal models). |
+| `input_text_tokens` | Input text tokens. |
+| `input_image_tokens` | Input image tokens (multimodal models). |
+| `output_tokens` | Total output tokens. |
+| `output_audio_tokens` | Output audio tokens (multimodal models). |
+| `output_text_tokens` | Output text tokens. |
+| `session_duration` | Session connection duration in seconds (for session-based billing). |
+
+---
+
+**Node.js**:
+
+| Field | Description |
+| `provider` | Provider name (for example, `openai`, `anthropic`). |
+| `model` | Model name (for example, `gpt-4o`, `claude-3-5-sonnet`). |
+| `inputTokens` | Total input tokens. |
+| `inputCachedTokens` | Input tokens served from cache. |
+| `inputCachedAudioTokens` | Input audio tokens served from cache (multimodal models). |
+| `inputCachedTextTokens` | Input text tokens served from cache. |
+| `inputCachedImageTokens` | Input image tokens served from cache (multimodal models). |
+| `inputAudioTokens` | Input audio tokens (multimodal models). |
+| `inputTextTokens` | Input text tokens. |
+| `inputImageTokens` | Input image tokens (multimodal models). |
+| `outputTokens` | Total output tokens. |
+| `outputAudioTokens` | Output audio tokens (multimodal models). |
+| `outputTextTokens` | Output text tokens. |
+| `sessionDurationMs` | Session connection duration in milliseconds (for session-based billing). |
+
+#### TTSModelUsage
+
+**Python**:
+
+| Field | Description |
+| `provider` | Provider name (for example, `elevenlabs`, `cartesia`). |
+| `model` | Model name (for example, `eleven_turbo_v2`, `sonic`). |
+| `input_tokens` | Input text tokens (for token-based TTS billing). |
+| `output_tokens` | Output audio tokens (for token-based TTS billing). |
+| `characters_count` | Number of characters synthesized (for character-based billing). |
+| `audio_duration` | Duration of generated audio in seconds. |
+
+---
+
+**Node.js**:
+
+| Field | Description |
+| `provider` | Provider name (for example, `elevenlabs`, `cartesia`). |
+| `model` | Model name (for example, `eleven_turbo_v2`, `sonic`). |
+| `inputTokens` | Input text tokens (for token-based TTS billing). |
+| `outputTokens` | Output audio tokens (for token-based TTS billing). |
+| `charactersCount` | Number of characters synthesized (for character-based billing). |
+| `audioDurationMs` | Duration of generated audio in milliseconds. |
+
+#### STTModelUsage
+
+**Python**:
+
+| Field | Description |
+| `provider` | Provider name (for example, `deepgram`, `assemblyai`). |
+| `model` | Model name (for example, `nova-2`, `best`). |
+| `input_tokens` | Input audio tokens (for token-based STT billing). |
+| `output_tokens` | Output text tokens (for token-based STT billing). |
+| `audio_duration` | Duration of processed audio in seconds. |
+
+---
+
+**Node.js**:
+
+| Field | Description |
+| `provider` | Provider name (for example, `deepgram`, `assemblyai`). |
+| `model` | Model name (for example, `nova-2`, `best`). |
+| `inputTokens` | Input audio tokens (for token-based STT billing). |
+| `outputTokens` | Output text tokens (for token-based STT billing). |
+| `audioDurationMs` | Duration of processed audio in milliseconds. |
+
+> ℹ️ **Note**
+> 
+> Python durations are in seconds; Node.js durations are in milliseconds.
+
+#### InterruptionModelUsage
+
+**Python**:
+
+| Field | Description |
+| `provider` | Provider name (for example, `livekit`). |
+| `model` | Model name (for example, `adaptive`). |
+| `total_requests` | Total requests sent to the interruption detection model. |
+
+---
+
+**Node.js**:
+
+| Field | Description |
+| `provider` | Provider name (for example, `livekit`). |
+| `model` | Model name (for example, `adaptive`). |
+| `totalRequests` | Total requests sent to the interruption detection model. |
+
+### Subscribe to metrics events (deprecated)
+
+> 🔥 **Deprecated**
+> 
+> The session-level `metrics_collected` event is deprecated. Use [`session_usage_updated`](https://docs.livekit.io/reference/agents/events.md#session_usage_updated) for usage tracking and [`ChatMessage.metrics`](https://docs.livekit.io/reference/python/livekit/agents/llm.md#ChatMessage) for per-turn latency. Per-plugin `metrics_collected` events are not deprecated.
+
+**Python**:
+
+```python
+from livekit.agents import metrics, MetricsCollectedEvent
+
+@session.on("metrics_collected")
+def _on_metrics_collected(ev: MetricsCollectedEvent):
+    metrics.log_metrics(ev.metrics)
+
+```
+
+---
+
+**Node.js**:
+
+```ts
+import { voice, metrics } from '@livekit/agents';
+
+session.on(voice.AgentSessionEventTypes.MetricsCollected, (ev) => {
+  metrics.logMetrics(ev.metrics);
+});
+
+```
+
+### Aggregate usage (deprecated)
+
+> 🔥 **Deprecated**
+> 
+> `UsageCollector` and `UsageSummary` are deprecated. Use [`session.usage`](#session-usage) for cumulative per-model usage instead.
+
+**Python**:
+
+```python
+from livekit.agents import metrics, MetricsCollectedEvent
+
+@session.on("metrics_collected")
+def _on_metrics_collected(ev: MetricsCollectedEvent):
+    metrics.log_metrics(ev.metrics)
+
+async def log_usage():
+    logger.info(f"Usage: {session.usage}")
+
+ctx.add_shutdown_callback(log_usage)
+
+```
+
+---
+
+**Node.js**:
+
+```ts
+import { voice, metrics } from '@livekit/agents';
+
+session.on(voice.AgentSessionEventTypes.MetricsCollected, (ev) => {
+  metrics.logMetrics(ev.metrics);
+});
+
+const logUsage = async () => {
+  console.log(`Usage: ${JSON.stringify(session.usage)}`);
+};
+
+ctx.addShutdownCallback(logUsage);
+
+```
+
+### Metrics reference
+
+Each metrics event is included in the LiveKit Cloud trace spans and surfaced as JSON in the dashboard. These metrics are emitted by individual pipeline plugins (STT, LLM, TTS, VAD, etc.) and can be consumed through per-plugin `metrics_collected` listeners. Use the tables in the following sections when you emit the data elsewhere.
+
+![Diagram where metrics are measured.](/images/agents/agents-capturing-metrics-v3.png)
+
+#### Voice-activity-detection (VAD)
+
+`VADMetrics` is emitted periodically by the VAD model as it processes audio. It provides visibility into the VAD's operational performance, including how much time it spends idle versus performing inference operations and how many inference operations it completes. This data can be useful for diagnosing latency in speech turn detection.
+
+**Python**:
+
+| Metric | Description |
+| `idle_time` | The amount of time (seconds) the VAD spent idle, not performing inference. |
+| `inference_duration_total` | The total amount of time (seconds) spent on VAD inference operations. |
+| `inference_count` | The number of VAD inference operations performed. |
+
+---
+
+**Node.js**:
+
+| Metric | Description |
+| `idleTimeMs` | The amount of time (milliseconds) the VAD spent idle, not performing inference. |
+| `inferenceDurationTotalMs` | The total amount of time (milliseconds) spent on VAD inference operations. |
+| `inferenceCount` | The number of VAD inference operations performed. |
+
+#### Speech-to-text (STT)
+
+`STTMetrics` is emitted after the STT model processes the audio input. This metrics event is only available when an STT component is configured (Realtime APIs do not emit it).
+
+**Python**:
+
+| Metric | Description |
+| `audio_duration` | The duration (seconds) of the audio input received by the STT model. |
+| `duration` | For non-streaming STT, the amount of time (seconds) it took to create the transcript. Always `0` for streaming STT. |
+| `streamed` | `True` if the STT is in streaming mode. |
+
+---
+
+**Node.js**:
+
+| Metric | Description |
+| `audioDurationMs` | The duration (milliseconds) of the audio input received by the STT model. |
+| `durationMs` | For non-streaming STT, the amount of time (milliseconds) it took to create the transcript. Always `0` for streaming STT. |
+| `streamed` | `true` if the STT is in streaming mode. |
+
+#### End-of-utterance (EOU)
+
+`EOUMetrics` is emitted when the user is determined to have finished speaking. It includes metrics related to end-of-turn detection and transcription latency.
+
+EOU metrics are available in Realtime APIs when `turn_detection` is set to VAD or LiveKit's turn detector plugin. When using server-side turn detection, `EOUMetrics` is not emitted.
+
+**Python**:
+
+| Metric | Description |
+| `end_of_utterance_delay` | Time (in seconds) from the end of speech (as detected by VAD) to the point when the user's turn is considered complete. This includes any `transcription_delay`. |
+| `transcription_delay` | Time (in seconds) between the end of speech and when the final transcript is available. |
+| `on_user_turn_completed_delay` | Time (in seconds) taken to execute the `on_user_turn_completed` callback. |
+| `speech_id` | A unique identifier indicating the user's turn. Not present when end-of-utterance fires without a detected speech segment. |
+
+---
+
+**Node.js**:
+
+| Metric | Description |
+| `endOfUtteranceDelayMs` | Time (in milliseconds) from the end of speech (as detected by VAD) to the point when the user's turn is considered complete. This includes any `transcriptionDelayMs`. |
+| `transcriptionDelayMs` | Time (milliseconds) between the end of speech and when the final transcript is available. |
+| `onUserTurnCompletedDelayMs` | Time (in milliseconds) taken to invoke the `Agent.onUserTurnCompleted` callback. |
+| `lastSpeakingTimeMs` | Timestamp (milliseconds) of when the user last stopped speaking. |
+| `speechId` | A unique identifier indicating the user's turn. Not present when end-of-utterance fires without a detected speech segment. |
+
+#### LLM
+
+`LLMMetrics` is emitted after each LLM inference completes. Tool calls that run after the initial completion emit their own `LLMMetrics` events.
+
+**Python**:
+
+| Metric | Description |
+| `duration` | The amount of time (seconds) it took for the LLM to generate the entire completion. |
+| `completion_tokens` | The number of tokens generated by the LLM in the completion. |
+| `prompt_tokens` | The number of tokens provided in the prompt sent to the LLM. |
+| `prompt_cached_tokens` | The number of cached tokens in the input prompt. |
+| `speech_id` | A unique identifier representing a turn in the user input. Not present for proactive agent responses, tool-call follow-ups, or other completions not tied to a user speech turn. |
+| `total_tokens` | Total token usage for the completion. |
+| `tokens_per_second` | The rate of token generation (tokens/second) by the LLM to generate the completion. |
+| `ttft` | The amount of time (seconds) that it took for the LLM to generate the first token of the completion. |
+
+---
+
+**Node.js**:
+
+| Metric | Description |
+| `durationMs` | The amount of time (milliseconds) it took for the LLM to generate the entire completion. |
+| `completionTokens` | The number of tokens generated by the LLM in the completion. |
+| `promptTokens` | The number of tokens provided in the prompt sent to the LLM. |
+| `promptCachedTokens` | The number of cached tokens in the input prompt. |
+| `speechId` | A unique identifier representing a turn in the user input. Not present for proactive agent responses, tool-call follow-ups, or other completions not tied to a user speech turn. |
+| `totalTokens` | Total token usage for the completion. |
+| `tokensPerSecond` | The rate of token generation (tokens/second) by the LLM to generate the completion. |
+| `ttftMs` | The amount of time (milliseconds) that it took for the LLM to generate the first token of the completion. |
+
+#### Realtime model
+
+`RealtimeModelMetrics` is emitted after each response from a realtime model. It replaces `LLMMetrics` in agents that use a realtime model instead of an STT-LLM-TTS pipeline.
+
+**Python**:
+
+| Metric | Description |
+| `duration` | The amount of time (seconds) it took to receive the full response from the model. |
+| `session_duration` | The total connection time (seconds) for session-based billing. |
+| `ttft` | Time to first audio token (seconds). Returns `-1` if the model did not generate audio tokens. Unlike `LLMMetrics.ttft`, this value can be negative. |
+| `input_tokens` | Total number of input tokens. |
+| `output_tokens` | Total number of output tokens. |
+| `total_tokens` | Total token usage for the response. |
+| `tokens_per_second` | The rate of output token generation (tokens/second). |
+| `input_token_details` | Breakdown of input tokens by modality: `audio_tokens`, `text_tokens`, `image_tokens`, `cached_tokens`, and `cached_tokens_details` (further split by modality). |
+| `output_token_details` | Breakdown of output tokens by modality: `text_tokens`, `audio_tokens`, `image_tokens`. |
+
+---
+
+**Node.js**:
+
+| Metric | Description |
+| `durationMs` | The amount of time (milliseconds) it took to receive the full response from the model. |
+| `sessionDurationMs` | The total connection time (milliseconds) for session-based billing. Not present for providers that don't use session-based billing. |
+| `ttftMs` | Time to first audio token (milliseconds). Returns `-1` if the model did not generate audio tokens. Unlike `LLMMetrics.ttftMs`, this value can be negative. |
+| `inputTokens` | Total number of input tokens. |
+| `outputTokens` | Total number of output tokens. |
+| `totalTokens` | Total token usage for the response. |
+| `tokensPerSecond` | The rate of output token generation (tokens/second). |
+| `inputTokenDetails` | Breakdown of input tokens by modality: `audioTokens`, `textTokens`, `imageTokens`, `cachedTokens`, and `cachedTokenDetails` (further split by modality). |
+| `outputTokenDetails` | Breakdown of output tokens by modality: `textTokens`, `audioTokens`, `imageTokens`. |
+
+#### Text-to-speech (TTS)
+
+`TTSMetrics` is emitted after the TTS model generates speech from text input.
+
+**Python**:
+
+| Metric | Description |
+| `audio_duration` | The duration (seconds) of the audio output generated by the TTS model. |
+| `characters_count` | The number of characters in the text input to the TTS model. |
+| `duration` | The amount of time (seconds) it took for the TTS model to generate the entire audio output. |
+| `ttfb` | The amount of time (seconds) that it took for the TTS model to generate the first byte of its audio output. |
+| `speech_id` | An identifier linking to a user's turn. Not present for speech synthesized independently of a user turn, such as a proactive greeting or `say()` call. |
+| `streamed` | `True` if the TTS is in streaming mode. |
+
+---
+
+**Node.js**:
+
+| Metric | Description |
+| `audioDurationMs` | The duration (milliseconds) of the audio output generated by the TTS model. |
+| `charactersCount` | The number of characters in the text input to the TTS model. |
+| `durationMs` | The amount of time (milliseconds) it took for the TTS model to generate the entire audio output. |
+| `ttfbMs` | The amount of time (milliseconds) that it took for the TTS model to generate the first byte of its audio output. |
+| `speechId` | An identifier linking to a user's turn. Not present for speech synthesized independently of a user turn, such as a proactive greeting or `say()` call. |
+| `streamed` | `true` if the TTS is in streaming mode. |
+
+#### Interruption detection
+
+`InterruptionMetrics` is emitted when the adaptive interruption model processes overlapping speech. Interruption metrics are only available when the [adaptive interruption handling](https://docs.livekit.io/agents/logic/turns/adaptive-interruption-handling.md) is enabled. Use it to monitor detection latency and request volume for the model.
+
+**Python**:
+
+| Metric | Description |
+| `total_duration` | Latest Round Trip Time (RTT) for the inference, in seconds. |
+| `prediction_duration` | Latest time taken for inference on the model side, in seconds. |
+| `detection_delay` | Latest total time from the onset of overlapping speech to the final prediction, in seconds. |
+| `num_interruptions` | Number of interruptions detected for this event. |
+| `num_backchannels` | Number of non-interrupting speech events (backchannels) detected for this event. Overlapping speech that the agent itself ended is inconclusive, so it counts as neither an interruption nor a backchannel. |
+| `num_requests` | Number of requests sent to the interruption detection model for this event. |
+
+---
+
+**Node.js**:
+
+| Metric | Description |
+| `totalDuration` | Latest Round Trip Time (RTT) for the inference, in milliseconds. |
+| `predictionDuration` | Latest time taken for inference on the model side, in milliseconds. |
+| `detectionDelay` | Latest total time from the onset of overlapping speech to the final prediction, in milliseconds. |
+| `numInterruptions` | Number of interruptions detected for this event. |
+| `numBackchannels` | Number of non-interrupting speech events (backchannels) detected for this event. Overlapping speech that the agent itself ended is inconclusive, so it counts as neither an interruption nor a backchannel. |
+| `numRequests` | Number of requests sent to the interruption detection model for this event. |
+
+#### Virtual avatar
+
+`AvatarMetrics` reports latency for [virtual avatar](https://docs.livekit.io/agents/models/avatar.md) agents. Every avatar plugin emits it automatically, with no extra code.
+
+The avatar session emits `AvatarMetrics` through its `metrics_collected` event in two situations, each populating a different set of fields:
+
+- A join event is emitted once, when the avatar participant joins the room and publishes its video track. It includes the session start and avatar join timestamps. Their difference is the avatar join latency.
+- A playback event is emitted for each assistant turn that has a playback latency measurement. It includes the playback latency. This is the same measurement as the [playback latency field on assistant messages](#assistant-messages), reported as a separate event.
+
+**Python**:
+
+| Metric | Description |
+| `timestamp` | Emission time, in epoch seconds. |
+| `playback_latency` | Time (in seconds) between forwarding the first audio frame to the avatar and playback starting. Set on playback events, `0` on the join event. |
+| `session_started_time` | Time (epoch seconds) the avatar session started. Present on the join event. |
+| `avatar_joined_time` | Time (epoch seconds) the avatar participant joined and published its video track. Present on the join event. |
+| `metadata` | Provider and model metadata, including `model_provider`. |
+
+---
+
+**Node.js**:
+
+| Metric | Description |
+| `timestamp` | Emission time, in epoch milliseconds. |
+| `playbackLatencyMs` | Time (in milliseconds) between forwarding the first audio frame to the avatar and playback starting. Present on playback events. |
+| `sessionStartedAt` | Time (epoch milliseconds) the avatar session started. Present on the join event. |
+| `avatarJoinedAt` | Time (epoch milliseconds) the avatar participant joined and published its video track. Present on the join event. |
+| `metadata` | Provider and model metadata, including `modelProvider`. |
+
+The playback latency reflects actual playback start only when the avatar worker reports timing via the `lk.playback_started` RPC, and is otherwise approximate. For details, see [Custom avatar workers](https://docs.livekit.io/agents/models/avatar.md#custom-avatar-workers).
+
+Subscribe to the `metrics_collected` event on the avatar session to consume these metrics:
+
+**Python**:
+
+```python
+# `avatar` is the AvatarSession you created (see the virtual avatar overview)
+@avatar.on("metrics_collected")
+def _on_avatar_metrics(m):
+    if m.session_started_time and m.avatar_joined_time:
+        join_latency = m.avatar_joined_time - m.session_started_time
+        print(f"Avatar joined in {join_latency:.3f}s")
+    if m.playback_latency:
+        print(f"Playback latency: {m.playback_latency:.3f}s")
+
+```
+
+---
+
+**Node.js**:
+
+```ts
+// `avatar` is the AvatarSession you created (see the virtual avatar overview)
+avatar.on('metrics_collected', (m) => {
+  if (m.sessionStartedAt !== undefined && m.avatarJoinedAt !== undefined) {
+    console.log(`Avatar joined in ${m.avatarJoinedAt - m.sessionStartedAt}ms`);
+  }
+  if (m.playbackLatencyMs !== undefined) {
+    console.log(`Playback latency: ${m.playbackLatencyMs}ms`);
+  }
+});
+
+```
+
+### Measure conversation latency
+
+Total conversation latency is the time it takes for the agent to respond to a user's utterance. The simplest way to get this is from `e2e_latency` in [`ChatMessage.metrics`](#per-turn-latency).
+
+For a more granular breakdown, approximate total latency by summing individual pipeline metrics:
+
+**Python**:
+
+```python
+total_latency = eou.end_of_utterance_delay + llm.ttft + tts.ttfb
+
+```
+
+---
+
+**Node.js**:
+
+```ts
+const totalLatency = eou.endOfUtteranceDelayMs + llm.ttftMs + tts.ttfbMs;
+
+```
+
+#### Correlate pipeline metrics by turn
+
+If you need to track latency for individual pipeline stages (EOU, LLM, TTS) separately — for example, to build a per-stage latency dashboard — use `speech_id` to correlate metrics across events for the same user turn.
+
+> ℹ️ **Note**
+> 
+> Metrics where `speech_id` is `None` aren't tied to a user turn (for example, proactive greetings or `say()` calls). The examples below skip these.
+
+**Python**:
+
+```python
+from collections import defaultdict
+from livekit.agents import metrics, MetricsCollectedEvent
+from livekit.agents.metrics import EOUMetrics, LLMMetrics, TTSMetrics
+
+turn_metrics: dict[str, dict[str, float]] = defaultdict(dict)
+
+@session.on("metrics_collected")
+def _on_metrics_collected(ev: MetricsCollectedEvent):
+    metrics.log_metrics(ev.metrics)
+
+    m = ev.metrics
+    sid = getattr(m, "speech_id", None)
+    if sid is None:
+        return
+
+    if isinstance(m, EOUMetrics):
+        turn_metrics[sid]["eou_delay"] = m.end_of_utterance_delay
+    elif isinstance(m, LLMMetrics):
+        turn_metrics[sid]["llm_ttft"] = m.ttft
+    elif isinstance(m, TTSMetrics):
+        turn_metrics[sid]["tts_ttfb"] = m.ttfb
+
+async def log_turn_latencies():
+    for sid, parts in turn_metrics.items():
+        total = sum(parts.values())
+        logger.info(f"Turn {sid}: {parts} total={total:.3f}s")
+
+ctx.add_shutdown_callback(log_turn_latencies)
+
+```
+
+---
+
+**Node.js**:
+
+```ts
+import { voice, metrics } from '@livekit/agents';
+
+const turnMetrics = new Map<string, Record<string, number>>();
+
+session.on(voice.AgentSessionEventTypes.MetricsCollected, (ev) => {
+  metrics.logMetrics(ev.metrics);
+
+  const m = ev.metrics;
+  const sid = 'speechId' in m ? m.speechId : undefined;
+  if (!sid) return;
+
+  if (!turnMetrics.has(sid)) turnMetrics.set(sid, {});
+  const parts = turnMetrics.get(sid)!;
+
+  if (m.type === 'eou_metrics') {
+    parts.eouDelay = m.endOfUtteranceDelayMs;
+  } else if (m.type === 'llm_metrics') {
+    parts.llmTtft = m.ttftMs;
+  } else if (m.type === 'tts_metrics') {
+    parts.ttsTtfb = m.ttfbMs;
+  }
+});
+
+ctx.addShutdownCallback(async () => {
+  for (const [sid, parts] of turnMetrics) {
+    const total = Object.values(parts).reduce((a, b) => a + b, 0);
+    console.log(`Turn ${sid}:`, parts, `total=${total.toFixed(1)}ms`);
+  }
+});
+
+```
+
+## OpenTelemetry integration
+
+Export the OpenTelemetry spans from each session to any compatible backend, such as Langfuse. For setup steps and a complete agent example, see [Export traces](https://docs.livekit.io/deploy/observability/tracing.md).
+
+## Additional resources
+
+- **[Agent insights](https://docs.livekit.io/deploy/observability/insights.md)**: View transcripts, traces, logs, and audio recordings in LiveKit Cloud.
+
+- **[Log drains](https://docs.livekit.io/deploy/agents/log-drains.md)**: Forward runtime logs (stdout/stderr) to external monitoring services.
+
+- **[Logs](https://docs.livekit.io/deploy/agents/logs.md)**: View runtime and build logs with the CLI.
+
+---
+
+This document was rendered at 2026-09-10T13:37:36.547Z.
+For the latest version of this document, see [https://docs.livekit.io/deploy/observability/data.md](https://docs.livekit.io/deploy/observability/data.md).
+
+To explore all LiveKit documentation, see [llms.txt](https://docs.livekit.io/llms.txt).

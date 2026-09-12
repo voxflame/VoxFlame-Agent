@@ -1,0 +1,22 @@
+[Unit]
+Description=Sync all Auth user contact sidecars to private OSS account.json
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/VoxFlame-Agent
+Environment=NODE_TLS_REJECT_UNAUTHORIZED=1
+Environment=VOXFLAME_BACKEND_ENV_FILE=/home/ubuntu/VoxFlame-Agent/backend/.env
+ExecStart=/usr/bin/node /opt/voxflame-oss-account-sync/current/ops/sync-oss-account-documents.js --write
+TimeoutStartSec=240
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+MemoryMax=256M
+TasksMax=64

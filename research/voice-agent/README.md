@@ -6,3 +6,5 @@
 - [LiveKit 记忆最佳实践](VOXFLAME_LIVEKIT_MEMORY_BEST_PRACTICES_2026-04-05.md)
 
 模型与实验原始事实见 [`references/clear-vox-model/modules/dsr/R&D`](../../references/clear-vox-model/modules/dsr/R&D/)。应用决策统一进入 [回流登记](../APPLICATION_FEEDBACK_REGISTRY.md)。
+
+- [语音/Agent 官方工程指标与 Benchmark 协议](VOICE_AGENT_BENCHMARK_PROTOCOL.md)：发现需求 → 实现 → 优化 → 测试 → 迭代；离线检查、RTC 与设备证据分层。

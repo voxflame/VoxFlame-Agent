@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 import {
@@ -33,7 +34,11 @@ import {
   updateNativeRecorderQueueItemStatus,
 } from './native-recorder-storage'
 import { assessMobileRecordingQuality } from './recording-quality'
-import { summarizeRecorderQueue } from './recorder-queue-policy'
+import {
+  recorderQueueItemBelongsToContributor,
+  recorderQueueItemsForContributor,
+  summarizeRecorderQueue,
+} from './recorder-queue-policy'
 import { toMobileProductMessage } from '../ui/product-message'
 
 export type NativeRecorderPermissionStatus =
@@ -114,14 +119,23 @@ export function useNativeRecorderQueue(params: {
     source?: string
     metadata?: Record<string, unknown>
   } | null>(null)
+  const recordingContributorIdRef = useRef<string | null>(null)
+  const currentContributorIdRef = useRef<string | null>(params.contributorId)
   const [uploadingRecordingId, setUploadingRecordingId] = useState<string | null>(null)
   const [lastUploadReceipt, setLastUploadReceipt] =
     useState<MobileWorkbenchUploadReceipt | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  currentContributorIdRef.current = params.contributorId
+
+  const commitQueueItems = useCallback((nextItems: MobileWorkbenchRecorderQueueItem[], ownerId: string | null): void => {
+    if (currentContributorIdRef.current !== ownerId) return
+    setItems(recorderQueueItemsForContributor(nextItems, ownerId))
+  }, [])
 
   const refreshQueue = useCallback(async (): Promise<void> => {
-    setItems(await loadNativeRecorderQueue())
-  }, [])
+    const ownerId = params.contributorId
+    commitQueueItems(await loadNativeRecorderQueue(), ownerId)
+  }, [commitQueueItems, params.contributorId])
 
   useEffect(() => {
     void refreshQueue()
@@ -167,10 +181,15 @@ export function useNativeRecorderQueue(params: {
       setErrorMessage('请先登录。')
       return false
     }
+    const contributorId = params.contributorId
 
     const hasPermission = await requestPermission()
     if (!hasPermission) {
       setErrorMessage('请允许麦克风权限后重试。')
+      return false
+    }
+    if (currentContributorIdRef.current !== contributorId) {
+      setErrorMessage('账号已经切换，请重新开始录音。')
       return false
     }
 
@@ -181,6 +200,7 @@ export function useNativeRecorderQueue(params: {
       })
       await recorder.prepareToRecordAsync()
       recorder.record()
+      recordingContributorIdRef.current = contributorId
       setRecordingStartedAt(new Date().toISOString())
       setRecordingText(text.trim() || '移动端练习样本')
       setRecordingContext(context ?? null)
@@ -194,13 +214,14 @@ export function useNativeRecorderQueue(params: {
   const stopRecording = useCallback(async (): Promise<MobileWorkbenchRecorderQueueItem | null> => {
     setErrorMessage(null)
 
-    if (!params.contributorId) {
-      setErrorMessage('请先登录。')
-      return null
-    }
-
     const stoppedAt = new Date().toISOString()
     const startedAt = recordingStartedAt ?? stoppedAt
+    const recordingContributorId = recordingContributorIdRef.current
+    recordingContributorIdRef.current = null
+    if (!recordingContributorId) {
+      setErrorMessage('录音账号信息缺失，请重新开始录音。')
+      return null
+    }
 
     try {
       await recorder.stop()
@@ -223,7 +244,7 @@ export function useNativeRecorderQueue(params: {
       const quality = assessMobileRecordingQuality(durationMs)
       const item: MobileWorkbenchRecorderQueueItem = {
         recordingId,
-        contributorId: params.contributorId,
+        contributorId: recordingContributorId,
         text: recordingText.trim() || '移动端练习样本',
         sentenceId: recordingContext?.sentenceId,
         source: recordingContext?.source,
@@ -263,7 +284,7 @@ export function useNativeRecorderQueue(params: {
         },
       }
 
-      setItems(await appendNativeRecorderQueueItem(item))
+      commitQueueItems(await appendNativeRecorderQueueItem(item), recordingContributorId)
       setRecordingStartedAt(null)
       setRecordingText('')
       setRecordingContext(null)
@@ -281,7 +302,14 @@ export function useNativeRecorderQueue(params: {
     recordingStartedAt,
     recordingContext,
     recordingText,
+    commitQueueItems,
   ])
+
+  useEffect(() => {
+    const recordingOwner = recordingContributorIdRef.current
+    if (!recorderState.isRecording || !recordingOwner || recordingOwner === params.contributorId) return
+    void stopRecording()
+  }, [params.contributorId, recorderState.isRecording, stopRecording])
 
   const playRecording = useCallback((recordingId: string): void => {
     const item = items.find((queueItem) => queueItem.recordingId === recordingId)
@@ -307,6 +335,10 @@ export function useNativeRecorderQueue(params: {
     if (!item) {
       return true
     }
+    if (!recorderQueueItemBelongsToContributor(item, params.contributorId)) {
+      setErrorMessage('这条录音属于另一个账号，请切回原账号后处理。')
+      return false
+    }
 
     const uploaded = item.syncStatus === 'uploaded' || item.syncStatus === 'indexed'
     if (uploaded) {
@@ -325,9 +357,10 @@ export function useNativeRecorderQueue(params: {
       }
     }
 
-    setItems(await removeNativeRecorderQueueItem(recordingId))
+    const ownerId = params.contributorId
+    commitQueueItems(await removeNativeRecorderQueueItem(recordingId), ownerId)
     return true
-  }, [params.apiBaseUrl, params.tokenProvider])
+  }, [commitQueueItems, params.apiBaseUrl, params.contributorId, params.tokenProvider])
 
   const attachRecognition = useCallback(async (
     recordingId: string,
@@ -339,18 +372,18 @@ export function useNativeRecorderQueue(params: {
       recognizedText,
       metadata,
     )
-    setItems(nextItems)
+    commitQueueItems(nextItems, params.contributorId)
     return nextItems.find((item) => item.recordingId === recordingId) ?? null
-  }, [])
+  }, [commitQueueItems, params.contributorId])
 
   const markUploadPending = useCallback(async (
     recordingId: string,
   ): Promise<void> => {
-    setItems(await updateNativeRecorderQueueItemStatus(
-      recordingId,
-      'upload_pending',
-    ))
-  }, [])
+    commitQueueItems(
+      await updateNativeRecorderQueueItemStatus(recordingId, 'upload_pending'),
+      params.contributorId,
+    )
+  }, [commitQueueItems, params.contributorId])
 
   const uploadRecording = useCallback(async (
     recordingId: string,
@@ -373,42 +406,55 @@ export function useNativeRecorderQueue(params: {
       setErrorMessage('未找到这条录音。')
       return null
     }
+    if (!recorderQueueItemBelongsToContributor(item, params.contributorId)) {
+      setErrorMessage('这条录音属于另一个账号，请切回原账号后上传。')
+      return null
+    }
 
     setUploadingRecordingId(recordingId)
-    setItems(await updateNativeRecorderQueueItemStatus(
-      recordingId,
-      'upload_pending',
-      undefined,
-      item.uploadReceipt ?? null,
-    ))
+    commitQueueItems(
+      await updateNativeRecorderQueueItemStatus(
+        recordingId,
+        'upload_pending',
+        undefined,
+        item.uploadReceipt ?? null,
+      ),
+      params.contributorId,
+    )
 
     try {
       const receipt = await uploadMobileRecorderQueueItem(item, {
         apiBaseUrl: params.apiBaseUrl,
         tokenProvider: params.tokenProvider,
       })
-      setItems(await updateNativeRecorderQueueItemStatus(
-        recordingId,
-        'uploaded',
-        undefined,
-        receipt,
-      ))
+      commitQueueItems(
+        await updateNativeRecorderQueueItemStatus(
+          recordingId,
+          'uploaded',
+          undefined,
+          receipt,
+        ),
+        params.contributorId,
+      )
       setLastUploadReceipt(receipt)
       return receipt
     } catch (error) {
       const message = toMobileProductMessage(error, 'upload')
-      setItems(await updateNativeRecorderQueueItemStatus(
-        recordingId,
-        'failed',
-        message,
-        item.uploadReceipt ?? null,
-      ))
+      commitQueueItems(
+        await updateNativeRecorderQueueItemStatus(
+          recordingId,
+          'failed',
+          message,
+          item.uploadReceipt ?? null,
+        ),
+        params.contributorId,
+      )
       setErrorMessage(message)
       return null
     } finally {
       setUploadingRecordingId(null)
     }
-  }, [params.apiBaseUrl, params.tokenProvider])
+  }, [commitQueueItems, params.apiBaseUrl, params.contributorId, params.tokenProvider])
 
   const summary = useMemo(() => summarizeRecorderQueue(items), [items])
 

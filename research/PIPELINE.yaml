@@ -1,5 +1,5 @@
-version: 1
-updated_at: 2026-08-14
+version: 2
+updated_at: 2026-08-29
 schema: research-opportunity-v1
 state_machine:
   terminal: [adopted, hold, rejected]
@@ -34,25 +34,157 @@ required_fields:
   - authority_gate
   - review_report
 entries:
-  - research_id: RO-000
-    title: TEMPLATE - replace before use
-    topic: agent-systems
-    state: discovered
-    owner: TBD
-    problem: TBD
-    target_scenario: TBD
-    current_gate: source_identity
-    next_action: replace this template entry
-    evidence_package: research/evidence/RO-000.yaml
-    feedback_refs: []
-    release_intents: []
-    authority_gate: research/evidence/RO-000.yaml#authority_gate
-    review_report: research/outcome-reviews/RO-000.md
-    source_refs: []
-    evidence_refs: []
+  - research_id: RO-012
+    title: 训练进度与长历史数据稳定性
+    topic: product-engineering
+    state: improving
+    owner: frontend + backend training workbench
+    problem: 账号 308 长期录音后保存一句反复显示“正在准备训练页”，由全量历史进度读取、重复刷新和遮挡式 loading 叠加造成。
+    target_scenario: 认证用户连续录音、刷新、退出重登和跨设备续读
+    current_gate: production_regression_and_device_smoke
+    next_action: 用真实账号设备连续录 2–3 句并验证失败恢复、跨设备和离线补登
+    evidence_package: research/evidence/RO-012.yaml
+    feedback_refs: [FB-001]
+    release_intents: [product_default]
+    authority_gate: research/evidence/RO-012.yaml#authority_gate
+    review_report: research/outcome-reviews/RO-012.md
+    source_refs: [local-prod-logs-2026-08-28, local-progress-rpc-2026-08-28, nextjs-fetch-abort-docs]
+    evidence_refs: [research/product-engineering/RO-012-training-progress-stability-2026-08-29.md]
+    experiment_refs: []
+    scholarly_ip_refs: []
+    product_refs: [backend-recording-progress, frontend-training-refresh]
+    metrics: [progress_p95_ms, refresh_duplicate_rate, upload_success_rate, page_recovery_rate]
+    risks: [stale-progress, migration-drift, device-only-regression]
+    rollback: 保留旧接口兼容响应；关闭后台刷新优化开关并回滚前端/SQL migration
+  - research_id: RO-013
+    title: Docker 与宿主资源自动治理
+    topic: product-engineering
+    state: improving
+    owner: platform operations
+    problem: Build Cache、悬空镜像、停止容器和宿主日志会随部署累积，人工清理增加磁盘耗尽和不可回滚风险。
+    target_scenario: 单机 Docker 生产主机每日运行、部署、异常重启与回滚
+    current_gate: scheduled-maintenance_observability
+    next_action: 验证 timer 执行记录、阈值触发、日志轮转和运行卷/回滚镜像保护
+    evidence_package: research/evidence/RO-013.yaml
+    feedback_refs: [FB-002]
+    release_intents: [product_default]
+    authority_gate: research/evidence/RO-013.yaml#authority_gate
+    review_report: research/outcome-reviews/RO-013.md
+    source_refs: [docker-pruning-docs, local-docker-df-2026-08-29, systemd-timer-manual]
+    evidence_refs: [research/product-engineering/RO-013-docker-resource-governance-2026-08-29.md]
+    experiment_refs: []
+    scholarly_ip_refs: []
+    product_refs: [docker_disk_maintenance, voxflame-docker-disk-maintenance.timer, voxflame-host-logs]
+    metrics: [root_disk_used_pct, reclaimable_bytes, cleanup_duration, protected_resource_count, log_rotation_age]
+    risks: [over-prune, volume-data-loss, rollback-image-loss, noisy-alerts]
+    rollback: 停用 timer，恢复手工 prune-safe；禁止 volume 删除并保留 latest/pre-* 镜像
+  - research_id: RO-014
+    title: LiveKit/ASR/Agent 实时并发容量与隔离
+    topic: voice-agent
+    state: experiment_ready
+    owner: livekit_agent + platform operations
+    problem: 单 Agent Worker 按房间创建独立 Job 进程，每路持有 ASR/TTS/LLM 与音频状态；外部服务配额、8001 ASR 实例和 TURN/网络容量尚未被真实 RTC 压测证明。
+    target_scenario: 5、10、20、50 路并发实时语音，逐级观察拒绝、延迟、错误和资源边界
+    current_gate: reproducible_rtc_load_test
+    next_action: 先验收取消/有界缓存修复的单房间RTC与硬件尾音/AEC，再复跑现有8路基线并评估扩容；不以本地单测代替生产验收
+    evidence_package: research/evidence/RO-014.yaml
+    feedback_refs: [FB-003, FB-008]
+    release_intents: [internal_only]
+    authority_gate: research/evidence/RO-014.yaml#authority_gate
+    review_report: research/outcome-reviews/RO-014.md
+    source_refs: [livekit-agents-server-options, livekit-self-hosting, livekit-cli-load-test, local-livekit-agent-source, local-runtime-config]
+    evidence_refs: [research/voice-agent/RO-014-livekit-asr-concurrency-capacity-2026-08-29.md, research/agent-systems/RO-014-cross-modal-realtime-capacity-2026-08-29.md]
+    experiment_refs: [research/voice-agent/RO-014-voice-pipeline-repair-2026-09-10.md, research/voice-agent/VOICE_AGENT_BENCHMARK_PROTOCOL.md, research/voice-agent/RO-014-benchmark-local-2026-09-10.json]
+    scholarly_ip_refs: []
+    product_refs: [livekit_agent, livekit-server, backend-rtc-session]
+    metrics: [active_jobs, job_start_p95_ms, asr_p95_ms, tts_first_byte_p95_ms, llm_p95_ms, rtc_packet_loss, provider_429_rate, cpu_pct, memory_mb, fd_count]
+    risks: [single-worker, provider-quota, asr-8001-unknown, turn-bandwidth, privacy-leakage]
+    rollback: 保持单 Worker 小流量；超过保护阈值拒绝新 Job，不扩大用户承诺；可回滚 load/memory 配置
+  - research_id: RO-015
+    title: 方言与普通话配对语音采集设计
+    topic: speech-health
+    state: evidence_review
+    owner: frontend + backend training workbench + data governance
+    problem: 注册已开始收集可跳过的方言自述，但训练页尚未支持同一语义题面的普通话/方言可选配对，且后端原先会丢弃方言元数据。
+    target_scenario: 有方言登记的认证用户在训练中完成普通话录音，并可选择方言录音、跳过、重录、撤回和跨设备恢复
+    current_gate: dialect-label-and-pairing-evidence_review
+    next_action: 实现纯配对状态机与契约测试，执行 migration dry-run 和小规模 shadow 采集；完成独立语言学/SLP/隐私评审
+    evidence_package: research/evidence/RO-015.yaml
+    feedback_refs: [FB-004]
+    release_intents: [internal_only]
+    authority_gate: research/evidence/RO-015.yaml#authority_gate
+    review_report: research/outcome-reviews/RO-015.md
+    source_refs: [rfc5646, iana-language-subtag-registry, datasheets-for-datasets, data-statements-for-nlp, asha-dysarthria-adults, kespeech-author-repository]
+    evidence_refs: [research/speech-health/RO-015-dialect-paired-speech-collection-2026-09-03.md]
+    experiment_refs: []
+    scholarly_ip_refs: []
+    product_refs: [registration-profile, workspace-memory-snapshot, upload-artifact-service, training-recorder]
+    metrics: [dialect_opt_in_rate, dialect_skip_rate, pair_completion_rate, speaker_disjoint_cer, dialect_asr_hint_rate, user_fatigue, sensitive_field_leak_count]
+    risks: [self_report_taxonomy, orthographic_mismatch, pair_state_loss, speaker_leakage, sensitive_profile_leakage, extra_user_burden]
+    rollback: 关闭方言提示与方言上传标签，回退普通话单流；保留已上传样本并按 recording_id 支持撤回，不删除用户历史数据
+  - research_id: RO-016
+    title: Web/App 查表与搜索效率
+    topic: product-engineering
+    state: improving
+    owner: frontend + backend + mobile workbench
+    problem: 撤回、工作区快照和移动目录存在串行远程往返、重复 profile 读取、活动全量分页和重复目录请求，放大延迟与请求量。
+    target_scenario: 认证用户连续训练、撤回重录、打开沟通/记忆页和移动端切换训练材料
+    current_gate: instrumentation_and_large_history_benchmark
+    next_action: 增加阶段耗时指标并完成 1k/5k/20k 历史基准；验证撤回 P95 <3s、progress P95 <2s
+    evidence_package: research/evidence/RO-016.yaml
+    feedback_refs: [FB-005]
+    release_intents: [product_default]
+    authority_gate: research/evidence/RO-016.yaml#authority_gate
+    review_report: research/outcome-reviews/RO-016.md
+    source_refs: [local-repository-query-audit-2026-09-03, supabase-schema-indexes, oss-client-contract]
+    evidence_refs: [research/product-engineering/RO-016-cross-surface-lookup-efficiency-2026-09-03.md]
+    experiment_refs: []
+    scholarly_ip_refs: []
+    product_refs: [upload-artifact-service, workspace-memory-snapshot, mobile-training-catalog]
+    metrics: [discard_p95_ms, progress_p95_ms, workspace_snapshot_p95_ms, catalog_cache_hit_rate, duplicate_request_rate]
+    risks: [stale-cache, cross-account-leakage, partial-discard, migration-drift]
+    rollback: 关闭目录/活动缓存并恢复逐请求读取；撤回保留数据库最后删除和兼容清理步骤
+  - research_id: RO-017
+    title: 上海、杭州算力政策及业务布局建议
+    topic: product-engineering
+    state: evidence_review
+    owner: company management + finance
+    problem: 需要面向合伙人提供正式商务布局建议，将区域政策、经营分工与子公司落地条件对应。
+    target_scenario: 内部政策汇报、预算候选及子公司设立前的资格确认
+    current_gate: official_rules_and_company_qualification_review
+    next_action: 取得余杭2026修订细则、最终伙伴名录及新设子公司适用口径，并完成独立财务和主管部门复核
+    evidence_package: research/evidence/RO-017.yaml
+    feedback_refs: [FB-006]
+    release_intents: [internal_only]
+    authority_gate: research/evidence/RO-017.yaml#authority_gate
+    review_report: research/outcome-reviews/RO-017.md
+    source_refs: [S01, S02, S03, S04, S05, S06, S07, S08, S09, S10, S11, S12]
+    evidence_refs: [research/product-engineering/RO-017-compute-policy-briefing-2026-09-07.md, research/product-engineering/RO-017-business-layout-report-2026-09-07.html]
     experiment_refs: []
     scholarly_ip_refs: []
     product_refs: []
-    metrics: []
-    risks: []
-    rollback: TBD
+    metrics: [verified_source_count, report_page_count, clipped_page_count, unsupported_budget_claim_count]
+    risks: [expired-window, unpublished-detail, unverified-company-qualification, related-party-expense, double-subsidy]
+    rollback: 停用补充版；保留未修改原HTML和忠实转换PDF；不涉及运行时、采购或申报回滚
+  - research_id: RO-018
+    title: 阿里云第一期充值审批与GPU商务规划
+    topic: product-engineering
+    state: evidence_review
+    owner: company management + finance + platform operations
+    problem: 原始预算缺少资源表和价格表，需拆分充值、消费、GPU训练专项与政策合格费用，避免用上传并发承诺RTC容量。
+    target_scenario: 合伙人内部资金审批和经负责人审阅后的供应商需求征询
+    current_gate: written_quote_capacity_and_policy_qualification
+    next_action: 完成财务/技术独立审核，取得同口径报价、GPU试机及主体资格书面回复
+    evidence_package: research/evidence/RO-018.yaml
+    feedback_refs: [FB-007]
+    release_intents: [internal_only]
+    authority_gate: research/evidence/RO-018.yaml#authority_gate
+    review_report: research/outcome-reviews/RO-018.md
+    source_refs: [A01, A02, N01, P01, P04, P05, P07, RO-017]
+    evidence_refs: [research/product-engineering/RO-018-aliyun-budget-and-compute-2026-09-07.md]
+    experiment_refs: []
+    scholarly_ip_refs: []
+    product_refs: []
+    metrics: [budget_sum_consistency, source_integrity, document_text_coverage, confidential_budget_leak_count]
+    risks: [unverified-quote, gpu-supply, rtc-capacity-confusion, double-count-storage, subsidy-ineligibility]
+    rollback: 停用两份草稿；保留原政策PDF；不涉及采购、申报、运行时或数据回滚

@@ -78,10 +78,12 @@ assert(packageJson.dependencies?.['@react-native-async-storage/async-storage'] =
 assert(packageJson.dependencies?.['expo-document-picker'], 'Expo document picker is required for native material import')
 assert(packageJson.scripts?.check === 'node scripts/check-mobile-workbench.mjs', 'mobile check script is missing')
 assert(packageJson.scripts?.['test:communication'] === 'node scripts/test-mobile-quick-expression.mjs', 'mobile communication regression script is missing')
+assert(packageJson.scripts?.['test:branding'] === 'node scripts/test-mobile-branding.mjs', 'mobile branding regression script is missing')
 assert(packageJson.scripts?.['test:training']?.includes('test-mobile-training-feedback.mjs'), 'mobile training feedback regression is missing')
 assert(packageJson.scripts?.['test:training']?.includes('test-mobile-attempt-confirmation.mjs'), 'mobile attempt confirmation regression is missing')
 assert(packageJson.scripts?.['test:training']?.includes('test-mobile-collection-controls.mjs'), 'mobile collection control regression is missing')
-assert(packageJson.scripts?.['test:memory'] === 'node scripts/test-mobile-memory-editor.mjs', 'mobile memory regression is missing')
+assert(packageJson.scripts?.['test:memory']?.includes('test-mobile-memory-editor.mjs'), 'mobile memory regression is missing')
+assert(packageJson.scripts?.['test:memory']?.includes('test-mobile-memory-account-scope.mjs'), 'mobile memory account isolation regression is missing')
 assert(sourceText.includes('confirmMobileTrainingAttempt'), 'recordings must wait for explicit confirmation before upload')
 assert(sourceText.includes('replaceMobileTrainingAttempt'), 'strict recording replacement orchestration is missing')
 assert(packageJson.scripts?.web === undefined, 'web script must stay disabled until web dependencies are explicit')
@@ -101,7 +103,9 @@ assert(packageJson.scripts?.['sync:android:latest'] === 'bash ../../scripts/rele
 assert(androidReleaseScript.includes('eas-cli@latest build'), 'android website release must run EAS Build')
 assert(androidReleaseScript.includes('VoxFlame-Android.apk'), 'android website release must publish the stable APK name')
 assert(androidReleaseScript.includes('VoxFlame-Android.previous.apk'), 'android website release must retain a rollback APK')
-assert(downloadPageSource.includes("const androidDownloadUrl = '/download/android'"), 'website Android download must use the permanent first-party URL')
+assert(downloadPageSource.includes("siteBrand.isCollectionSite ? '' : '/download/android'"), 'main website Android download must keep the permanent first-party URL')
+assert(composeSource.includes('NEXT_PUBLIC_VOXFLAME_COLLECTION_ANDROID_APP_DOWNLOAD_URL'), 'collection site must use its own Android package URL')
+assert(!caddySource.slice(caddySource.indexOf('# 第二品牌站')).includes('VoxFlame-Android.apk'), 'collection site must not serve the VoxFlame APK')
 assert(composeSource.includes('VOXFLAME_ANDROID_RELEASE_DIR:-./releases/android'), 'Caddy must mount the configurable Android release directory')
 assert(caddySource.includes('handle /download/android'), 'Caddy must own the permanent Android download route')
 assert(packageJson.scripts?.['build:ios:preview']?.includes('--platform ios'), 'ios preview build script is missing')
@@ -143,6 +147,21 @@ for (const publicEnvName of [
     `${publicEnvName} must use Expo-compatible static property access`,
   )
 }
+const mobileBrandingSource = readFileSync(
+  path.join(appRoot, 'src/config/mobile-branding.ts'),
+  'utf8',
+)
+for (const publicBrandEnvName of [
+  'EXPO_PUBLIC_APP_BRAND_NAME',
+  'EXPO_PUBLIC_APP_BRAND_ACCENT',
+]) {
+  assert(
+    mobileBrandingSource.includes(`process.env.${publicBrandEnvName}`),
+    `${publicBrandEnvName} must use Expo-compatible static property access`,
+  )
+}
+assert(!sourceText.includes('VoxFlame 用户'), 'user-visible account fallback must use mobile branding')
+assert(!sourceText.includes('VoxFlame 账户'), 'user-visible account label must use mobile branding')
 assert(
   !mobileConfigSource.includes('process?.env?.[name]')
   && !mobileConfigSource.includes('process.env[name]'),
@@ -216,11 +235,11 @@ for (const requiredToken of [
   '/upload/contribution',
   'uploadReceipt',
   '/rtc/session/start',
-  "'ping' | 'stop'",
-  '`/rtc/session/${action}`',
   'participantToken',
   'registerGlobals',
-  'AudioSession.startAudioSession',
+  'createNativeAudioLeases(AudioSession)',
+  'audio.startAudioSession()',
+  'audio.stopAudioSession()',
   'setMicrophoneEnabled',
   'RoomEvent.DataReceived',
   'speech_activity',
@@ -237,12 +256,16 @@ for (const requiredToken of [
   "training_flow: flow",
   'characterEditDistance',
   "flow === 'collection' ? <View style={styles.customPracticePanel}",
-  'sentenceId: effectiveExercise.id',
+  'sentenceId: captureExercise.id',
   'recognizedText: item.recognizedText',
   'understandsConsent: consentReady',
   '我同意本次录音用于训练',
   'MOBILE_COLLECTION_PLANS',
   'collection_plan_id: flow === \'collection\' ? collectionPlanId : undefined',
+  'reading_assistance_used: readingAssistanceKeysRef.current.has(readingAssistanceKey)',
+  'speechVariant: capture.speechVariant',
+  'utterancePairId: capture.utterancePairId',
+  "label={isReadingAssistancePlaying ? '正在朗读' : '听一下'}",
   '/prepared-expressions/active',
   '/profile-memory',
   '/scene-templates',
@@ -267,6 +290,8 @@ for (const taskRoute of [
   'communication_setup',
   'communication_live',
   'practice_home',
+  'practice_materials',
+  'practice_readings',
   'assessment',
   'collection',
 ]) {
@@ -275,19 +300,29 @@ for (const taskRoute of [
 assert(!appSource.includes("| 'material'\n"), 'custom material must not return as a top-level mobile task route')
 assert(appSource.includes("type MobileCollectionSource = 'catalog' | 'prepared_material'"), 'data entry must own catalog and custom-material sources')
 assert(appSource.includes('collectionControlState.navigationDisabled'), 'sentence navigation must stay behind recording preflight')
-assert(appSource.includes('只需确认一次，本组录音期间保持有效。'), 'recording preflight must remain next to the main action')
+assert(appSource.includes("只需确认一次，本组录音期间保持有效。"), 'recording preflight must remain next to the main action')
 assert(!appSource.includes("Alert.alert('先完成采集前确认'"), 'hidden preflight must not fall back to an alert-only dead end')
 assert(appSource.includes('mainScrollRef.current?.scrollTo({ animated: false, y: 0 })'), 'task route changes must reset the shared mobile scroll position')
-const targetIndex = appSource.indexOf('<Text style={styles.trainingTarget}>{targetText}</Text>')
+// Retain main's layout guard while using the current Mandarin/dialect target.
+const targetIndex = appSource.indexOf('<Text style={styles.trainingTarget}>{activeTargetText}</Text>')
 const preflightIndex = appSource.indexOf('<View style={styles.preflightPanel}>', targetIndex)
 const recordingActionIndex = appSource.indexOf('<PrimaryButton', preflightIndex)
 assert(targetIndex >= 0 && preflightIndex > targetIndex && recordingActionIndex > preflightIndex, 'recording preflight must render between the target sentence and primary recording action')
+const preflightSource = appSource.slice(preflightIndex, recordingActionIndex)
+for (const checkedState of ['environmentReady', 'distanceReady', 'consentReady']) {
+  const checkbox = preflightSource.match(new RegExp(`<Pressable\\b[^>]*accessibilityState=\\{\\{ checked: ${checkedState},[^>]*>`))?.[0]
+  assert(checkbox?.includes('accessibilityLabel='), `${checkedState} preflight must have an accessible name`)
+  assert(checkbox?.includes('disabled: queue.isRecording || attemptLocked'), `${checkedState} must announce its locked state`)
+  assert(checkbox?.includes('disabled={queue.isRecording || attemptLocked}'), `${checkedState} must stay locked during recording and attempt confirmation`)
+}
 for (const taskScreen of [
   'function CommunicationHomeScreen',
   'function QuickExpressionScreen',
   'function CommunicationSetupScreen',
   'function CommunicationScreen',
   'function PracticeHomeScreen',
+  'function PracticeMaterialAreasScreen',
+  'function PracticeReadingArticlesScreen',
   'function PracticeScreen',
 ]) {
   assert(appSource.includes(taskScreen), `missing separated mobile task screen: ${taskScreen}`)
@@ -295,11 +330,11 @@ for (const taskScreen of [
 assert(appSource.includes('不连接助手，也不上传声音'), 'quick expression must disclose its local-only boundary')
 assert(appSource.includes('onOpenQuickExpression'), 'signed-out users must be able to open quick expression')
 for (const practiceHomeToken of [
-  '马上录',
-  '自己的材料',
-  '按主题选择',
-  '现代文章朗读',
-  'collectionCategories.length',
+  '用自己的材料',
+  '选择已有材料',
+  '9 个材料区',
+  '完整文章',
+  'readingArticles',
 ]) {
   assert(appSource.includes(practiceHomeToken), `mobile practice home is missing: ${practiceHomeToken}`)
 }
@@ -325,7 +360,7 @@ const backendRtcController = readFileSync(
   'utf8',
 )
 const backendRtcService = readFileSync(
-  path.join(repoRoot, 'backend/src/services/rtc-orchestration.service.ts'),
+  path.join(repoRoot, 'backend/src/contracts/rtc-session.ts'),
   'utf8',
 )
 const backendIndex = readFileSync(
@@ -338,7 +373,7 @@ const backendMobileDiagnosticsController = readFileSync(
   'utf8',
 )
 
-for (const route of ["router.post('/session/start'", "router.post('/session/ping'", "router.post('/session/stop'"]) {
+for (const route of ["router.post('/session/start'"]) {
   assert(backendRtcController.includes(route), `backend RTC route missing: ${route}`)
 }
 
@@ -378,3 +413,9 @@ for (const privacyGuard of [
 }
 
 console.log('mobile workbench check passed')
+
+const expectedRtcContract = '// GENERATED from backend/src/contracts/rtc-session.ts; run node scripts/sync-rtc-contract.mjs\n' + backendRtcService
+assert(readFileSync(path.join(repoRoot, 'apps/mobile-workbench/src/contracts/generated/rtc-session.ts'), 'utf8') === expectedRtcContract, 'RTC generated contract drift; run node scripts/sync-rtc-contract.mjs')
+for (const removed of ["router.post('/session/ping'", "router.post('/session/stop'", "router.get('/graphs'"]) {
+  assert(!backendRtcController.includes(removed), `removed no-op RTC route returned: ${removed}`)
+}

@@ -5,10 +5,12 @@ import type {
   MobileWorkbenchSyncStatus,
   MobileWorkbenchUploadReceipt,
 } from '../contracts/workbench-contracts'
+import { createMobileSerialExecutor } from '../training/mobile-recording-workflow'
 
 const QUEUE_DIR_NAME = 'voxflame-recorder-queue'
 const AUDIO_DIR_NAME = 'audio'
 const QUEUE_FILE_NAME = 'queue.json'
+const runQueueMutation = createMobileSerialExecutor()
 
 function getQueueDirectory(): Directory {
   return new Directory(Paths.document, QUEUE_DIR_NAME)
@@ -88,10 +90,12 @@ export async function saveNativeRecorderQueue(
 export async function appendNativeRecorderQueueItem(
   item: MobileWorkbenchRecorderQueueItem,
 ): Promise<MobileWorkbenchRecorderQueueItem[]> {
-  const items = await loadNativeRecorderQueue()
-  const nextItems = [item, ...items]
-  await saveNativeRecorderQueue(nextItems)
-  return nextItems
+  return await runQueueMutation(async () => {
+    const items = await loadNativeRecorderQueue()
+    const nextItems = [item, ...items]
+    await saveNativeRecorderQueue(nextItems)
+    return nextItems
+  })
 }
 
 export async function updateNativeRecorderQueueItemStatus(
@@ -100,26 +104,28 @@ export async function updateNativeRecorderQueueItemStatus(
   errorMessage?: string,
   uploadReceipt?: MobileWorkbenchUploadReceipt | null,
 ): Promise<MobileWorkbenchRecorderQueueItem[]> {
-  const items = await loadNativeRecorderQueue()
-  const nextItems = items.map((item) => (
-    item.recordingId === recordingId
-      ? {
-        ...item,
-        syncStatus: status,
-        syncAttempts: status === 'upload_pending'
-          ? item.syncAttempts + 1
-          : item.syncAttempts,
-        lastAttemptAt: new Date().toISOString(),
-        lastError: errorMessage,
-        uploadReceipt: uploadReceipt === undefined
-          ? item.uploadReceipt ?? null
-          : uploadReceipt,
-      }
-      : item
-  ))
+  return await runQueueMutation(async () => {
+    const items = await loadNativeRecorderQueue()
+    const nextItems = items.map((item) => (
+      item.recordingId === recordingId
+        ? {
+          ...item,
+          syncStatus: status,
+          syncAttempts: status === 'upload_pending'
+            ? item.syncAttempts + 1
+            : item.syncAttempts,
+          lastAttemptAt: new Date().toISOString(),
+          lastError: errorMessage,
+          uploadReceipt: uploadReceipt === undefined
+            ? item.uploadReceipt ?? null
+            : uploadReceipt,
+        }
+        : item
+    ))
 
-  await saveNativeRecorderQueue(nextItems)
-  return nextItems
+    await saveNativeRecorderQueue(nextItems)
+    return nextItems
+  })
 }
 
 export async function updateNativeRecorderQueueItemRecognition(
@@ -127,40 +133,43 @@ export async function updateNativeRecorderQueueItemRecognition(
   recognizedText: string,
   metadata: Record<string, unknown>,
 ): Promise<MobileWorkbenchRecorderQueueItem[]> {
-  const items = await loadNativeRecorderQueue()
-  const nextItems = items.map((item) => (
-    item.recordingId === recordingId
-      ? {
-        ...item,
-        recognizedText: recognizedText.trim() || null,
-        metadata: {
-          ...item.metadata,
-          ...metadata,
-        },
-      }
-      : item
-  ))
+  return await runQueueMutation(async () => {
+    const items = await loadNativeRecorderQueue()
+    const nextItems = items.map((item) => (
+      item.recordingId === recordingId
+        ? {
+          ...item,
+          recognizedText: recognizedText.trim() || null,
+          metadata: {
+            ...item.metadata,
+            ...metadata,
+          },
+        }
+        : item
+    ))
 
-  await saveNativeRecorderQueue(nextItems)
-  return nextItems
+    await saveNativeRecorderQueue(nextItems)
+    return nextItems
+  })
 }
 
 export async function removeNativeRecorderQueueItem(
   recordingId: string,
 ): Promise<MobileWorkbenchRecorderQueueItem[]> {
-  const items = await loadNativeRecorderQueue()
-  const itemToRemove = items.find((item) => item.recordingId === recordingId)
-  const nextItems = items.filter((item) => item.recordingId !== recordingId)
+  return await runQueueMutation(async () => {
+    const items = await loadNativeRecorderQueue()
+    const itemToRemove = items.find((item) => item.recordingId === recordingId)
+    const nextItems = items.filter((item) => item.recordingId !== recordingId)
 
-  if (itemToRemove?.recording.audio.uri) {
-    const audioFile = new File(itemToRemove.recording.audio.uri)
-    if (audioFile.exists) {
-      audioFile.delete()
+    await saveNativeRecorderQueue(nextItems)
+    if (itemToRemove?.recording.audio.uri) {
+      const audioFile = new File(itemToRemove.recording.audio.uri)
+      if (audioFile.exists) {
+        audioFile.delete()
+      }
     }
-  }
-
-  await saveNativeRecorderQueue(nextItems)
-  return nextItems
+    return nextItems
+  })
 }
 
 export function persistNativeRecordingFile(params: {

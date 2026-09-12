@@ -1,75 +1,99 @@
 import Link from 'next/link'
 
-const DATA_COLLECTION_ITEMS = [
-  {
-    title: '登录同意后怎么保存',
-    body: '只要你在登录页确认了《用户隐私》和《数据采集说明》，训练页在录完后就会自动把目标句和录音音频送入监督样本链路，不再把“手动保存样本”做成主操作。',
-  },
-  {
-    title: '录音样本会记录什么',
-    body: '训练录音会带上 recording_id、session_id、分类、采样率、时长和录音格式等结构化字段，方便后续上传、补传和 dataset manifest 追踪。',
-  },
-  {
-    title: '目标句和识别句怎么分',
-    body: '监督训练样本真正保存的标签是当前目标句；前端识别出来的句子只用于即时反馈、样本诊断和质检，不会直接拿来替代监督标签，也不会因为“识别和目标差很多”就把这条完整录音挡在上传链路外。',
-  },
-  {
-    title: '同一句会不会被去重',
-    body: '不会按“同一句目标句”直接去重。同一句允许保留多次练习样本；系统只会对同一条录音的重复上传或补传做安全去重，避免 manifest 被重复写入。',
-  },
-  {
-    title: '系统现在主要校验什么',
-    body: '当前 dataset 只保留最小必要判断：这条录音和目标句是否大致对上，以及是否建议用户马上重录。我们不再继续长 review queue、人工复核状态或导出审批这一整套流程字段。',
-  },
-  {
-    title: '进入哪里',
-    body: '录音样本会进入 dataset 对象存储与 manifest；它不是沟通档案，也不会直接被当成长时记忆。长期画像需要经过摘要和聚合后才进入 memory。',
-  },
-  {
-    title: '沟通页会不会默认上传',
-    body: '不会。当前只有训练页录音会进入上传链；沟通页默认只做实时理解、纠错，并在会话结束后小幅更新用户个人画像，不默认上传原始沟通音频。以后如果要采集沟通样本，也必须走单独授权和单独数据路径。',
-  },
-  {
-    title: '断网时怎么办',
-    body: '如果上传登记链短暂波动，系统会先把这条录音转成后台自动补登任务，等链路恢复后继续完成 manifest 与回执，不再让训练页主路径出现手动同步。',
-  },
-  {
-    title: '后续用途',
-    body: '这些训练样本会用于训练工作台、语料整理、上传回执和后续个体化建议所依赖的数据骨架，而不是在页面里反复做历史展示。',
-  },
-]
+const PRIVACY_EMAIL = 'feng@ranyankeji.top'
+
+const COLLECTION_STEPS = [
+  ['录音前', '页面展示目标句、收录用途和当前授权状态。你主动点击开始后，系统才启用麦克风。'],
+  ['录音中', 'App/浏览器在本机生成音频，同时将当前语音送往实时识别链路，提供“系统听到什么”的反馈。'],
+  ['录音结束', '录音先保存在本机；系统完成转写和基础音频质量检查。识别结果是辅助提示，不等同于正确标签。'],
+  ['确认收录', '符合当前授权条件的训练录音会上传至按账号隔离的对象存储，并生成上传回执和可审计样本记录。断网时会留在本机待上传队列。'],
+  ['质检与训练导入', '上传不代表立即用于训练。样本仍需通过服务端准入、授权有效性、对象一致性、质量检查和训练导出门禁。'],
+] as const
 
 export default function DataCollectionPage() {
   return (
-    <main className="min-h-screen bg-[linear-gradient(180deg,_#fffdf8_0%,_#fff8ef_58%,_#f6f4ee_100%)] px-4 py-10">
-      <div className="mx-auto max-w-3xl rounded-[32px] border border-stone-200 bg-white p-8 shadow-[0_24px_80px_rgba(120,53,15,0.08)]">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium text-amber-700">VoxFlame / 数据采集说明</p>
-            <h1 className="mt-2 text-3xl font-semibold text-gray-900">训练录音如何进入 dataset，而不是变成页面里的旧历史</h1>
-          </div>
-          <Link href="/login" className="rounded-full border border-stone-300 px-4 py-2 text-sm text-gray-700 transition hover:border-stone-400 hover:bg-stone-50">
-            返回登录
-          </Link>
+    <main className="min-h-dvh bg-stone-50 px-4 py-8 sm:py-12">
+      <article className="mx-auto max-w-4xl rounded-3xl border border-stone-200 bg-white px-5 py-7 shadow-sm sm:px-10 sm:py-10">
+        <header>
+          <p className="text-sm font-medium text-amber-700">生声不息 / 语音数据采集</p>
+          <h1 className="mt-2 text-balance text-3xl font-semibold text-gray-950">训练录音与数据采集说明</h1>
+          <p className="mt-4 text-pretty text-sm leading-7 text-gray-600">更新日期：2026年9月6日　版本：2026-09-06</p>
+          <p className="mt-4 text-pretty text-base leading-8 text-gray-700">
+            本说明专门解释付费或授权参与的录音采集如何发生、会保存什么、如何用于训练，以及你如何拒绝、撤回或删除。它是<Link href="/privacy" className="font-medium text-amber-700 underline underline-offset-4">《生声不息隐私政策》</Link>的组成部分。
+          </p>
+        </header>
+
+        <div className="mt-9 space-y-9 text-pretty text-sm leading-7 text-gray-700">
+          <section>
+            <h2 className="text-balance text-xl font-semibold text-gray-950">1. 采集目的与自愿原则</h2>
+            <p className="mt-4">训练录音用于改善系统对构音障碍等非典型语音的理解能力、评测识别表现、发现设备和噪声问题，以及形成用户可见的训练反馈。参与录音不代表接受医疗诊断，也不影响你使用与采集无关的基础功能。</p>
+            <p className="mt-3">你可以不开始录音、结束当前录音、选择不收录或重录。我们不会在后台静默录音，也不会读取其他 App 的音频。</p>
+          </section>
+
+          <section>
+            <h2 className="text-balance text-xl font-semibold text-gray-950">2. 一条录音如何处理</h2>
+            <ol className="mt-4 space-y-3">
+              {COLLECTION_STEPS.map(([title, body], index) => (
+                <li key={title} className="rounded-2xl border border-stone-200 bg-stone-50 px-5 py-4">
+                  <p className="font-medium text-gray-950">{index + 1}. {title}</p><p className="mt-1">{body}</p>
+                </li>
+              ))}
+            </ol>
+          </section>
+
+          <section>
+            <h2 className="text-balance text-xl font-semibold text-gray-950">3. 每条样本包含什么</h2>
+            <ul className="mt-4 list-disc space-y-2 pl-5">
+              <li>录音音频、目标句、非权威的 ASR 识别提示；</li>
+              <li>录音标识、用户隔离标识、题目/材料标识、普通话或方言标记；</li>
+              <li>采样率、声道、格式、时长、文件大小、设备输入类型；</li>
+              <li>有效语音时长、静音比例、输入电平、削波等基础质量指标；</li>
+              <li>授权版本、授权时间、收集计划和上传回执。</li>
+            </ul>
+            <p className="mt-3"><strong>不会写入训练样本：</strong>姓名、手机号、邮箱、身份证号、残疾证号和登录凭据。残疾类别、病因/病种等敏感标签只有在用途必要、已在统一授权中明确列示并取得同意，且通过数据门禁时，才可用于分层评测或研究。</p>
+          </section>
+
+          <section>
+            <h2 className="text-balance text-xl font-semibold text-gray-950">4. ASR 转写与额外处理</h2>
+            <p className="mt-4">录音时的实时识别和最终转写属于同一条录音链路，当前优先由生声不息自建 ASR 处理；自建服务不可用或超时时，可能回退至阿里云模型服务。上传录音时复用已有识别结果，不会仅因上传再自动重复调用一次 ASR。</p>
+            <p className="mt-3">如未来为质检或新模型评测进行离线重转写，我们会限制在原授权目的内并记录处理版本和结果来源；超出原目的时重新告知并取得必要同意。</p>
+          </section>
+
+          <section>
+            <h2 className="text-balance text-xl font-semibold text-gray-950">5. 标签、质检与自动判断边界</h2>
+            <p className="mt-4">题目目标句是监督样本的主要文本依据；ASR 结果只用于反馈和诊断，不会因为识别错误就自动改写为“用户实际说了什么”。自动质量检查只会分层、提示重录或进入人工复核，不会自行作出医疗结论，也不会单独批准训练导入。</p>
+            <p className="mt-3">同一句允许保留多次真实练习；系统只对同一录音的重复上传做技术去重。训练集、验证集和测试集按用户隔离，避免同一人的样本跨集合造成虚高结果。</p>
+          </section>
+
+          <section>
+            <h2 className="text-balance text-xl font-semibold text-gray-950">6. 商业用途与第三方处理</h2>
+            <p className="mt-4">经你通过注册或登录页统一授权明确同意，授权样本可用于模型训练、评测、产品改进和服务运营，包括形成商业产品能力。我们不会出售个人身份信息，也不会把证件号或联系方式作为模型训练内容。</p>
+            <p className="mt-3">对象存储、模型回退、账号认证和短信服务的提供方及数据范围见<Link href="/third-party-services" className="font-medium text-amber-700 underline underline-offset-4">《第三方服务与 SDK 清单》</Link>。</p>
+          </section>
+
+          <section>
+            <h2 className="text-balance text-xl font-semibold text-gray-950">7. 撤回、删除与退出</h2>
+            <ul className="mt-4 list-disc space-y-2 pl-5">
+              <li>录音确认前，可选择“不收录”或直接删除本机文件；</li>
+              <li>已上传且仍可定位的录音，可通过产品中的撤回功能处理；</li>
+              <li>可通过 <a href={`mailto:${PRIVACY_EMAIL}`} className="font-medium text-amber-700 underline underline-offset-4">{PRIVACY_EMAIL}</a> 申请查阅、导出、撤回授权、删除数据或注销账号；</li>
+              <li>撤回后停止新增处理；撤回前已合法进行的处理不受影响；</li>
+              <li>已不可逆匿名化、形成不含个人信息的聚合结果或无法合理逐条逆向剥离的模型版本，可能无法恢复为单条录音，我们会在答复中说明。</li>
+            </ul>
+          </section>
+
+          <section className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-5 text-amber-950">
+            <h2 className="font-semibold">重要提醒</h2>
+            <p className="mt-2">付费参与是对时间、任务和合格交付的约定，不等于买断人格权、隐私权或允许无限用途。录音用途仍受本说明、你的授权范围和适用法律约束。</p>
+          </section>
         </div>
 
-        <p className="mt-6 text-base leading-7 text-gray-600">
-          燃言的训练数据链路默认围绕{' '}
-          <code className="rounded bg-stone-100 px-1.5 py-0.5 text-[0.95em] text-stone-700">
-            recording envelope -&gt; recorder queue -&gt; upload receipt -&gt; manifest
-          </code>{' '}
-          组织。重点是把训练样本沉淀成可追踪资产，而不是让训练页继续背“提交历史”叙事；登录授权一旦确认，训练页会优先按自动保存主路径工作。
-        </p>
-
-        <div className="mt-8 space-y-4">
-          {DATA_COLLECTION_ITEMS.map((item) => (
-            <section key={item.title} className="rounded-3xl border border-stone-200 bg-stone-50 px-5 py-5">
-              <h2 className="text-lg font-semibold text-gray-900">{item.title}</h2>
-              <p className="mt-2 text-sm leading-6 text-gray-700">{item.body}</p>
-            </section>
-          ))}
-        </div>
-      </div>
+        <footer className="mt-9 flex flex-wrap gap-3 border-t border-stone-200 pt-6">
+          <Link href="/login" className="rounded-full border border-stone-300 px-4 py-2 text-sm text-gray-700 hover:bg-stone-50">返回登录</Link>
+          <Link href="/privacy" className="rounded-full border border-stone-300 px-4 py-2 text-sm text-gray-700 hover:bg-stone-50">隐私政策</Link>
+          <Link href="/third-party-services" className="rounded-full border border-stone-300 px-4 py-2 text-sm text-gray-700 hover:bg-stone-50">第三方服务与 SDK</Link>
+        </footer>
+      </article>
     </main>
   )
 }

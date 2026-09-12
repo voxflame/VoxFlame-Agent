@@ -5,6 +5,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { buildMandarinSpeakerDisjointSplit } from './mandarin-speaker-disjoint-split-core.mjs'
+import {
+  parseRecordingManifestJsonl,
+  resolveActiveRecordingManifestRows,
+} from '../src/lib/corpus/recording-manifest-events.mjs'
 
 function values(name) {
   return process.argv.flatMap((argument, index) => argument === name ? [process.argv[index + 1]] : []).filter(Boolean)
@@ -15,9 +19,7 @@ function value(name) {
 }
 
 function readJsonl(filePath) {
-  return fs.readFileSync(filePath, 'utf8').split(/\r?\n/u).filter(Boolean).map((line, index) => {
-    try { return JSON.parse(line) } catch (error) { throw new Error(`${filePath}:${index + 1}: ${error.message}`) }
-  })
+  return parseRecordingManifestJsonl(fs.readFileSync(filePath, 'utf8'), filePath)
 }
 
 const manifestPaths = values('--manifest')
@@ -28,7 +30,7 @@ if (manifestPaths.length === 0 || !outputPath) {
   throw new Error('usage: build-mandarin-speaker-disjoint-split --manifest <manifest.jsonl> ... --output <evidence.json> [--split-dir <directory>] [--seed <seed>]')
 }
 
-const rows = manifestPaths.flatMap(readJsonl)
+const rows = resolveActiveRecordingManifestRows(manifestPaths.flatMap(readJsonl))
 const evidence = buildMandarinSpeakerDisjointSplit({ rows, seed })
 const sourceHash = crypto.createHash('sha256')
 for (const filePath of [...manifestPaths].sort()) sourceHash.update(fs.readFileSync(filePath))
@@ -51,4 +53,3 @@ console.log(JSON.stringify({
   split_summary: evidence.split_summary,
   output: outputPath,
 }, null, 2))
-

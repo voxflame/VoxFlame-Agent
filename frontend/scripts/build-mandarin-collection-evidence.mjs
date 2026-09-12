@@ -4,6 +4,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { buildMandarinCollectionEvidence } from './mandarin-collection-evidence-core.mjs'
+import {
+  parseRecordingManifestJsonl,
+  resolveActiveRecordingManifestRows,
+} from '../src/lib/corpus/recording-manifest-events.mjs'
 
 function value(name) {
   const index = process.argv.indexOf(name)
@@ -23,15 +27,13 @@ if (!referencePath || !outputPath) {
 }
 
 function readJsonl(filePath) {
-  return fs.readFileSync(filePath, 'utf8').split(/\r?\n/u).filter(Boolean).map((line, index) => {
-    try { return JSON.parse(line) } catch (error) { throw new Error(`${filePath}:${index + 1}: ${error.message}`) }
-  })
+  return parseRecordingManifestJsonl(fs.readFileSync(filePath, 'utf8'), filePath)
 }
 
 const payload = buildMandarinCollectionEvidence({
   reference: JSON.parse(fs.readFileSync(referencePath, 'utf8')),
   spokenQueue: spokenPath ? JSON.parse(fs.readFileSync(spokenPath, 'utf8')) : null,
-  manifestRows: manifestPaths.flatMap(readJsonl),
+  manifestRows: resolveActiveRecordingManifestRows(manifestPaths.flatMap(readJsonl)),
 })
 fs.mkdirSync(path.dirname(outputPath), { recursive: true })
 fs.writeFileSync(outputPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')

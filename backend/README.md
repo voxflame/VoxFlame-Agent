@@ -14,7 +14,7 @@ backend 当前是控制面和业务面，不再代理运行时 websocket 音频�
 - workspace / memory API
 - phrases API
 - upload API
-- compat 路由的受控兜底
+- RTC HTTP 响应/intent 契约与客户端生成源
 
 ## 当前主链
 
@@ -62,9 +62,13 @@ Frontend (3000) → Backend (3001/api/rtc/*) → LiveKit server + livekit_agent
 |------|------|------|
 | `/health` | GET | 健康检查 |
 | `/api/rtc/health` | GET | RTC orchestration 健康检查 |
-| `/api/rtc/session/start` | POST | 启动 RTC + RTM 会话 |
-| `/api/rtc/session/ping` | POST | 保活 RTC 会话 |
-| `/api/rtc/session/stop` | POST | 停止 RTC 会话 |
+| `/api/rtc/session/start` | POST | 签发 LiveKit participant 凭证与会话意图 |
+
+RTC 响应/intent 以 `src/contracts/rtc-session.ts` 为唯一可编辑源。从根目录运行 `node scripts/sync-rtc-contract.mjs` 生成客户端，`npm run test:rtc-contract` 检查漂移与解析；Backend `npm test` 包含本机 HTTP 路由测试（替身鉴权，不调用生产服务）。
+
+`transport.participantToken` 是唯一凭证字段，`joinTokenTtlSeconds` 是 JWT TTL。实际连接/保活/断开归 LiveKit SDK room；`session/ping`、`session/stop`、`graphs` 已移除，不代表服务端支持踢人或撤销凭证。请求仍由 controller 白名单解析，可信账户/模型映射由 auth 与 service 提供；全量请求严格 schema 不在本轮范围。
+
+本地破坏性契约尚未部署；Backend/Web/App 必须协调切换和整体回退，见[发布边界](../research/product-engineering/RTC_CONTRACT_CLEANUP_2026-09-11.md)。
 
 ### Workspace / 记忆系统 API
 
@@ -92,15 +96,6 @@ Frontend (3000) → Backend (3001/api/rtc/*) → LiveKit server + livekit_agent
 ```
 GET /api/memory/search?user_id=xxx&query=用户偏好&limit=10
 ```
-
-### Agent Compat API
-
-| 端点 | 方法 | 说明 | 认证 |
-|------|------|------|------|
-| `/api/agent/session/log` | POST | compat-only，现仅返回迁移指引 | ✅ |
-| `/api/agent/session/history/:userId` | GET | compat-only，现仅返回迁移指引 | ✅ |
-| `/api/agent/tool/log` | POST | compat-only，现仅返回迁移指引 | ✅ |
-| `/api/agent/tool/execute` | POST | compat-only，现仅返回迁移指引 | ✅ |
 
 ### 常用短语 API
 
@@ -139,7 +134,7 @@ QDRANT_URL=http://qdrant:6333  # Phase 3
 - 新的 durable user state 默认应落到 `workspace owner`：
   - 读：`/api/memory/workspace/:userId`
   - 写：`/api/memory/workspace/:userId/preferences`
-- 旧的 `/api/agent/profile/:userId` 与 `/api/agent/hotwords/:userId` 已从服务中移除；若仍有外部调用，应改到 `workspace owner` 或 `memory profile`。
+- 旧的 `/api/session/*` 与 `/api/agent/*` 兼容接口已从服务中移除，不再返回迁移型 501 响应。运行时会话统一使用 `/api/rtc/session/*`，durable user state 统一使用 `workspace owner` 或 `memory profile`。
 
 ## 相关文档
 
@@ -148,3 +143,7 @@ QDRANT_URL=http://qdrant:6333  # Phase 3
 - [LiveKit Agent README](../livekit_agent/README.md)
 - [Full-stack 架构学习指南](../research/product-engineering/VOXFLAME_FULLSTACK_ARCHITECTURE_LEARNING_GUIDE_2026-04-29.md)
 - [Voice agent 上下文与记忆研究综合](../research/voice-agent/CONTEXT_AND_MEMORY_RESEARCH_SYNTHESIS_2026-08-14.md)
+
+### RTC 第二切片（本地未部署）
+
+`POST /api/rtc/session/start` 只接受 `{ intent }`，未知/旧字段直接400；账号身份来自认证，房间与凭证TTL由服务端生成。空 requestedCapabilities 不自动扩大为默认能力。开发鉴权旁路缺少用户身份时也返回401。

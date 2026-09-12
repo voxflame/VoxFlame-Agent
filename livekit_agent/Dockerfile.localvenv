@@ -10,15 +10,12 @@ COPY .venv/lib/python3.10/site-packages /opt/voxflame-site-packages
 
 RUN python -c "import livekit; import livekit.agents; import websockets; import dotenv"
 
-COPY agent_factory.py /app/
-COPY app.py /app/
-COPY asr_runtime.py /app/
-COPY assistant_runtime.py /app/
-COPY config.py /app/
-COPY data_contract.py /app/
-COPY session_context.py /app/
-COPY session_userdata.py /app/
-COPY tts_runtime.py /app/
+COPY *.py /app/
 COPY scripts /app/scripts
+
+# Import the real entrypoint without credentials or a running LiveKit server.
+RUN PYTHON_DOTENV_DISABLED=1 LIVEKIT_URL=ws://127.0.0.1:7880 \
+    LIVEKIT_API_KEY=build-check LIVEKIT_API_SECRET=build-check-not-a-real-secret \
+    python -c "import app"
 
 CMD ["python", "app.py", "start"]

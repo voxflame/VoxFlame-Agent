@@ -1,0 +1,12 @@
+{
+  "policy_version": "2026-09-04.1",
+  "snapshot_schema_version": "voxflame-training-dataset-snapshot-v1",
+  "allowed_consent_scopes": ["training_only", "training_and_model_improvement"],
+  "allowed_audio_quality_dispositions": ["high_confidence", "review"],
+  "split_policy": {
+    "algorithm": "sha256-ranked-speaker-v1",
+    "train_ratio": 0.8,
+    "validation_ratio": 0.1,
+    "test_ratio": 0.1
+  }
+}

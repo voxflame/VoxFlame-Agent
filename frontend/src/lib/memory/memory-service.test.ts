@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   buildSessionCloseUserProfileUpdate,
   buildSessionCloseUserProfileUpdateRequestBody,
+  mergeConcurrentSyncQueue,
   type Session,
 } from './memory-service.ts'
 
@@ -91,4 +92,19 @@ test('buildSessionCloseUserProfileUpdateRequestBody builds typed backend payload
   assert.equal(payload?.session.id, 'session-1')
   assert.match(payload?.profile_update.summary ?? '', /更稳的表达是/)
   assert.deepEqual(payload?.profile_update.common_scenarios, ['medical'])
+})
+
+test('concurrent queue merge keeps failures and items added while a sync is in flight', () => {
+  const first = { id: 'first' }
+  const second = { id: 'second' }
+  const addedDuringSync = { id: 'third' }
+
+  assert.deepEqual(
+    mergeConcurrentSyncQueue(
+      [first, second],
+      [second],
+      [first, second, addedDuringSync],
+    ),
+    [second, addedDuringSync],
+  )
 })

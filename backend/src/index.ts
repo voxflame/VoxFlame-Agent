@@ -4,7 +4,7 @@
  * 单一 Agent 架构 - 后端当前主要负责：
  * 1. RTC session orchestration
  * 2. 记忆 / 短语 / 上传 API
- * 3. 基础 HTTP 健康检查与 compat 接口
+ * 3. 基础 HTTP 健康检查
  * 
  * 语音处理（RTC/ASR/LLM/TTS）由 LiveKit + livekit_agent 承接
  */
@@ -12,17 +12,17 @@
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
-import { agentRouter } from './controllers/agent.controller'
-import sessionRouter from './controllers/session.controller'
 import rtcRouter from './controllers/rtc.controller'
 import { memoryController } from './controllers/memory.controller'
 import { uploadRouter } from './controllers/upload.controller'
 import { phrasesController } from './controllers/phrases.controller'
 import { mobileDiagnosticsRouter } from './controllers/mobile-diagnostics.controller'
+import { qualityReviewRouter } from './controllers/quality-review.controller'
 import { handleSupabaseSendSmsHook } from './controllers/auth-hook.controller'
 import { errorHandler } from './middlewares/error.middleware'
 import { authMiddleware, validateUserId } from './middlewares/auth.middleware'
 import { TrainingReportMaintenanceService } from './services/training-report-maintenance.service'
+import { uploadCapacityService } from './services/upload-capacity.service'
 
 // 加载环境变量
 dotenv.config()
@@ -33,9 +33,11 @@ const trainingReportMaintenanceService = new TrainingReportMaintenanceService()
 
 const isProduction = process.env.NODE_ENV === 'production'
 const publicBaseUrl = (process.env.VOXFLAME_PUBLIC_BASE_URL || '').trim()
+const collectionPublicBaseUrl = (process.env.VOXFLAME_COLLECTION_PUBLIC_BASE_URL || '').trim()
 const allowedCorsOrigins = new Set(
   [
     publicBaseUrl,
+    collectionPublicBaseUrl,
     ...(process.env.VOXFLAME_ALLOWED_ORIGINS || '')
       .split(',')
       .map((origin) => origin.trim())
@@ -85,15 +87,10 @@ app.get('/health', (req, res) => {
     rtcOrchestration: {
       enabled: true,
       target: process.env.LIVEKIT_BROWSER_URL || process.env.LIVEKIT_URL || null,
-    }
+    },
+    uploadCapacity: uploadCapacityService.snapshot(),
   })
 })
-
-// Agent API 路由 (用户画像与兼容层)
-app.use('/api/agent', agentRouter)
-
-// Session API 路由 (compat only; runtime sessions now bootstrap via /api/rtc/session/start)
-app.use('/api/session', sessionRouter)
 
 // RTC orchestration API 路由；/api/rtc/health 在 router 内保持无认证，session/control 端点仍需认证。
 app.use('/api/rtc', rtcRouter)
@@ -134,6 +131,9 @@ app.use('/api/phrases', phrasesRouter)
 // Upload API 路由 (OSS 签名)
 app.use('/api/upload', authMiddleware, uploadRouter)
 
+// Human quality review is authenticated and additionally closed behind an exact email allowlist.
+app.use('/api/quality-review', authMiddleware, qualityReviewRouter)
+
 // Mobile release diagnostics: authenticated, strictly allow-listed, and text/audio-free.
 app.use('/api/mobile/diagnostics', authMiddleware, mobileDiagnosticsRouter)
 
@@ -151,7 +151,9 @@ app.post('/api/webhook/conversation', (req, res) => {
   }
 
   const { text, is_final, data_type, conversation_id, message_id } = req.body
-  console.log('[Webhook] ' + (data_type || 'message') + ': ' + (text?.substring(0, 50) || '') + '...')
+  console.log(
+    `[Webhook] type=${data_type || 'message'} conversationId=${conversation_id || 'null'} messageId=${message_id || 'null'} isFinal=${Boolean(is_final)} hasText=${typeof text === 'string' && text.length > 0}`,
+  )
   res.json({ success: true, received: true })
 })
 
@@ -173,21 +175,7 @@ app.listen(PORT, () => {
   console.log('')
   console.log('🎛️ RTC Orchestration 端点:')
   console.log('   - GET  /api/rtc/health')
-  console.log('   - GET  /api/rtc/graphs')
   console.log('   - POST /api/rtc/session/start')
-  console.log('   - POST /api/rtc/session/ping')
-  console.log('   - POST /api/rtc/session/stop')
-
-  console.log('')
-  console.log('⚠️ Compat API 端点:')
-  console.log('   - POST /api/session/start (compat: 501; use /api/rtc/session/start)')
-  console.log('   - POST /api/session/stop (compat: 501; use /api/rtc/session/stop)')
-  console.log('   - POST /api/session/reload-hotwords (compat: 501)')
-  console.log('   - GET  /api/session/:sessionId (compat: 501)')
-  console.log('   - POST /api/agent/session/log (compat: 501)')
-  console.log('   - GET  /api/agent/session/history/:userId (compat: 501)')
-  console.log('   - POST /api/agent/tool/log (compat: 501)')
-  console.log('   - POST /api/agent/tool/execute (compat: 501)')
 
   console.log('')
   console.log('💾 Memory API 端点:')

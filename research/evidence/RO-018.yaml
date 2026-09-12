@@ -1,0 +1,133 @@
+research_id: RO-018
+status: evidence_review
+evidence_class: engineering
+claim: 两份文件建立基础云充值、GPU专项、政策资格和容量边界；预算为团队上限和建议分配，非正式报价或补贴批准。
+sources:
+- source_id: A01
+  url: https://www.aliyun.com/product/bailian
+  evidence_level: primary
+  accessed_at: '2026-09-07T18:16:02.810545+08:00'
+  published_or_version: retrieved 2026-09-07
+  supports: 大模型服务平台百炼 - 大模型应用构建 - 阿里云
+  limitations: Public body only; no account entitlement, signed quotation or company
+    qualification checked
+  sha256: 4fb5315c2a7e07b42d4d4c2d480bd7dfe1e5b64eabf13763192b1c62b0a1382c
+  snapshot: research/product-engineering/evidence/RO-018/sources/A01.html
+- source_id: A02
+  url: https://help.aliyun.com/zh/model-studio/model-pricing
+  evidence_level: primary
+  accessed_at: '2026-09-07T18:16:02.812455+08:00'
+  published_or_version: retrieved 2026-09-07
+  supports: 阿里云百炼模型价格-大模型服务平台百炼(Model Studio)-阿里云帮助中心
+  limitations: Public body only; no account entitlement, signed quotation or company
+    qualification checked
+  sha256: 66be6038e05892cc62c82068734890be5f5c85a204d791df6c117e92a18201bb
+  snapshot: research/product-engineering/evidence/RO-018/sources/A02.html
+- source_id: N01
+  url: https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5090/
+  evidence_level: primary
+  accessed_at: '2026-09-07T18:16:02.813313+08:00'
+  published_or_version: retrieved 2026-09-07
+  supports: GeForce RTX 5090 Graphics Cards | NVIDIA
+  limitations: Public body only; no account entitlement, signed quotation or company
+    qualification checked
+  sha256: d6235bf941ca7fbdcb072c5f36eee122549ff42a4588ff54e8e727050a62eebc
+  snapshot: research/product-engineering/evidence/RO-018/sources/N01.html
+- source_id: P01
+  url: https://www.yuhang.gov.cn/col/col1229175234/art/2026/art_8451eb8324864752a8d121df2a8007d4.html
+  evidence_level: primary
+  accessed_at: '2026-09-07T18:16:02.814108+08:00'
+  published_or_version: retrieved 2026-09-07
+  supports: 关于拟认定余杭区算力伙伴（第二批）的公示
+  limitations: Public body only; no account entitlement, signed quotation or company
+    qualification checked
+  sha256: 3fd3d0c280debc7acd27b50c31f3fa81e696f1e2c825850d6f533001ea1b9d38
+  snapshot: research/product-engineering/evidence/RO-018/sources/P01.html
+- source_id: P04
+  url: https://jxj.hangzhou.gov.cn/col/col1229252271/art/2026/art_87786d11012e4295b52fdf3bce943872.html
+  evidence_level: primary
+  accessed_at: '2026-09-07T18:16:02.814622+08:00'
+  published_or_version: retrieved 2026-09-07
+  supports: 杭州市经信局（市数字经济局）关于组织开展2026年算力券兑付申报的通知
+  limitations: Public body only; no account entitlement, signed quotation or company
+    qualification checked
+  sha256: 60c05f66ce7ee078bae6dea19771f93074b943e7d3a8e6fed27e8083582d11de
+  snapshot: research/product-engineering/evidence/RO-018/sources/P04.html
+- source_id: P05
+  url: https://www.hhtz.gov.cn/col/col1229225928/art/2026/art_5a167e13c395414abfc95de936cd5813.html
+  evidence_level: primary
+  accessed_at: '2026-09-07T18:16:02.816153+08:00'
+  published_or_version: retrieved 2026-09-07
+  supports: 杭州高新开发区（滨江）管委会、政府关于印发杭州高新开发区（滨江）进一步加快新一代人工智能产业应用发展若干措施的通知
+  limitations: Public body only; no account entitlement, signed quotation or company
+    qualification checked
+  sha256: e27b4e025dd63aa9e6e15dc78ee0a44a958f4243df3a544ada63265ff2f63287
+  snapshot: research/product-engineering/evidence/RO-018/sources/P05.html
+- source_id: P07
+  url: https://sheitc.sh.gov.cn/cyfz/20260507/cd1dcb1e5cb4449cbc36c69befafcc0a.html
+  evidence_level: primary
+  accessed_at: '2026-09-07T18:16:02.816616+08:00'
+  published_or_version: retrieved 2026-09-07
+  supports: 上海市经济信息化委关于组织2026年度上海市“模塑申城”工程相关补贴申报工作的通知
+  limitations: Public body only; no account entitlement, signed quotation or company
+    qualification checked
+  sha256: 0764d86b0ce2adaf7a189c0b051101cc8f6961cec41d651e65e01bc78812b45a
+  snapshot: research/product-engineering/evidence/RO-018/sources/P07.html
+independent_review:
+  required: true
+  reviewer: pending company finance and technical procurement reviewer
+  relationship_to_author: independent review required
+  completed_at: pending
+  result: pending
+authority_gate:
+  status: pending
+  release_or_expansion: internal_only
+  claim_scope: Internal approval and supplier inquiry preparation; no purchase, benefits
+    or runtime commitment
+  authority_sources:
+  - source_id: A02
+    url: https://help.aliyun.com/zh/model-studio/model-pricing
+    tier: primary
+    independence_basis: Alibaba Cloud
+    supports: 阿里云百炼模型价格-大模型服务平台百炼(Model Studio)-阿里云帮助中心
+    limitations: No company entitlement or approved quote
+  - source_id: P05
+    url: https://www.hhtz.gov.cn/col/col1229225928/art/2026/art_5a167e13c395414abfc95de936cd5813.html
+    tier: primary
+    independence_basis: Binjiang government
+    supports: 杭州高新开发区（滨江）管委会、政府关于印发杭州高新开发区（滨江）进一步加快新一代人工智能产业应用发展若干措施的通知
+    limitations: No company entitlement or approved quote
+  independent_review:
+    reviewer: pending
+    institution_or_scope: finance, procurement and competent authority
+    conflict_of_interest: pending
+    result: pending
+    reviewed_at: pending
+  counterevidence_recorded: true
+  population_device_scenario_bounds_recorded: true
+  failure_conditions: Unsupported price, guaranteed subsidy, untested RTC capacity,
+    confidential budget in supplier version, clipping or data loss
+  rollback_or_withdrawal: Withdraw these drafts; no runtime or original PDF changes
+  recheck_date: '2026-09-11'
+reproducibility:
+  code_or_protocol: scripts/research/export-ro018-business-docs.py
+  data_version_and_license: user planning text, supplied eight-page PDF, official
+    HTML snapshots
+  commit_or_release: working tree 2026-09-07
+  run_command: python3 scripts/research/export-ro018-business-docs.py
+  seed_or_determinism: Fixed Markdown; DOCX/PDF metadata timestamps may vary
+  raw_artifacts: research/product-engineering/evidence/RO-018/; research/product-engineering/aliyun-phase1-2026-09-07/deliverables/
+uncertainty_and_counterevidence:
+  uncertainty: Missing Feishu pricing/resource tables, H20 SKU and lawful supply,
+    actual GPU support contract, company qualifications and account credits
+  counterevidence: Collecting includes realtime recognition; two workers do not establish
+    150 RTC capacity; 50TB training store is separate budget; free quota marketing
+    differs on same page; Token Plan soft-404
+  out_of_scope: Purchases, transfers, applications, independent legal/tax opinion,
+    deployment, user or medical effectiveness
+outcome_gates:
+  scholarly: not_applicable
+  patent: not_applicable
+  software_copyright: not_applicable
+  product: pending
+review_report: research/outcome-reviews/RO-018.md

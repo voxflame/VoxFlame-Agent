@@ -1,0 +1,7 @@
+{
+  "legal_consent_version": "2026-09-06",
+  "admission_version": "2026-09-04.1",
+  "max_audio_bytes": 33554432,
+  "max_audio_duration_seconds": 600,
+  "allowed_audio_extensions": ["wav", "webm", "mp4", "m4a", "caf", "aac", "3gp"]
+}

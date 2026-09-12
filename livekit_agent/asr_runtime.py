@@ -16,6 +16,7 @@ from enum import Enum, auto
 from typing import Any, Protocol
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from capacity import ProcessSlotPool, ProviderCapacityLease, build_provider_pool
 from config import LiveKitAgentConfig
 from session_context import VoxFlameSessionContext
 
@@ -80,32 +81,17 @@ def build_asr_session_payload(config: LiveKitAgentConfig) -> dict[str, Any]:
 
 
 def get_authenticated_user_id(ctx: VoxFlameSessionContext) -> str | None:
+    """Read identity only from Backend-created Agent dispatch metadata."""
     payload_value = ctx.dispatch_payload.get("authenticated_user_id")
     if isinstance(payload_value, str) and payload_value.strip():
         return payload_value.strip()
-
-    payload_value = ctx.participant_payload.get("authenticated_user_id")
-    if isinstance(payload_value, str) and payload_value.strip():
-        return payload_value.strip()
-
-    attribute_value = ctx.raw_attributes.get("vox.authenticated_user_id")
-    if isinstance(attribute_value, str) and attribute_value.strip():
-        return attribute_value.strip()
-
     return None
 
 
 def get_asr_account_id(ctx: VoxFlameSessionContext) -> str | None:
-    for payload in (ctx.dispatch_payload, ctx.participant_payload):
-        value = payload.get("asr_account_id")
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-
-    attribute_value = ctx.raw_attributes.get("vox.asr_account_id")
-    if isinstance(attribute_value, str) and attribute_value.strip():
-        return attribute_value.strip()
-
-    return get_authenticated_user_id(ctx)
+    """Read the model routing key only from Backend-created Agent dispatch metadata."""
+    value = ctx.dispatch_payload.get("asr_account_id")
+    return value.strip() if isinstance(value, str) and value.strip() else None
 
 
 def should_use_qwen_http_asr(config: LiveKitAgentConfig, ctx: VoxFlameSessionContext) -> bool:
@@ -298,6 +284,7 @@ class QwenRealtimeASRClient:
     api_key: str
     connect_timeout_seconds: int
     event_handler: ServerEventHandler
+    capacity_pool: ProcessSlotPool | None = None
 
     websocket: Any = None
     receive_task: asyncio.Task[None] | None = None
@@ -305,6 +292,7 @@ class QwenRealtimeASRClient:
     _connect_lock: asyncio.Lock = asyncio.Lock()
     _send_lock: asyncio.Lock = asyncio.Lock()
     _session_payload: dict[str, Any] | None = None
+    _capacity_lease: ProviderCapacityLease | None = None
 
     def __post_init__(self) -> None:
         self.url = with_model_query(self.url, self.model)
@@ -358,18 +346,25 @@ class QwenRealtimeASRClient:
 
             import websockets
 
-            self.websocket = await websockets.connect(
-                self.url,
-                additional_headers=[("Authorization", f"Bearer {self.api_key}")],
-                max_size=16 * 1024 * 1024,
-                ping_interval=20,
-                ping_timeout=20,
-                close_timeout=5,
-                open_timeout=self.connect_timeout_seconds,
-            )
-            self.receive_task = asyncio.create_task(self._receive_loop())
-            await self._send_json({"type": "session.update", "session": self._session_payload})
-            await asyncio.wait_for(self.ready_event.wait(), timeout=self.connect_timeout_seconds)
+            try:
+                if self.capacity_pool is not None:
+                    self._capacity_lease = await self.capacity_pool.acquire()
+                self.websocket = await websockets.connect(
+                    self.url,
+                    additional_headers=[("Authorization", f"Bearer {self.api_key}")],
+                    max_size=512 * 1024,
+                    max_queue=4,
+                    ping_interval=20,
+                    ping_timeout=20,
+                    close_timeout=1,
+                    open_timeout=self.connect_timeout_seconds,
+                )
+                self.receive_task = asyncio.create_task(self._receive_loop())
+                await self._send_json({"type": "session.update", "session": self._session_payload})
+                await asyncio.wait_for(self.ready_event.wait(), timeout=self.connect_timeout_seconds)
+            except BaseException:
+                await self._close_current_socket()
+                raise
 
     async def _close_current_socket(self) -> None:
         receive_task = self.receive_task
@@ -387,11 +382,17 @@ class QwenRealtimeASRClient:
             except Exception:
                 pass
 
-        if websocket:
-            try:
+        try:
+            if websocket:
                 await websocket.close()
-            except Exception:
-                pass
+        finally:
+            self._release_capacity_lease()
+
+    def _release_capacity_lease(self) -> None:
+        lease = self._capacity_lease
+        self._capacity_lease = None
+        if lease is not None:
+            lease.release()
 
     async def _send_json(self, payload: dict[str, Any]) -> None:
         if self.websocket is None:
@@ -420,6 +421,7 @@ class QwenRealtimeASRClient:
                     self.ready_event.clear()
 
                 await self.event_handler(payload)
+            await self.event_handler({"type": "client.error", "error": {"message": "语音服务连接已关闭，请重试。"}})
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -433,6 +435,7 @@ class QwenRealtimeASRClient:
             if websocket is self.websocket:
                 self.ready_event.clear()
                 self.websocket = None
+                self._release_capacity_lease()
 
 
 @dataclass
@@ -443,12 +446,14 @@ class QwenHttpASRClient:
     sample_rate: int
     request_timeout_seconds: float
     event_handler: ServerEventHandler
-    fallback_client: QwenRealtimeASRClient | None = None
+    fallback_factory: Callable[[ServerEventHandler], ASRClient] | None = None
+    capacity_pool: ProcessSlotPool | None = None
 
     _buffer: bytearray = field(default_factory=bytearray)
     _session_payload: dict[str, Any] | None = None
     _http_client: Any | None = None
-    fallback_active: bool = False
+    max_audio_seconds: float = 120.0
+    _buffer_overflow: bool = False
 
     @property
     def provider_name(self) -> str:
@@ -469,97 +474,94 @@ class QwenHttpASRClient:
         )
 
     async def append_audio(self, pcm_bytes: bytes) -> None:
+        if self._buffer_overflow:
+            return
+        if len(self._buffer) + len(pcm_bytes) > self.sample_rate * 2 * self.max_audio_seconds:
+            self._buffer.clear()
+            self._buffer_overflow = True
+            return
         self._buffer.extend(pcm_bytes)
 
-    async def commit_audio(self) -> None:
-        pcm_bytes = bytes(self._buffer)
+    def take_audio(self) -> bytes:
+        """Detach the current utterance before scheduling inference; never share buffers."""
+        if self._buffer_overflow:
+            self._buffer_overflow = False
+            self._buffer.clear()
+            raise ValueError("录音片段过长，请停止后分段重录；本段未提交识别。")
+        pcm = bytes(self._buffer)
         self._buffer.clear()
+        return pcm
+
+    async def commit_audio(self) -> None:
+        await self.transcribe_audio(self.take_audio(), self.event_handler)
+
+    async def transcribe_audio(self, pcm_bytes: bytes, handler: ServerEventHandler) -> None:
         if not pcm_bytes:
-            await self.event_handler(
-                {
-                    "type": "client.error",
-                    "error": {"message": "HTTP ASR commit requested with empty audio buffer"},
-                    "provider": self.provider_name,
-                }
-            )
+            await handler({"type": "client.error", "error": {"message": "未收到有效音频，请重录。"}})
             return
-
-        await self.event_handler(
-            {
-                "type": "input_audio_buffer.committed",
-                "provider": self.provider_name,
-                "audio_ms": pcm_duration_ms(pcm_bytes, self.sample_rate),
-            }
-        )
-
-        self.fallback_active = False
+        await handler({
+            "type": "input_audio_buffer.committed", "provider": self.provider_name,
+            "audio_ms": pcm_duration_ms(pcm_bytes, self.sample_rate),
+        })
         try:
-            transcript, routing_metadata = await self._transcribe(pcm_bytes)
+            transcript, routing = await asyncio.wait_for(
+                self._transcribe(pcm_bytes), timeout=self.request_timeout_seconds,
+            )
         except Exception as exc:
-            if await self._fallback_to_realtime(pcm_bytes, exc):
+            logger.warning("HTTP ASR failed type=%s; trying isolated fallback", type(exc).__name__)
+            try:
+                event = await self._fallback_transcribe(pcm_bytes)
+            except Exception as fallback_error:
+                await handler({"type": "client.error", "error": {
+                    "message": "语音识别暂不可用，请重试。",
+                    "code": type(fallback_error).__name__,
+                }})
                 return
+            await handler(event)
             return
+        await handler({
+            "type": "conversation.item.input_audio_transcription.completed",
+            "transcript": transcript, "provider": self.provider_name, **routing,
+        })
 
-        await self.event_handler(
-            {
-                "type": "conversation.item.input_audio_transcription.completed",
-                "transcript": transcript,
-                "provider": self.provider_name,
-                **routing_metadata,
-            }
-        )
+    async def _fallback_transcribe(self, pcm_bytes: bytes) -> dict[str, object]:
+        """Each utterance owns its fallback socket and final result, including timeout."""
+        if self.fallback_factory is None or self._session_payload is None:
+            raise RuntimeError("No ASR fallback configured")
+        result: asyncio.Future[dict[str, object]] = asyncio.get_running_loop().create_future()
+
+        async def on_event(event: dict[str, object]) -> None:
+            if result.done():
+                return
+            kind = event.get("type")
+            if kind == "conversation.item.input_audio_transcription.completed":
+                result.set_result({**event, "provider": self.fallback_provider_name})
+            elif kind in {"client.error", "error"}:
+                result.set_exception(RuntimeError("ASR fallback failed"))
+
+        fallback = self.fallback_factory(on_event)
+
+        async def run() -> dict[str, object]:
+            await fallback.start(self._session_payload)
+            await fallback.append_audio(pcm_bytes)
+            await fallback.commit_audio()
+            return await result
+
+        try:
+            return await asyncio.wait_for(run(), timeout=self.request_timeout_seconds)
+        finally:
+            result.cancel()
+            await asyncio.wait_for(fallback.stop(), timeout=2.0)
 
     async def clear_audio(self) -> None:
         self._buffer.clear()
-        self.fallback_active = False
-        if self.fallback_client is not None:
-            await self.fallback_client.clear_audio()
+        self._buffer_overflow = False
 
     async def stop(self) -> None:
-        self._buffer.clear()
+        await self.clear_audio()
         if self._http_client is not None:
             await self._http_client.aclose()
             self._http_client = None
-        if self.fallback_client is not None:
-            await self.fallback_client.stop()
-
-    async def _fallback_to_realtime(self, pcm_bytes: bytes, error: Exception) -> bool:
-        if self.fallback_client is None or self._session_payload is None:
-            await self.event_handler(
-                {
-                    "type": "client.error",
-                    "error": {"message": str(error)},
-                    "provider": self.provider_name,
-                }
-            )
-            return False
-
-        logger.warning(
-            "Qwen HTTP ASR failed, falling back to realtime provider url=%s error=%s",
-            self.url,
-            error,
-        )
-        try:
-            await self.fallback_client.start(self._session_payload)
-            await self.fallback_client.append_audio(pcm_bytes)
-            await self.fallback_client.commit_audio()
-            self.fallback_active = True
-        except Exception as fallback_error:
-            await self.event_handler(
-                {
-                    "type": "client.error",
-                    "error": {
-                        "message": (
-                            f"HTTP ASR failed ({error}); realtime fallback failed "
-                            f"({fallback_error})"
-                        )
-                    },
-                    "provider": self.fallback_provider_name,
-                }
-            )
-            return False
-
-        return True
 
     async def _transcribe(self, pcm_bytes: bytes) -> tuple[str, dict[str, Any]]:
         wav_bytes = pcm_bytes_to_wav_bytes(
@@ -579,12 +581,21 @@ class QwenHttpASRClient:
         headers = {"X-Account-ID": self.account_id}
 
         client = self._get_http_client()
-        response = await client.post(
-            self.url,
-            headers=headers,
-            data=data,
-            files=files,
-        )
+        if self.capacity_pool is None:
+            response = await client.post(
+                self.url,
+                headers=headers,
+                data=data,
+                files=files,
+            )
+        else:
+            async with self.capacity_pool.lease():
+                response = await client.post(
+                    self.url,
+                    headers=headers,
+                    data=data,
+                    files=files,
+                )
 
         response.raise_for_status()
         content_type = response.headers.get("content-type", "")
@@ -623,8 +634,18 @@ class QwenHttpASRClient:
 
             self._http_client = httpx.AsyncClient(
                 timeout=self.request_timeout_seconds,
+                trust_env=False,
             )
         return self._http_client
+
+
+@dataclass(frozen=True)
+class ASRCapture:
+    client_capture_id: str | None
+    generation: int
+    short_expected: bool
+    speech_ms: float
+    ignore_short: bool
 
 
 @dataclass
@@ -637,6 +658,8 @@ class LiveKitASRRuntime:
     on_speech_activity: SpeechActivityHandler | None = None
     on_audio_telemetry: AudioTelemetryHandler | None = None
     client: ASRClient | None = None
+    capacity_pool: ProcessSlotPool | None = None
+    fallback_capacity_pool: ProcessSlotPool | None = None
     _stream_task: asyncio.Task[None] | None = None
     _started: bool = False
     _audio_frame_count: int = 0
@@ -663,7 +686,32 @@ class LiveKitASRRuntime:
     _suppress_vad_auto_finalize_until: float = 0.0
     _short_utterance_capture_expected: bool = False
     _asr_source: str = "dashscope_realtime_asr"
-    _fallback_final_transcript_pending: bool = False
+    _recognition_tasks: set[asyncio.Task[None]] = field(default_factory=set)
+    _speech_generation: int = 0
+    input_allowed: Callable[[], bool] | None = None
+    _input_suppressed: bool = False
+
+    def _primary_capacity_pool(self) -> ProcessSlotPool:
+        if self.capacity_pool is None:
+            self.capacity_pool = build_provider_pool(
+                provider="asr",
+                slots=self.config.provider_asr_max_concurrency,
+                wait_timeout_seconds=self.config.provider_asr_wait_timeout_seconds,
+                lock_directory=self.config.provider_capacity_directory,
+            )
+        return self.capacity_pool
+
+    def _realtime_fallback_capacity_pool(self) -> ProcessSlotPool:
+        if self.fallback_capacity_pool is None:
+            self.fallback_capacity_pool = build_provider_pool(
+                provider="asr-fallback",
+                slots=self.config.provider_asr_fallback_max_concurrency,
+                wait_timeout_seconds=(
+                    self.config.provider_asr_fallback_wait_timeout_seconds
+                ),
+                lock_directory=self.config.provider_capacity_directory,
+            )
+        return self.fallback_capacity_pool
 
     async def start(self) -> None:
         if self._stream_task is not None:
@@ -677,18 +725,19 @@ class LiveKitASRRuntime:
             return
 
         if self.client is None:
+            primary_capacity_pool = self._primary_capacity_pool()
             if use_http_asr:
                 account_id = get_asr_account_id(self.ctx)
                 if account_id is None:
                     raise RuntimeError("HTTP ASR selected without an authenticated account ID")
-                fallback_client = None
-                if self.config.dashscope_api_key:
-                    fallback_client = QwenRealtimeASRClient(
+                def fallback_factory(handler: ServerEventHandler) -> ASRClient:
+                    return QwenRealtimeASRClient(
                         url=self.config.dashscope_asr_url,
                         model=self.config.dashscope_asr_model,
-                        api_key=self.config.dashscope_api_key,
+                        api_key=self.config.dashscope_api_key or "",
                         connect_timeout_seconds=self.config.dashscope_asr_connect_timeout_seconds,
-                        event_handler=self._handle_server_event,
+                        event_handler=handler,
+                        capacity_pool=self._realtime_fallback_capacity_pool(),
                     )
                 self.client = QwenHttpASRClient(
                     url=self.config.qwen_http_asr_url or "",
@@ -697,7 +746,8 @@ class LiveKitASRRuntime:
                     sample_rate=self.config.dashscope_asr_sample_rate,
                     request_timeout_seconds=self.config.qwen_http_asr_timeout_seconds,
                     event_handler=self._handle_server_event,
-                    fallback_client=fallback_client,
+                    fallback_factory=fallback_factory if self.config.dashscope_api_key else None,
+                    capacity_pool=primary_capacity_pool,
                 )
                 self._asr_source = "qwen_http_asr"
             else:
@@ -707,6 +757,7 @@ class LiveKitASRRuntime:
                     api_key=self.config.dashscope_api_key or "",
                     connect_timeout_seconds=self.config.dashscope_asr_connect_timeout_seconds,
                     event_handler=self._handle_server_event,
+                    capacity_pool=primary_capacity_pool,
                 )
                 self._asr_source = "dashscope_realtime_asr"
 
@@ -730,6 +781,10 @@ class LiveKitASRRuntime:
         stream = rtc.AudioStream.from_participant(
             participant=self.participant,
             track_source=rtc.TrackSource.SOURCE_MICROPHONE,
+            sample_rate=self.config.dashscope_asr_sample_rate,
+            num_channels=1,
+            frame_size_ms=20,
+            capacity=50,
         )
         self._stream_task = asyncio.create_task(self._consume_stream(stream))
 
@@ -746,6 +801,7 @@ class LiveKitASRRuntime:
             return
 
         if normalized_state == "speech_started":
+            self._speech_generation += 1
             self._client_recording_active = True
             self._client_capture_tracking_enabled = True
             self._client_capture_id += 1
@@ -837,6 +893,7 @@ class LiveKitASRRuntime:
             reason == "manual_stop"
             and self._client_capture_tracking_enabled
             and self._speech_ms_since_commit < self.config.dashscope_asr_min_commit_speech_ms
+            and not isinstance(self.client, QwenHttpASRClient)
         ):
             logger.info(
                 "LiveKit ASR manual commit skipped because capture had no stable speech room=%s participant=%s capture_id=%s speech_ms=%s",
@@ -863,20 +920,51 @@ class LiveKitASRRuntime:
             self._ignore_short_transcripts_until = (
                 time.monotonic() + MANUAL_STOP_SHORT_TRANSCRIPT_GRACE_SECONDS
             )
-        await self._emit_audio_telemetry(reason or "unknown")
-
         logger.info(
             "LiveKit ASR commit requested room=%s participant=%s reason=%s",
             self.ctx.room_name,
             self.ctx.participant_identity,
             reason or "unknown",
         )
-        mark_after_commit = not isinstance(self.client, QwenHttpASRClient)
-        if not mark_after_commit:
-            self._mark_client_capture_committed()
+        if isinstance(self.client, QwenHttpASRClient):
+            capture = ASRCapture(
+                client_capture_id=self._client_capture_external_id,
+                generation=self._speech_generation,
+                short_expected=self._short_utterance_capture_expected,
+                speech_ms=self._speech_ms_since_commit,
+                ignore_short=False,
+            )
+            self._mark_client_capture_committed(queue_final_transcript=False)
+            self._reset_utterance()
+            try:
+                pcm = self.client.take_audio()
+                if sum(not task.done() for task in self._recognition_tasks) >= 2:
+                    raise ValueError("识别请求处理中，请稍后重试本段录音。")
+            except ValueError as exc:
+                await self._handle_server_event({"type": "client.error", "error": {"message": str(exc)}}, capture)
+                return
+            # Detachment and snapshot above contain no await: next capture cannot
+            # alter this request's bytes, routing, flags or attribution.
+            task = asyncio.create_task(self._recognize_capture(self.client, pcm, capture))
+            self._recognition_tasks.add(task)
+            task.add_done_callback(self._recognition_tasks.discard)
+            return
+
+        # Realtime provider remains the current unauthenticated-session path.
+        # Bound outstanding commits; it is not a compatibility reply queue.
+        if len(self._pending_final_transcript_client_capture_ids) >= 2:
+            await self.client.clear_audio()
+            from data_contract import build_error_output
+            await self.publish_payload({**build_error_output("识别请求处理中，请稍后重试本段录音。"),
+                                        "client_capture_id": self._client_capture_external_id})
+            self._mark_client_capture_committed(queue_final_transcript=False)
+            self._reset_utterance()
+            return
+        self._mark_client_capture_committed()
+        self._reset_utterance()
         await self.client.commit_audio()
-        if isinstance(self.client, QwenHttpASRClient) and self.client.fallback_active:
-            self._fallback_final_transcript_pending = True
+
+    def _reset_utterance(self) -> None:
         self._received_voice_since_commit = False
         self._speech_ms_since_commit = 0.0
         self._barge_in_triggered_since_commit = False
@@ -886,8 +974,18 @@ class LiveKitASRRuntime:
         self._clipping_detected_since_commit = False
         self._clipping_reported_since_commit = False
         self._apm_remainder = b""
-        if mark_after_commit:
-            self._mark_client_capture_committed()
+        if self._vad is not None:
+            self._vad.state = VADState.IDLE
+            self._vad.silence_ms = 0.0
+
+    async def _recognize_capture(self, client: QwenHttpASRClient, pcm: bytes, capture: ASRCapture) -> None:
+        async def handler(payload: dict[str, object]) -> None:
+            await self._handle_server_event(payload, capture)
+        try:
+            await client.transcribe_audio(pcm, handler)
+        except Exception as exc:
+            logger.warning("ASR capture failed type=%s", type(exc).__name__)
+            await handler({"type": "client.error", "error": {"message": "语音识别失败，请重试本段。"}})
 
     async def stop(self) -> None:
         logger.info(
@@ -899,14 +997,17 @@ class LiveKitASRRuntime:
         )
         if self._stream_task:
             self._stream_task.cancel()
-            try:
-                await self._stream_task
-            except asyncio.CancelledError:
-                pass
+            await asyncio.gather(self._stream_task, return_exceptions=True)
             self._stream_task = None
 
+        tasks = tuple(self._recognition_tasks)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self._recognition_tasks.clear()
         if self.client is not None:
             await self.client.stop()
+        self._started = False
 
     def _create_audio_apm(self) -> Any | None:
         if not should_enable_livekit_audio_apm(self.config):
@@ -919,6 +1020,8 @@ class LiveKitASRRuntime:
 
         from livekit import rtc
 
+        if self.config.livekit_audio_apm_echo_cancellation:
+            raise RuntimeError("Server AEC has no aligned render reference; use verified endpoint AEC or half-duplex")
         options = build_livekit_audio_apm_options(self.config)
         logger.info(
             "LiveKit audio APM enabled room=%s participant=%s options=%s",
@@ -941,39 +1044,42 @@ class LiveKitASRRuntime:
         from livekit import rtc
 
         resampler: rtc.AudioResampler | None = None
-        async for audio_event in stream:
-            frame = audio_event.frame
-            self._audio_frame_count += 1
-            if not self._logged_first_frame:
-                self._logged_first_frame = True
-                logger.info(
-                    "LiveKit ASR first audio frame room=%s participant=%s sample_rate=%s channels=%s samples_per_channel=%s",
-                    self.ctx.room_name,
-                    self.ctx.participant_identity,
-                    frame.sample_rate,
-                    getattr(frame, "num_channels", 1),
-                    getattr(frame, "samples_per_channel", "unknown"),
-                )
-            if not self._started:
-                await self._ensure_started()
-
-            frames = [frame]
-            if frame.sample_rate != self.config.dashscope_asr_sample_rate:
-                if resampler is None:
-                    resampler = rtc.AudioResampler(
-                        input_rate=frame.sample_rate,
-                        output_rate=self.config.dashscope_asr_sample_rate,
+        try:
+            async for audio_event in stream:
+                frame = audio_event.frame
+                self._audio_frame_count += 1
+                if not self._logged_first_frame:
+                    self._logged_first_frame = True
+                    logger.info(
+                        "LiveKit ASR first audio frame room=%s participant=%s sample_rate=%s channels=%s samples_per_channel=%s",
+                        self.ctx.room_name,
+                        self.ctx.participant_identity,
+                        frame.sample_rate,
+                        getattr(frame, "num_channels", 1),
+                        getattr(frame, "samples_per_channel", "unknown"),
                     )
-                frames = list(resampler.push(frame))
+                if not self._started:
+                    await self._ensure_started()
 
-            for current in frames:
-                pcm_bytes = frame_to_pcm_bytes(current)
-                pcm_bytes = self._apply_audio_apm(pcm_bytes, current.sample_rate)
-                if not pcm_bytes:
-                    continue
-                should_forward_audio = await self._observe_vad(pcm_bytes, current.sample_rate)
-                if should_forward_audio:
-                    await self.client.append_audio(pcm_bytes)
+                frames = [frame]
+                if frame.sample_rate != self.config.dashscope_asr_sample_rate:
+                    if resampler is None:
+                        resampler = rtc.AudioResampler(
+                            input_rate=frame.sample_rate,
+                            output_rate=self.config.dashscope_asr_sample_rate,
+                        )
+                    frames = list(resampler.push(frame))
+
+                for current in frames:
+                    pcm_bytes = frame_to_pcm_bytes(current)
+                    pcm_bytes = self._apply_audio_apm(pcm_bytes, current.sample_rate)
+                    if not pcm_bytes:
+                        continue
+                    should_forward_audio = await self._observe_vad(pcm_bytes, current.sample_rate)
+                    if should_forward_audio:
+                        await self.client.append_audio(pcm_bytes)
+        finally:
+            await stream.aclose()
 
     def _apply_audio_apm(self, pcm_bytes: bytes, sample_rate: int) -> bytes:
         if self._audio_apm is None or not pcm_bytes:
@@ -1038,9 +1144,16 @@ class LiveKitASRRuntime:
         )
 
     async def _observe_vad(self, pcm_bytes: bytes, sample_rate: int) -> bool:
+        if self.input_allowed is not None and not self.input_allowed():
+            if not self._input_suppressed:
+                self._input_suppressed = True
+                self._reset_utterance()
+                if self.client is not None:
+                    await self.client.clear_audio()
+            return False
+        self._input_suppressed = False
         if self._vad is None:
             return True
-
         if self._client_capture_tracking_enabled and not self._client_recording_active:
             return False
 
@@ -1054,8 +1167,10 @@ class LiveKitASRRuntime:
         self._clipping_detected_since_commit = self._clipping_detected_since_commit or clipping_detected
 
         if speech_started:
+            if not self._client_capture_tracking_enabled:
+                self._speech_generation += 1
             self._received_voice_since_commit = True
-            self._speech_ms_since_commit = chunk_duration_ms
+            self._speech_ms_since_commit += chunk_duration_ms
             self._barge_in_triggered_since_commit = False
             logger.info(
                 "LiveKit VAD speech_started room=%s participant=%s energy=%.4f threshold=%.4f",
@@ -1071,7 +1186,8 @@ class LiveKitASRRuntime:
 
         if self._vad.state is VADState.SPEAKING:
             self._received_voice_since_commit = True
-            self._speech_ms_since_commit += chunk_duration_ms
+            if energy >= self.config.dashscope_asr_vad_threshold:
+                self._speech_ms_since_commit += chunk_duration_ms
             if clipping_detected and not self._clipping_reported_since_commit:
                 self._clipping_reported_since_commit = True
                 await self._emit_audio_telemetry("clipping_detected")
@@ -1142,10 +1258,15 @@ class LiveKitASRRuntime:
             reason,
         )
 
-    async def _handle_server_event(self, payload: dict[str, Any]) -> None:
+    async def _handle_server_event(self, payload: dict[str, object], capture: ASRCapture | None = None) -> None:
         from data_contract import build_error_output, build_user_transcript_output
 
         message_type = str(payload.get("type", "") or "")
+        short_expected = capture.short_expected if capture else self._short_utterance_capture_expected
+        speech_ms = capture.speech_ms if capture else self._speech_ms_since_commit
+        if (capture is not None and getattr(self.ctx, "mode", "communication") != "training"
+                and capture.generation != self._speech_generation):
+            return
 
         if message_type in {"session.created", "session.updated"}:
             logger.info(
@@ -1182,8 +1303,8 @@ class LiveKitASRRuntime:
                 return
             if (
                 is_filler_transcript_noise(text)
-                and not self._short_utterance_capture_expected
-                and self._speech_ms_since_commit < self.config.dashscope_asr_min_commit_speech_ms
+                and not short_expected
+                and speech_ms < self.config.dashscope_asr_min_commit_speech_ms
             ):
                 logger.info(
                     "LiveKit ASR ignored filler interim noise room=%s participant=%s chars=%s preview=%s speech_ms=%s",
@@ -1215,18 +1336,18 @@ class LiveKitASRRuntime:
             return
 
         if message_type == "conversation.item.input_audio_transcription.completed":
-            final_capture_external_id = (
+            final_capture_external_id = capture.client_capture_id if capture else (
                 self._pending_final_transcript_client_capture_ids.pop(0)
                 if self._pending_final_transcript_client_capture_ids
                 else self._last_committed_client_capture_external_id
                 or self._client_capture_external_id
             )
-            ignore_short_transcript = time.monotonic() <= self._ignore_short_transcripts_until
+            ignore_short_transcript = capture.ignore_short if capture else time.monotonic() <= self._ignore_short_transcripts_until
             transcript = str(payload.get("transcript", "") or "").strip()
             if not transcript:
                 transcript = str(payload.get("text", "") or "").strip()
             if not transcript:
-                if ignore_short_transcript:
+                if ignore_short_transcript and capture is None:
                     self._ignore_short_transcripts_until = 0.0
                 logger.warning(
                     "LiveKit ASR final transcript event had no text room=%s participant=%s payload=%s",
@@ -1237,7 +1358,8 @@ class LiveKitASRRuntime:
                 return
 
             if is_repetitive_transcript_noise(transcript):
-                self._ignore_short_transcripts_until = 0.0
+                if capture is None:
+                    self._ignore_short_transcripts_until = 0.0
                 logger.info(
                     "LiveKit ASR ignored repetitive noise transcript room=%s participant=%s chars=%s preview=%s",
                     self.ctx.room_name,
@@ -1248,10 +1370,11 @@ class LiveKitASRRuntime:
                 return
             if (
                 is_filler_transcript_noise(transcript)
-                and not self._short_utterance_capture_expected
-                and self._speech_ms_since_commit < self.config.dashscope_asr_min_commit_speech_ms
+                and not short_expected
+                and speech_ms < self.config.dashscope_asr_min_commit_speech_ms
             ):
-                self._ignore_short_transcripts_until = 0.0
+                if capture is None:
+                    self._ignore_short_transcripts_until = 0.0
                 logger.info(
                     "LiveKit ASR ignored filler transcript noise room=%s participant=%s chars=%s transcript=%s speech_ms=%s",
                     self.ctx.room_name,
@@ -1263,10 +1386,11 @@ class LiveKitASRRuntime:
                 return
 
             if ignore_short_transcript:
-                self._ignore_short_transcripts_until = 0.0
+                if capture is None:
+                    self._ignore_short_transcripts_until = 0.0
                 if (
                     semantic_transcript_length(transcript) <= 2
-                    and not self._short_utterance_capture_expected
+                    and not short_expected
                 ):
                     logger.info(
                         "LiveKit ASR ignored short manual_stop tail room=%s participant=%s chars=%s transcript=%s",
@@ -1286,7 +1410,7 @@ class LiveKitASRRuntime:
             )
             asr_source = (
                 "dashscope_realtime_asr_backup"
-                if self._fallback_final_transcript_pending
+                if payload.get("provider") == "dashscope_realtime_asr_backup"
                 else self._asr_source
             )
 
@@ -1304,27 +1428,31 @@ class LiveKitASRRuntime:
                     },
                 )
             )
-            await self.on_final_transcript(transcript)
-            self._fallback_final_transcript_pending = False
-            self._short_utterance_capture_expected = False
+            # Publishing can yield while a new recording starts. Re-check before
+            # dispatching old communication text into the cancellable reply owner.
+            if (capture is None or getattr(self.ctx, "mode", "communication") == "training"
+                    or capture.generation == self._speech_generation):
+                await self.on_final_transcript(transcript)
+            if capture is None:
+                self._short_utterance_capture_expected = False
             return
 
         if message_type in {"error", "client.error"}:
-            failed_capture_external_id = (
+            failed_capture_external_id = capture.client_capture_id if capture else (
                 self._pending_final_transcript_client_capture_ids.pop(0)
                 if self._pending_final_transcript_client_capture_ids
                 else self._last_committed_client_capture_external_id
                 or self._client_capture_external_id
             )
             error_info = payload.get("error", {})
-            error_message = str(error_info.get("message", "unknown error"))
+            error_message = str(error_info.get("message", "unknown error")) if isinstance(error_info, dict) else "语音识别失败"
             logger.warning(
                 "LiveKit ASR error room=%s capture_id=%s error=%s",
                 self.ctx.room_name,
                 failed_capture_external_id,
                 error_message,
             )
-            self._fallback_final_transcript_pending = False
-            self._short_utterance_capture_expected = False
-            await self.publish_payload(build_error_output(error_message))
+            if capture is None:
+                self._short_utterance_capture_expected = False
+            await self.publish_payload({**build_error_output(error_message), "client_capture_id": failed_capture_external_id})
             return

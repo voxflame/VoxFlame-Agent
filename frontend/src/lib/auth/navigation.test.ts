@@ -7,8 +7,12 @@ import {
 } from './navigation.ts'
 
 test('buildLoginPath normalizes unsafe next values', () => {
-  assert.equal(buildLoginPath('https://example.com/unsafe'), '/login?next=%2F')
-  assert.equal(buildLoginPath('//double-slash'), '/login?next=%2F')
+  assert.equal(buildLoginPath('https://example.com/unsafe'), '/login?next=%2Fcontribute')
+  assert.equal(buildLoginPath('//double-slash'), '/login?next=%2Fcontribute')
+})
+
+test('buildLoginPath sends a direct login into the recording task', () => {
+  assert.equal(buildLoginPath(), '/login?next=%2Fcontribute')
 })
 
 test('resolveExternalOrigin prefers forwarded host and proto over internal request url', () => {

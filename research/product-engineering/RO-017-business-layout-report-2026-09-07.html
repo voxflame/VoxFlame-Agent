@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>上海、杭州算力政策及业务布局建议</title>
+<style>
+@page { size:A4; margin:0; }
+:root { --navy:#172d46; --ink:#252d36; --muted:#67717c; --line:#d8dfe5; --wash:#f1f4f7; --gold:#927344; }
+* { box-sizing:border-box; }
+body { margin:0; background:#e5e8ec; color:var(--ink); font:10.5pt/1.68 "Noto Sans CJK SC",sans-serif; }
+.sheet { position:relative; width:210mm; height:297mm; padding:15mm 18mm 19mm; margin:8mm auto; background:white; break-after:page; }
+.sheet:last-child { break-after:auto; }
+.running { display:flex; justify-content:space-between; padding-bottom:3mm; border-bottom:1.5px solid var(--navy); font-size:8pt; color:var(--muted); margin-bottom:6mm; }
+.section-label { color:var(--gold); font-size:9pt; margin:0 0 2mm; }
+h1,h2 { font-family:"Noto Serif CJK SC",serif; color:var(--navy); }
+h1 { font-size:28pt; font-weight:800; line-height:1.52; margin:0; }
+h2 { font-size:22pt; line-height:1.45; margin:0 0 5mm; }
+h3 { color:var(--navy); font-size:12pt; line-height:1.65; margin:4mm 0 1.8mm; }
+p { margin:2mm 0; text-align:justify; }
+strong,b { font-weight:700; }
+.cover-title { margin:16mm 0 7mm; }
+.subtitle { font-size:12pt; color:var(--muted); margin:5mm 0 0; }
+.cover-date { margin-top:4mm; color:var(--muted); font-size:9.5pt; }
+.divider { border:0; border-top:1px solid var(--line); margin:7mm 0 5mm; }
+table { width:100%; border-collapse:collapse; table-layout:fixed; margin:3mm 0; font-size:9.6pt; line-height:1.62; }
+th,td { text-align:left; vertical-align:top; border-bottom:1px solid var(--line); padding:2.5mm 2.8mm; overflow-wrap:break-word; }
+th { color:var(--navy); background:var(--wash); font-weight:700; border-top:1px solid var(--line); }
+tr { break-inside:avoid; }
+.compact td,.compact th { padding:2.2mm 2.8mm; }
+.brief { border-left:3px solid var(--gold); background:#f7f8fa; padding:3.5mm 4.5mm; margin:4mm 0; }
+.brief p { margin:0; }
+.small { color:var(--muted); font-size:8.7pt; line-height:1.75; }
+.refs { color:var(--muted); font-size:8.3pt; margin-top:2mm; }
+.ref { font-size:8pt; color:var(--navy); text-decoration:none; vertical-align:super; white-space:nowrap; }
+ul,ol { padding-left:6mm; margin:2mm 0; }
+li { margin:1.5mm 0; }
+.footer { position:absolute; left:18mm; right:18mm; bottom:10mm; display:flex; justify-content:space-between; padding-top:2.5mm; border-top:1px solid var(--line); font-size:8pt; color:var(--muted); }
+.summary-row { display:grid; grid-template-columns:25mm 1fr; gap:4mm; padding:3.5mm 0; border-bottom:1px solid var(--line); }
+.summary-row p { margin:0; }
+.summary-row b { color:var(--navy); }
+.toc { display:grid; grid-template-columns:1fr 1fr; gap:1.6mm 8mm; margin-top:4mm; color:var(--muted); font-size:9pt; }
+.source { font-size:8.5pt; line-height:1.65; padding:1.8mm 0; border-bottom:1px solid var(--line); }
+.source p { margin:0; }
+.source a { color:var(--muted); font-size:8pt; overflow-wrap:anywhere; text-decoration:none; }
+.source strong { color:var(--navy); font-size:8.7pt; }
+.source-section { margin-top:3mm; }
+.dense { font-size:10pt; }
+@media print { body { background:#fff; } .sheet { margin:0; } * { print-color-adjust:exact; -webkit-print-color-adjust:exact; } }
+</style>
+</head>
+<body>
+
+<article class="sheet">
+<div class="content">
+<header class="running"><span>区域产业政策与业务发展</span><span>2026年9月</span></header>
+<div class="cover-title">
+<h1>上海、杭州算力政策<br>及业务布局建议</h1>
+<p class="subtitle">政策支持、子公司设立与经营安排</p>
+<p class="cover-date">2026年9月7日</p>
+</div>
+<hr class="divider">
+<h3>摘要</h3>
+<p>结合公司目前主要在余杭经营、在杭州其他区域及上海开展业务并计划设立子公司的安排，建议以现有研发和客户基础为核心，按新增业务需要配置区域主体，将算力、模型服务、数据及场景支持政策纳入经营成本评估。</p>
+<div class="summary-row"><b>杭州业务</b><p>依托现有经营主体承接已发生的研发与算力支出，统筹评估市级和属地区级支持。新增主体重点比较滨江、西湖的实际业务资源及政策条件，不重复建设相同职能。</p></div>
+<div class="summary-row"><b>上海业务</b><p>围绕客户拓展、项目交付和必要的研发合作配置主体；存在明确团队落地需求时，再评估张江等人工智能园区的专项支持。</p></div>
+<div class="summary-row"><b>设立节奏</b><p>按照“业务需求确认、属地条件确认、主体设立、项目实施、申报兑现”顺序推进。尚无明确客户或团队落地计划的地区，可暂缓增设公司。</p></div>
+<h3>主要判断</h3>
+<p>上海已明确算力、模型及语料支持方向，发布2026年度申报通知；杭州已明确2026年算力券申领及兑付流程。滨江新措施覆盖面较广，将于<b>2026年9月11日</b>施行，具体受理安排需与属地衔接。<a class="ref" href="#ref-1">[1]</a><a class="ref" href="#ref-4">[4]</a><a class="ref" href="#ref-6">[6]</a><a class="ref" href="#ref-7">[7]</a></p>
+<p class="small">报告所列比例、金额均为政策上限或公开资金安排，不等同于公司可获金额。实际支持取决于申报主体、合格费用、项目评审及当期政策。</p>
+<div class="toc"><span>一、区域政策比较 · 02</span><span>二、杭州及余杭政策 · 03</span><span>三、滨江与西湖政策 · 04</span><span>四、上海政策与园区选择 · 05</span><span>五、子公司布局方案 · 06</span><span>六、实施安排与决策事项 · 07</span><span>附录：主要政策依据 · 08</span></div>
+</div><footer class="footer"><span>上海、杭州算力政策及业务布局建议</span><span>01 / 08</span></footer>
+</article>
+
+<article class="sheet">
+<div class="content">
+<header class="running"><span>上海、杭州算力政策及业务布局建议</span><span>区域比较</span></header>
+<p class="section-label">一</p><h2>区域政策比较</h2>
+<p>不同地区的支持重点、适用对象和兑现方式存在差异。区域选择应同时考虑客户资源、团队经营成本、研发协作及政策可兑现性，不能仅比较最高补贴金额。</p>
+<table class="compact"><thead><tr><th style="width:18%">区域／层级</th><th style="width:44%">主要政策支持</th><th>业务布局意义</th></tr></thead><tbody>
+<tr><td><b>杭州市级</b></td><td>2026年算力券实行额度申领与兑付分阶段管理；年度额度申领截至12月10日。比例与单家限额按对应政策及申领批复执行。<a class="ref" href="#ref-1">[1]</a></td><td>可作为杭州业务主体的基础申报渠道，需与区级支持统筹比较。</td></tr>
+<tr><td><b>余杭区</b></td><td>2025年公开安排算力券、模型券资金各最高5000万元／年；2026年官方公示已引用修订实施细则。企业适用比例和限额需依据完整细则确定。<a class="ref" href="#ref-2">[2]</a><a class="ref" href="#ref-3">[3]</a></td><td>与公司现有经营基础衔接，重点评估既有研发、算力和模型服务支出。</td></tr>
+<tr><td><b>滨江区</b></td><td>新措施：算力费用最高30%／60%，单家最高2000万元；词元券最高1000万元；另有语料、数据集和场景支持。2026年9月11日起施行。<a class="ref" href="#ref-4">[4]</a></td><td>适合结合新增产品、研发或应用场景业务评估子公司设立。</td></tr>
+<tr><td><b>西湖区</b></td><td>2025年公开政策报道：智算服务补助最高50%，符合条件的模型购买费用按30%奖励；2026年具体受理条件另行确认。<a class="ref" href="#ref-5">[5]</a></td><td>以当地客户、高校及产业合作项目为选址依据，政策作为辅助条件。</td></tr>
+<tr><td><b>上海市级</b></td><td>2025年措施：算力租金最高30%；模型合同额最高50%、最高500万元；语料合同额最高30%、最高500万元。2026年已发布三类券申报通知。<a class="ref" href="#ref-6">[6]</a><a class="ref" href="#ref-7">[7]</a></td><td>可结合上海客户交付、模型应用和研发合作，评估当地实际经营主体。</td></tr>
+<tr><td><b>上海AI小镇</b></td><td>符合条件的创新企业，算力、模型、语料各100万元额度，最高100%支持；具体园区、项目与属地条件分别审核。<a class="ref" href="#ref-7">[7]</a><a class="ref" href="#ref-8">[8]</a></td><td>适合确有团队与项目落地需求的主体，不能仅以注册地址取得园区支持。</td></tr>
+</tbody></table>
+<h3>比较结论</h3>
+<p><b>现有业务以费用适配和申报效率为重点，新增业务以经营价值和落地条件为重点。</b>余杭现有经营安排不宜仅因其他地区补助上限较高而迁移；杭州新增业务可比较滨江与西湖，上海则根据客户及研发合作需要选择市级路径或园区路径。</p>
+<p class="small">口径说明：余杭5000万元为全区资金安排，并非单家企业额度。滨江30%／60%分别对应政策所称“非自主／自主人工智能算力”，具体资源认定以实施要求为准。不同地区及不同费用项目的支持上限不可直接相加。</p>
+</div><footer class="footer"><span>金额单位：人民币；政策时点截至2026年9月7日</span><span>02 / 08</span></footer>
+</article>
+
+<article class="sheet">
+<div class="content">
+<header class="running"><span>上海、杭州算力政策及业务布局建议</span><span>杭州及余杭</span></header>
+<p class="section-label">二</p><h2>杭州及余杭政策适用分析</h2>
+<h3>1. 杭州市级算力券</h3>
+<p>杭州市2026年通知明确，企业先申请算力券额度，获批后再申请兑付。额度申领常态化受理，年度截止日为<b>2026年12月10日</b>；兑付申请经属地区县经信部门初审后报市级审核。<a class="ref" href="#ref-1">[1]</a></p>
+<table><thead><tr><th style="width:23%">环节</th><th>主要材料及要求</th></tr></thead><tbody>
+<tr><td>额度申领</td><td>申报表、营业执照、2025年度企业审计报告、服务期在2026年的智算合同、交付使用证明、算力使用计划；中小企业专项另附资质承诺书。</td></tr>
+<tr><td>兑付申请</td><td>兑付申报表、智算服务发票及清单、使用成效说明、财政扶持情况说明、项目承诺书。</td></tr>
+<tr><td>报送时间</td><td>区县经信部门在6月、9月、12月和次年2月的前5个工作日报送。企业应按属地收件安排提前提交，不宜将部门上报截止日作为企业准备截止日。</td></tr>
+</tbody></table>
+<p class="refs">依据：[1]。申报入口为杭州市企事通直报平台；材料按对应线上模板及区县要求办理。</p>
+<h3>2. 余杭区算力及模型支持</h3>
+<p>余杭2025年公开政策安排包括每年最高5000万元算力券资金和最高5000万元模型券资金。2026年8月公布的第二批算力伙伴拟认定名单，已引用《余杭区支持人工智能产业高质量发展财政政策实施细则（修订）》（余经信便笺〔2026〕24号）。<a class="ref" href="#ref-2">[2]</a><a class="ref" href="#ref-3">[3]</a></p>
+<p>现阶段的商务重点是确认公司对应费用适用哪一类支持，以及服务商是否符合当期要求。已公开的伙伴公示不等于所有相关产品均可补助；具体企业比例、单家限额、费用期间和最终服务商名单，应以修订细则及受理要求为准。</p>
+<h3>3. 对现有经营安排的建议</h3>
+<ul>
+<li><b>维持真实业务与支出的对应关系。</b>已由现有主体签约、付款和使用的算力服务，原则上围绕该主体评估申报，不为补贴目的追溯转移费用。</li>
+<li><b>区分采购类别。</b>GPU租赁、模型API、ASR/TTS服务、数据采购及标注服务分别列示，避免将整张云账单直接认定为合格算力费用。</li>
+<li><b>比较市区政策的实际收益。</b>按合格费用、申报成本、审核周期及重复支持规则确定渠道，而非按宣传上限决定。</li>
+</ul>
+<div class="brief"><p><b>新设子公司须特别关注财务资料要求。</b>杭州市2026年通知列有2025年度审计报告。2026年新设企业能否提供替代材料、能否参加对应批次，应在设立及签订采购合同前确认。<a class="ref" href="#ref-1">[1]</a></p></div>
+</div><footer class="footer"><span>经营重点：费用适配、属地条件与申报周期</span><span>03 / 08</span></footer>
+</article>
+
+<article class="sheet dense">
+<div class="content">
+<header class="running"><span>上海、杭州算力政策及业务布局建议</span><span>杭州新增布局</span></header>
+<p class="section-label">三</p><h2>滨江与西湖的布局价值</h2>
+<h3>1. 滨江：围绕新增产品与应用业务评估</h3>
+<p>杭高新〔2026〕6号覆盖算力、模型、数据、应用场景和企业发展支持。该措施自<b>2026年9月11日</b>起施行；施行日与开放申报日期并非同一概念，费用起算期和受理批次需另行衔接。<a class="ref" href="#ref-4">[4]</a></p>
+<table class="compact"><thead><tr><th style="width:23%">支持方向</th><th style="width:42%">政策规定</th><th>适配业务</th></tr></thead><tbody>
+<tr><td>智能算力租用</td><td>非自主算力最高30%、自主算力最高60%；单家企业最高2000万元。</td><td>模型研发、训练及相关产品研发。</td></tr>
+<tr><td>词元（Token）券</td><td>按照实际使用情况，单家企业最高1000万元；正文未列统一支持比例。</td><td>订阅模型服务，推进产品与服务模式升级。</td></tr>
+<tr><td>语料采购</td><td>按实际语料使用情况最高30%；单家企业每年最高200万元。</td><td>外购数据集用于模型训练、验证和测试。</td></tr>
+<tr><td>高质量数据集</td><td>符合条件的数据产品或平台，研发费15%、单家最高200万元；认定评测费50%、单项最高10万元。</td><td>依法拥有产权的自采标注数据产品及数据平台。</td></tr>
+<tr><td>模型示范应用</td><td>首年实现规模化交付的产品，采购费最高30%，采购企业最高500万元。</td><td>当地客户采购与产品商业化；补助对象为采购企业。</td></tr>
+<tr><td>其他配套</td><td>符合条件的小微及创业企业最高3年房租补贴；市场化股权融资额2%、单家年度最高300万元。</td><td>有团队落地、融资及持续经营需求的企业。</td></tr>
+</tbody></table>
+<p class="refs">本表依据：[4]。同一产品、项目、标准按从优、从高、不重复原则执行，另有规定的除外。</p>
+<h3>2. 西湖：以具体客户及合作项目为落地依据</h3>
+<p>2025年政府网站政策报道列明，符合条件的智算服务金额最高补助50%，模型购买费用按30%奖励；同时涉及技术攻关和人才创业支持。该报道可用于判断政策方向，2026年的单家限额、项目条件及申报窗口应按当期文件确认。<a class="ref" href="#ref-5">[5]</a></p>
+<h3>3. 杭州新增主体的选择建议</h3>
+<p><b>若新增业务具有较明确的模型服务支出、数据产品或应用项目，可重点比较滨江的落地条件；若业务机会主要来自西湖区客户、高校或产业合作，则以该项目的经营收益作为选址基础。</b>不建议在缺少独立业务计划时，同时设置承担相同职能的两家子公司。</p>
+<p class="small">融资支持的“市场化融资”、小微企业认定以及集团控股子公司的适用范围，须按实施要求判断；母公司注资不当然等于符合支持条件的市场化融资。</p>
+</div><footer class="footer"><span>政策支持应服务于新增业务，不替代商业可行性判断</span><span>04 / 08</span></footer>
+</article>
+
+<article class="sheet">
+<div class="content">
+<header class="running"><span>上海、杭州算力政策及业务布局建议</span><span>上海业务布局</span></header>
+<p class="section-label">四</p><h2>上海政策与园区选择</h2>
+<h3>1. 市级算力、模型及语料支持</h3>
+<p>上海2025年《进一步扩大人工智能应用的若干措施》明确三类券支持，2026年“模塑申城”通知进一步列明申报方向、主体要求及批次安排。<a class="ref" href="#ref-6">[6]</a><a class="ref" href="#ref-7">[7]</a></p>
+<table><thead><tr><th style="width:19%">类别</th><th style="width:33%">2025年措施支持上限</th><th>2026年通知所列范围</th></tr></thead><tbody>
+<tr><td>算力券</td><td>市级租金补贴最高30%。</td><td>租用非关联方智能算力，用于大模型、智能体研发与应用；不含存储、网络、安全等服务。</td></tr>
+<tr><td>模型券</td><td>核定合同额最高50%；最高500万元。</td><td>非关联方云平台的第三方模型API，或采用第三方模型私有化部署，推进垂类应用。</td></tr>
+<tr><td>语料券</td><td>核定合同额最高30%；最高500万元。</td><td>购买非关联方高质量语料，用于大模型、智能体研发及应用。</td></tr>
+</tbody></table>
+<p>申报单位须在上海依法经营，具备独立承担民事责任能力，经营、信用和财务状况符合要求；项目不得已获其他市级财政资金补贴。集团内部算力转售或语料采购应重点评估关联交易限制。<a class="ref" href="#ref-6">[6]</a></p>
+<h3>2. AI小镇专项支持</h3>
+<p>2025年措施对符合条件的创新型企业安排算力、模型、语料各100万元额度，最高100%支持；符合条件的人才创业团队另有6个月至3年不等的房租减免或一次性开办费。上述支持与具体园区准入、项目条件相联系。<a class="ref" href="#ref-7">[7]</a></p>
+<p>以张江2026年第一季度通知为例，企业的<b>工商注册地、实际经营地及财政户管地</b>均须位于指定范围。资金拨付前迁出范围的项目不再支持。因此，小镇路径应与团队和项目真实落地一并评估。<a class="ref" href="#ref-8">[8]</a></p>
+<h3>3. 建议的上海业务配置</h3>
+<p><b>以本地客户拓展、项目交付和研发合作为主体设立依据。</b>业务初期先确认客户、合同及交付责任；需要当地团队长期驻场时，再比较园区办公、人才与政策配套。仅有商务联络需求，不宜直接按研发型园区企业测算补助。</p>
+<p>除三类券外，可结合成熟项目关注人工智能软件首版次应用示范和标杆场景建设支持。2025年措施分别列明核定合同额最高30%、最高2000万元，以及核定总投资最高20%、最高1000万元的支持上限，具体适用性和批次需单独判断。<a class="ref" href="#ref-7">[7]</a></p>
+<p class="small">上海2026年市级首批申报已于5月27日结束，文件称后续批次每季度首月受理。张江第一季度批次已于4月7日结束；后续实际时间以公告为准。<a class="ref" href="#ref-6">[6]</a><a class="ref" href="#ref-8">[8]</a></p>
+</div><footer class="footer"><span>市级支持与园区支持分别评估，不按注册地址直接推定资格</span><span>05 / 08</span></footer>
+</article>
+
+<article class="sheet">
+<div class="content">
+<header class="running"><span>上海、杭州算力政策及业务布局建议</span><span>组织与经营安排</span></header>
+<p class="section-label">五</p><h2>子公司布局方案</h2>
+<p>建议以业务分工确定组织结构，避免为了申报补助而重复设立主体。以下为拟议分工，最终依据客户、团队与属地条件确定。</p>
+<table><thead><tr><th style="width:23%">主体安排</th><th style="width:38%">建议承担的业务</th><th>设立或调整的前提</th></tr></thead><tbody>
+<tr><td><b>余杭现有经营主体</b></td><td>现有核心研发、训练与模型服务采购，以及已建立的客户项目。</td><td>明确注册税务归属、合同与费用，评估市级和区级可适用支持。</td></tr>
+<tr><td><b>杭州其他区子公司</b></td><td>具有独立客户、产品或场景的新增业务，不与现有主体重复承接同一费用。</td><td>明确商业计划、团队与经营场所；比较滨江、西湖等地区的整体落地成本。</td></tr>
+<tr><td><b>上海子公司／业务主体</b></td><td>上海客户销售、交付、合作研发及当地项目运营。</td><td>存在实质业务与可持续经营安排；入驻AI小镇时另行满足园区条件。</td></tr>
+</tbody></table>
+<h3>1. 财务与合同安排</h3>
+<p>采购合同、实际使用、付款凭证、发票及项目成果应能够相互对应。建议按主体、项目和费用类别分别管理云资源与账单，保留合同周期、使用记录及成本归属。集团集中采购或代付安排，应在申报前确认属地是否接受及需要的佐证材料。</p>
+<h3>2. 知识产权与数据安排</h3>
+<p>母子公司之间的研发成果、软件许可、数据使用及客户交付责任应有清晰约定。语音录音、转写等业务数据的使用权限与责任应随项目明确，不因设立子公司而自动转移。</p>
+<h3>3. 投入与政策收益评估</h3>
+<p>经营收益主要考虑新增客户收入、交付效率和研发协同；新增成本应覆盖人员、办公、社保、财务审计及持续合规费用。政策收益按合格费用测算，并保留未获批、部分获批和延后到账的资金安排，不以补贴作为主要运营资金来源。</p>
+<div class="brief"><p><b>建议采用分阶段设立。</b>先确定各区域的客户和项目，再落实主体及采购安排。对缺少独立经营计划、预计新增成本高于经营增益的地区，暂缓设立子公司。</p></div>
+<p class="small">集团内不同法人不当然意味着同一项目或费用可以重复申报。上海市级非关联采购要求、滨江不重复支持规则及其他地区口径应分别适用。<a class="ref" href="#ref-4">[4]</a><a class="ref" href="#ref-6">[6]</a></p>
+</div><footer class="footer"><span>布局原则：业务独立、责任清晰、投入可控</span><span>06 / 08</span></footer>
+</article>
+
+<article class="sheet">
+<div class="content">
+<header class="running"><span>上海、杭州算力政策及业务布局建议</span><span>实施安排</span></header>
+<p class="section-label">六</p><h2>实施安排与决策事项</h2>
+<h3>1. 实施节奏</h3>
+<table><thead><tr><th style="width:22%">阶段</th><th style="width:45%">主要工作</th><th>形成的决策依据</th></tr></thead><tbody>
+<tr><td>业务与费用梳理</td><td>梳理现有主体、合同、云资源、客户项目及年度支出；区分算力、模型、语料与其他服务。</td><td>各主体经营现状和合格费用测算基础。</td></tr>
+<tr><td>属地方案比较</td><td>取得当地完整政策和受理要求，比较主体资格、办公条件、人员、费用期间及预计兑现周期。</td><td>各地区投入、经营收益与政策支持比较表。</td></tr>
+<tr><td>主体设立与经营</td><td>按确定的业务分工办理设立及经营安排，落实合同、账号、财务和知识产权边界。</td><td>可独立核算、可持续经营的区域业务方案。</td></tr>
+<tr><td>申报与兑现</td><td>按批次完成额度申请、材料申报和费用兑付，持续跟踪项目审核及拨付进度。</td><td>实际批复和拨付结果，不以申报金额替代。</td></tr>
+</tbody></table>
+<h3>2. 近期政策时间安排</h3>
+<table class="compact"><thead><tr><th style="width:29%">时间</th><th>事项与经营安排</th></tr></thead><tbody>
+<tr><td>2026年9月</td><td>衔接杭州9月兑付批次的属地收件；滨江新措施9月11日起施行，及时确认配套受理安排。<a class="ref" href="#ref-1">[1]</a><a class="ref" href="#ref-4">[4]</a></td></tr>
+<tr><td>2026年第四季度</td><td>关注上海季度申报公告。杭州企业应在12月10日前完成年度额度申领，并为下一兑付批次预留材料时间。<a class="ref" href="#ref-1">[1]</a><a class="ref" href="#ref-6">[6]</a></td></tr>
+<tr><td>2026年12月及<br>2027年2月</td><td>杭州市通知安排的地方部门报送兑付月份；企业提交时间按所在区县要求提前落实。<a class="ref" href="#ref-1">[1]</a></td></tr>
+</tbody></table>
+<h3>3. 建议合伙人会议明确的事项</h3>
+<ol>
+<li><b>区域分工：</b>明确现有研发、杭州新增业务与上海客户业务分别由哪个主体承担。</li>
+<li><b>设立条件与预算：</b>以明确客户或项目、团队安排及可承受的年度运营成本作为启动条件。</li>
+<li><b>政策测算原则：</b>只对符合费用口径的支出测算补助，现金安排保留未获批和延后到账空间。</li>
+<li><b>推进责任：</b>由经营、财务与研发共同确认主体、费用和项目材料，统一对接当地主管部门。</li>
+</ol>
+<p class="small">相关产业项目还可关注垂直领域专用模型和应用场景支持。2026年西湖区转报的杭州市首批项目已截止；后续批次应依据新公告，成熟应用成效及研发、知识产权材料应随业务积累。<a class="ref" href="#ref-9">[9]</a></p>
+</div><footer class="footer"><span>最终方案以商业计划、属地条件和资金安排共同确定</span><span>07 / 08</span></footer>
+</article>
+
+<article class="sheet">
+<div class="content">
+<header class="running"><span>上海、杭州算力政策及业务布局建议</span><span>政策依据</span></header>
+<p class="section-label">附录</p><h2>主要政策依据</h2>
+<p class="small">正文数字编号与以下政府部门文件、申报通知及官方报道对应。点击来源链接可查阅原文。</p>
+<div class="source-section">
+<section class="source" id="ref-1"><p><strong>[1] 杭州市2026年算力券兑付申报通知</strong></p><p>杭州市经信局 · 2026-06-01</p><p><a href="https://jxj.hangzhou.gov.cn/col/col1229252271/art/2026/art_87786d11012e4295b52fdf3bce943872.html">jxj.hangzhou.gov.cn · 查看官方原文</a></p></section>
+<section class="source" id="ref-2"><p><strong>[2] 余杭区第二批算力伙伴拟认定公示（引用2026年修订细则）</strong></p><p>余杭区经信局、区财政局 · 2026-08-06</p><p><a href="https://www.yuhang.gov.cn/col/col1229175234/art/2026/art_8451eb8324864752a8d121df2a8007d4.html">www.yuhang.gov.cn · 查看官方原文</a></p></section>
+<section class="source" id="ref-3"><p><strong>[3] 余杭区算力券、模型券资金安排公开报道</strong></p><p>余杭区政府网站／余杭时报 · 2025-02-21</p><p><a href="https://www.yuhang.gov.cn/art/2025/2/21/art_1532133_59131954.html">www.yuhang.gov.cn · 查看官方原文</a></p></section>
+<section class="source" id="ref-4"><p><strong>[4] 滨江进一步加快新一代人工智能产业应用发展若干措施</strong></p><p>杭州高新区（滨江）管委会、政府 · 2026-08-12</p><p><a href="https://www.hhtz.gov.cn/col/col1229225928/art/2026/art_5a167e13c395414abfc95de936cd5813.html">www.hhtz.gov.cn · 查看官方原文</a></p></section>
+<section class="source" id="ref-5"><p><strong>[5] 西湖区算力券、模型券政策公开报道</strong></p><p>杭州市政府网站／杭州日报 · 2025-03-18</p><p><a href="https://www.hangzhou.gov.cn/art/2025/3/18/art_812264_59110433.html">www.hangzhou.gov.cn · 查看官方原文</a></p></section>
+<section class="source" id="ref-6"><p><strong>[6] 上海市2026年度“模塑申城”工程补贴申报通知</strong></p><p>上海市经信委 · 2026-05-07</p><p><a href="https://sheitc.sh.gov.cn/cyfz/20260507/cd1dcb1e5cb4449cbc36c69befafcc0a.html">sheitc.sh.gov.cn · 查看官方原文</a></p></section>
+<section class="source" id="ref-7"><p><strong>[7] 上海市进一步扩大人工智能应用的若干措施</strong></p><p>上海市经信委／上海市政府网站 · 2025-07-28</p><p><a href="https://www.shanghai.gov.cn/zjfcsj/20251024/28bb5b0d563b468b95cc0defa2a6bc60.html">www.shanghai.gov.cn · 查看官方原文</a></p></section>
+<section class="source" id="ref-8"><p><strong>[8] 张江AI创新小镇2026年第一季度三类券受理通知</strong></p><p>上海市张江科学城建设管理办公室 · 2026-03-31</p><p><a href="https://www.pudong.gov.cn/zwgk/zwgk_tsfl_zwgk/2026/91/353871.html">www.pudong.gov.cn · 查看官方原文</a></p></section>
+<section class="source" id="ref-9"><p><strong>[9] 西湖区转报2026年杭州市第一批人工智能产业项目通知</strong></p><p>西湖区经信局 · 2026-06-16</p><p><a href="https://www.hzxh.gov.cn/col/col1229312578/art/2026/art_ec7916df277247e0ad75c6034b8374f7.html">www.hzxh.gov.cn · 查看官方原文</a></p></section>
+</div>
+<h3>适用说明</h3>
+<p class="small">本报告用于公司业务布局与经营讨论，资料截止2026年9月7日。余杭修订细则的具体企业比例和限额、杭州相关额度标准及各地区后续批次，需按完整政策和实际受理要求确认。已列资金安排与政策上限不构成补贴承诺；公司及拟设子公司的资格，以实际经营资料和主管部门审核为准。</p>
+<p class="small">区域分工、设立节奏及经营安排为本报告提出的建议，不属于政府文件内容。涉及企业设立、税务、关联交易、知识产权和数据使用的具体安排，应由公司结合专业意见落实。</p>
+</div><footer class="footer"><span>资料截止日期：2026年9月7日</span><span>08 / 08</span></footer>
+</article>
+</body>
+</html>

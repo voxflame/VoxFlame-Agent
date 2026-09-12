@@ -1,0 +1,11 @@
+[Unit]
+Description=Automatically reconcile new users and changed contacts to OSS every minute
+
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=60s
+AccuracySec=5s
+Unit=voxflame-oss-account-sync.service
+
+[Install]
+WantedBy=timers.target

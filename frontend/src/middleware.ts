@@ -34,10 +34,10 @@ export async function middleware(request: NextRequest) {
         }
     )
 
-    // Refresh Session if expired
-    const { data: { user } } = await supabase.auth.getUser()
+    // Validate locally when possible and refresh once through the SSR client.
+    const { data: claimsData } = await supabase.auth.getClaims()
 
-    if (isProtectedPath(request.nextUrl.pathname) && !user) {
+    if (isProtectedPath(request.nextUrl.pathname) && !claimsData?.claims.sub) {
         const nextValue = `${request.nextUrl.pathname}${request.nextUrl.search}`
         const loginPath = buildLoginPath(nextValue)
         const loginUrl = new URL(

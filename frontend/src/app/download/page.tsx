@@ -7,10 +7,15 @@ import {
   ShieldCheck,
   Smartphone,
 } from 'lucide-react'
+import { getSiteBrand } from '@/lib/site-branding'
 
-// Android releases always use the permanent first-party endpoint. Caddy owns
-// whether that endpoint serves an APK now or redirects to a store later.
-const androidDownloadUrl = '/download/android'
+const siteBrand = getSiteBrand()
+
+// The main site may use the permanent first-party APK endpoint. A collection
+// build must receive its own package URL so it can never serve the VoxFlame APK
+// under a different product name.
+const configuredAndroidDownloadUrl = process.env.NEXT_PUBLIC_ANDROID_APP_DOWNLOAD_URL?.trim() || ''
+const androidDownloadUrl = configuredAndroidDownloadUrl || (siteBrand.isCollectionSite ? '' : '/download/android')
 const iosDownloadUrl = process.env.NEXT_PUBLIC_IOS_APP_DOWNLOAD_URL?.trim() || ''
 
 interface DownloadCardProps {
@@ -78,7 +83,7 @@ export default function DownloadPage() {
           href="/"
         >
           <ArrowLeft className="size-4" aria-hidden="true" />
-          返回燃言
+          返回{siteBrand.name}
         </Link>
 
         <section className="py-12 sm:py-16">
@@ -86,26 +91,34 @@ export default function DownloadPage() {
             <div className="flex size-14 items-center justify-center rounded-2xl bg-stone-950 text-white">
               <Smartphone className="size-7" aria-hidden="true" />
             </div>
-            <p className="mt-8 text-sm font-semibold text-orange-700">VoxFlame 0.1 内测</p>
+            <p className="mt-8 text-sm font-semibold" style={{ color: siteBrand.accentColor }}>
+              {siteBrand.isCollectionSite ? '独立品牌 App' : `${siteBrand.name} App 内测`}
+            </p>
             <h1 className="mt-3 text-balance text-4xl font-semibold leading-tight sm:text-5xl">
               把沟通和练习，带在身边
             </h1>
             <p className="mt-5 max-w-2xl text-pretty text-base leading-8 text-stone-600 sm:text-lg">
-              第一版 App 已完成 Android 与 iOS 代码打包验证。内测包开放后，可在这里直接安装；正式商店版本会沿用同一入口。
+              {siteBrand.isCollectionSite
+                ? '移动端与本站共用同一套沟通、练习、录音和账号能力。独立品牌安装包完成名称、图标、包名与签名配置后，会在这里开放。'
+                : '第一版 App 已完成 Android 与 iOS 代码打包验证。内测包开放后，可在这里直接安装；正式商店版本会沿用同一入口。'}
             </p>
           </div>
         </section>
 
         <section aria-label="App 下载" className="grid gap-5 md:grid-cols-2">
           <DownloadCard
-            description="点击后直接从本站下载 APK，不再跳转 Expo。Android 会提示你确认安装来源，正式上架后这里会切换为应用商店。"
+            description={siteBrand.isCollectionSite
+              ? '独立品牌 Android 包将使用单独的应用名称、图标、包名和签名；不会复用或改名分发现有产品安装包。'
+              : '点击后直接从本站下载 APK，不再跳转 Expo。Android 会提示你确认安装来源，正式上架后这里会切换为应用商店。'}
             href={androidDownloadUrl}
             icon={Smartphone}
             label="下载 Android 版"
             platform="Android"
           />
           <DownloadCard
-            description="iPhone 通过 TestFlight 或已登记设备的 EAS 内测安装。Apple 不支持把普通 IPA 文件直接提供给所有用户安装。"
+            description={siteBrand.isCollectionSite
+              ? '独立品牌 iPhone 包需要单独的 Bundle ID、签名和 TestFlight 发布记录，完成后从这里加入内测。'
+              : 'iPhone 通过 TestFlight 或已登记设备的 EAS 内测安装。Apple 不支持把普通 IPA 文件直接提供给所有用户安装。'}
             href={iosDownloadUrl}
             icon={Apple}
             label="加入 iOS 内测"

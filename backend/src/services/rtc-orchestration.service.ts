@@ -9,81 +9,38 @@ import {
   LiveKitSessionService,
 } from './livekit-session.service'
 import { SupabaseService } from './supabase.service'
-import type { WorkspaceSceneId } from './expression-kit.service'
+import type {
+  WorkspaceSceneId,
+} from './expression-kit.service'
 
-export type RtcSessionMode = 'communication' | 'training' | 'quick_talk'
-export type RtcExecutionBackend = 'livekit'
-export type RtcSurface =
-  | 'home_main'
-  | 'communication_workspace'
-  | 'training_workspace'
-  | 'memory_workspace'
-  | 'pwa_quick_talk'
-  | 'mobile_workbench'
-  | 'desktop_companion'
-export type RtcSessionStrategy = 'heavy_realtime' | 'light_voice'
-export type RtcCapabilityId =
-  | 'transport_send_control'
-  | 'voice_profile_update'
-  | 'workspace_snapshot_read'
-  | 'upload_artifact_persist'
-export type RtcScene =
-  | 'medical'
-  | 'family'
-  | 'stranger'
-  | 'emergency'
-  | 'work'
-  | 'interview'
-  | 'outing'
-  | 'home'
-export type RtcMicrophoneStatus = 'unknown' | 'available' | 'unavailable'
-export type RtcPropertyOverrides = Record<string, Record<string, unknown>>
-
-export interface RtcDeviceContext {
-  secureContext?: boolean
-  mediaDevicesSupported?: boolean
-  microphoneStatus?: RtcMicrophoneStatus
-  networkOnline?: boolean
-}
-
-export interface RtcSessionIntentInput {
-  surface?: RtcSurface
-  mode?: RtcSessionMode
-  sessionStrategy?: RtcSessionStrategy
-  requestedCapabilities?: RtcCapabilityId[]
-  scene?: RtcScene
-  deviceContext?: RtcDeviceContext
-}
-
-export interface RtcResolvedSessionIntent {
-  surface: RtcSurface
-  mode: RtcSessionMode
-  sessionStrategy: RtcSessionStrategy
-  requestedCapabilities: RtcCapabilityId[]
-  grantedCapabilities: RtcCapabilityId[]
-  scene: RtcScene | null
-  deviceContext: RtcDeviceContext
-}
-
-export interface RtcSessionReadiness {
-  canStart: boolean
-  requestedStrategy: RtcSessionStrategy
-  resolvedStrategy: RtcSessionStrategy
-  recommendedStrategy: RtcSessionStrategy
-  microphoneRequired: boolean
-  blockers: string[]
-  warnings: string[]
-  summary: RtcSessionReadinessSummary
-}
-
-export interface RtcSessionReadinessSummary {
-  status: 'needs_attention' | 'can_start' | 'ready'
-  label: string
-  detail: string
-  nextAction: string
-  blockerSummary: string | null
-  warningSummary: string | null
-}
+import type {
+  RtcSessionMode,
+  RtcExecutionBackend,
+  RtcSurface,
+  RtcSessionStrategy,
+  RtcCapabilityId,
+  RtcScene,
+  RtcDeviceContext,
+  RtcSessionIntentInput,
+  RtcResolvedSessionIntent,
+  RtcSessionReadiness,
+  RtcSessionReadinessSummary,
+  RtcStartSessionResult,
+} from '../contracts/rtc-session'
+export type {
+  RtcSessionMode,
+  RtcExecutionBackend,
+  RtcSurface,
+  RtcSessionStrategy,
+  RtcCapabilityId,
+  RtcScene,
+  RtcDeviceContext,
+  RtcSessionIntentInput,
+  RtcResolvedSessionIntent,
+  RtcSessionReadiness,
+  RtcSessionReadinessSummary,
+  RtcStartSessionResult,
+} from '../contracts/rtc-session'
 
 export interface RtcControlPlaneStatus {
   executionBackendStatus: Record<RtcExecutionBackend, RtcExecutionBackendStatus>
@@ -104,71 +61,17 @@ export interface RtcExecutionBackendStatus {
   missingEnv: string[]
 }
 
-export interface LiveKitTransportRuntime {
-  provider: 'livekit'
-  serverUrl: string
-  roomName: string
-  participantIdentity: string
-  participantName: string
-  participantToken: string
-  participantMetadata: string
-  participantAttributes: Record<string, string>
-  agentDispatch: {
-    agentName: string
-  } | null
-}
-
-export type RtcTransportRuntime = LiveKitTransportRuntime
-
 export interface StartRtcSessionInput {
   requestId?: string
   channelName?: string
-  graphName?: string
   executionBackend?: RtcExecutionBackend
   mode?: RtcSessionMode
   intent?: RtcSessionIntentInput
   userUid?: number
   authenticatedUserId?: string | null
   asrAccountId?: string | null
-  botUid?: number
   timeoutSeconds?: number
-  properties?: RtcPropertyOverrides
   browserOrigin?: string | null
-}
-
-export interface StopRtcSessionInput {
-  requestId?: string
-  channelName: string
-}
-
-export interface PingRtcSessionInput {
-  requestId?: string
-  channelName: string
-}
-
-export interface RtcStartSessionResult {
-  requestId: string
-  channelName: string
-  graphName: string
-  executionBackend: RtcExecutionBackend
-  userUid: number
-  botUid: number
-  appId: string
-  token: string
-  rtmUserId: string
-  rtmChannelName: string
-  rtmToken: string
-  timeoutSeconds: number
-  controlServerUrl: string
-  transport: RtcTransportRuntime
-  intent: RtcResolvedSessionIntent
-  readiness: RtcSessionReadiness
-}
-
-interface GraphSummary {
-  name: string
-  graph_id: string
-  auto_start: boolean
 }
 
 const SUPPORTED_SURFACES: RtcSurface[] = [
@@ -176,7 +79,6 @@ const SUPPORTED_SURFACES: RtcSurface[] = [
   'communication_workspace',
   'training_workspace',
   'memory_workspace',
-  'pwa_quick_talk',
   'mobile_workbench',
   'desktop_companion',
 ]
@@ -213,8 +115,6 @@ export class RtcOrchestrationService {
   private readonly liveKitConfig = new LiveKitConfigService()
   private readonly liveKitSessionService = new LiveKitSessionService()
   private readonly supabaseService = createSupabaseService()
-  private readonly defaultGraph =
-    (process.env.RTC_DEFAULT_GRAPH || 'voxflame_livekit_agent').trim()
   private readonly defaultTimeoutSeconds = this.parseTimeout(
     process.env.RTC_DEFAULT_TIMEOUT,
     120,
@@ -222,19 +122,6 @@ export class RtcOrchestrationService {
 
   public isConfigured(): boolean {
     return this.liveKitConfig.getStatus().configured
-  }
-
-  public getControlServerUrl(): string {
-    const status = this.liveKitConfig.getStatus()
-    return status.browserUrl ?? status.serverUrl ?? ''
-  }
-
-  public getDefaultGraph(): string {
-    return this.defaultGraph
-  }
-
-  public getDefaultTimeoutSeconds(): number {
-    return this.defaultTimeoutSeconds
   }
 
   public getControlPlaneStatus(): RtcControlPlaneStatus {
@@ -258,15 +145,11 @@ export class RtcOrchestrationService {
     }
   }
 
-  public async listGraphs(): Promise<GraphSummary[]> {
-    return []
-  }
-
   public async startSession(
     input: StartRtcSessionInput,
   ): Promise<RtcStartSessionResult> {
     const intent = resolveSessionIntent(input)
-    const readiness = buildSessionReadiness(intent)
+    const readiness = buildSessionReadiness(intent, input.intent?.sessionStrategy)
 
     if (readiness.blockers.length > 0) {
       throw new RtcOrchestrationError(readiness.blockers[0], 400)
@@ -276,9 +159,7 @@ export class RtcOrchestrationService {
     const channelName = sanitizeChannelName(
       input.channelName?.trim() || buildChannelName(intent.mode),
     )
-    const graphName = input.graphName?.trim() || this.defaultGraph
     const userUid = normalizeUid(input.userUid) ?? generateRtcUid()
-    const botUid = normalizeUid(input.botUid) ?? generateRtcUid(userUid)
     const timeoutSeconds =
       normalizePositiveInt(input.timeoutSeconds) ?? this.defaultTimeoutSeconds
 
@@ -313,17 +194,8 @@ export class RtcOrchestrationService {
     return {
       requestId,
       channelName,
-      graphName,
       executionBackend: 'livekit',
-      userUid,
-      botUid,
-      appId: '',
-      token: liveKitSession.participantToken,
-      rtmUserId: liveKitSession.participantIdentity,
-      rtmChannelName: liveKitSession.roomName,
-      rtmToken: liveKitSession.participantToken,
-      timeoutSeconds,
-      controlServerUrl: browserServerUrl,
+      joinTokenTtlSeconds: timeoutSeconds,
       transport: {
         provider: 'livekit',
         serverUrl: browserServerUrl,
@@ -342,17 +214,9 @@ export class RtcOrchestrationService {
     }
   }
 
-  public async stopSession(_input: StopRtcSessionInput): Promise<void> {
-    return
-  }
-
-  public async pingSession(_input: PingRtcSessionInput): Promise<void> {
-    return
-  }
-
   private parseTimeout(value: string | undefined, fallback: number): number {
-    const parsed = Number.parseInt(value || '', 10)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+    const parsed = Number(value)
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback
   }
 
   private assertLiveKitCanStart(): ReturnType<LiveKitConfigService['getStatus']> {
@@ -521,14 +385,8 @@ function normalizePositiveInt(value: number | undefined): number | null {
   return value
 }
 
-function generateRtcUid(existingUid?: number): number {
-  let candidate = 0
-
-  do {
-    candidate = 100000 + Math.floor(Math.random() * 800000)
-  } while (candidate === existingUid)
-
-  return candidate
+function generateRtcUid(): number {
+  return 100000 + Math.floor(Math.random() * 800000)
 }
 
 function buildChannelName(mode: RtcSessionMode | undefined): string {
@@ -611,10 +469,6 @@ function dedupeStrings(values: string[]): string[] {
   )
 }
 
-function normalizeOptionalUrl(value: string | undefined): string | null {
-  const trimmed = value?.trim()
-  return trimmed ? trimmed : null
-}
 
 function createSupabaseService(): SupabaseService | null {
   try {
@@ -672,7 +526,7 @@ function resolveSurface(
   }
 
   if (mode === 'quick_talk') {
-    return 'pwa_quick_talk'
+    return 'home_main'
   }
 
   return 'communication_workspace'
@@ -682,30 +536,21 @@ function resolveRequestedCapabilities(
   mode: RtcSessionMode,
   requestedCapabilities: RtcCapabilityId[] | undefined,
 ): RtcCapabilityId[] {
-  if (!requestedCapabilities || requestedCapabilities.length === 0) {
+  if (requestedCapabilities === undefined) {
     return [...MODE_CAPABILITY_MATRIX[mode]]
   }
 
-  const deduped = new Set<RtcCapabilityId>()
-  for (const capability of requestedCapabilities) {
-    if (MODE_CAPABILITY_MATRIX[mode].includes(capability)) {
-      deduped.add(capability)
-    }
-  }
-
-  return [...deduped]
+  return [...new Set(requestedCapabilities)]
 }
 
 function buildSessionReadiness(
   intent: RtcResolvedSessionIntent,
+  strategy?: RtcSessionStrategy,
 ): RtcSessionReadiness {
   const blockers: string[] = []
   const warnings: string[] = []
   const microphoneRequired = intent.mode === 'training'
-  const requestedStrategy =
-    intent.mode === 'quick_talk'
-      ? 'light_voice'
-      : 'heavy_realtime'
+  const requestedStrategy = strategy ?? (intent.mode === 'quick_talk' ? 'light_voice' : 'heavy_realtime')
   const resolvedStrategy = intent.sessionStrategy
   const recommendedStrategy = requestedStrategy
 

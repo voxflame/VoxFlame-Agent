@@ -15,6 +15,7 @@ declare global {
         id: string
         email: string
         role?: string
+        userMetadata: Record<string, unknown>
       }
     }
   }
@@ -77,6 +78,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
       id: user.id,
       email: user.email || '',
       role: user.user_metadata?.role,
+      userMetadata: user.user_metadata ?? {},
     }
 
     if (!ensuredUserProfileIds.has(user.id)) {

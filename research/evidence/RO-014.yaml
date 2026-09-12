@@ -1,0 +1,91 @@
+research_id: RO-014
+status: experiment_ready
+evidence_class: engineering
+claim: 单 Agent Worker 的按房间独立 Job 与每路外部语音服务连接可能成为并发瓶颈；必须通过真实 RTC 阶梯压测确定容量。
+sources:
+  - source_id: livekit-agents-server-options
+    url: https://docs.livekit.io/agents/server/options
+    evidence_level: primary
+    accessed_at: 2026-08-29
+    published_or_version: LiveKit Agents current docs
+    supports: load_threshold, custom load and prewarm
+    limitations: framework guidance, not this host capacity
+  - source_id: livekit-self-hosting
+    url: https://docs.livekit.io/transport/self-hosting/
+    evidence_level: primary
+    accessed_at: 2026-08-29
+    published_or_version: current docs
+    supports: self-hosted SFU scaling boundary
+    limitations: room participant reference is not AI session capacity
+  - source_id: livekit-cli-load-test
+    url: https://github.com/livekit/livekit-cli
+    evidence_level: primary
+    accessed_at: 2026-08-29
+    published_or_version: current README
+    supports: reproducible audio publisher load generation
+    limitations: does not exercise ASR/TTS/LLM semantics
+independent_review:
+  required: true
+  reviewer: pending external/platform review
+  relationship_to_author: independent review required before expansion
+  completed_at: pending
+  result: pending
+authority_gate:
+  status: pending
+  release_or_expansion: internal_only
+  claim_scope: current 4-vCPU single-host deployment and 5–50 RTC sessions
+  authority_sources:
+    - source_id: livekit-agents-server-options
+      url: https://docs.livekit.io/agents/server/options
+      tier: primary
+      independence_basis: LiveKit official docs
+      supports: worker admission controls
+      limitations: not an SLA
+    - source_id: livekit-cli-load-test
+      url: https://github.com/livekit/livekit-cli
+      tier: primary
+      independence_basis: official open-source load tester
+      supports: media load method
+      limitations: no external provider load
+  independent_review:
+    reviewer: pending
+    institution_or_scope: RTC/ASR capacity review
+    conflict_of_interest: implementation owner is test operator
+    result: pending
+    reviewed_at: pending
+  counterevidence_recorded: true
+  population_device_scenario_bounds_recorded: true
+  failure_conditions: OOM, reject >1%, ASR P95 >2s, TTS first byte P95 >1.5s, packet loss >1%, sustained 429
+  rollback_or_withdrawal: stop ramp, restore small traffic and prior worker limits
+  recheck_date: 2026-09-12
+reproducibility:
+  code_or_protocol: lk load-test plus VoxFlame synthetic RTC client and fixed provider fixtures
+  data_version_and_license: synthetic audio; no user recordings
+  commit_or_release: working tree 2026-08-29
+  run_command: staged 5,10,20,50 RTC load test
+  seed_or_determinism: fixed sample order and ramp rate
+  raw_artifacts: pending experiment bundle
+uncertainty_and_counterevidence:
+  uncertainty: ASR 127.0.0.1:8001 provider and external quotas unconfirmed; no true RTC load result
+  counterevidence: HTTP health tests pass but are not RTC evidence
+  out_of_scope: 1000-session production promise
+outcome_gates:
+  scholarly: not_applicable
+  patent: not_applicable
+  software_copyright: not_applicable
+  product: pending
+
+repair_validation_2026_09_10:
+  report: research/voice-agent/RO-014-voice-pipeline-repair-2026-09-10.md
+  feedback_ref: FB-008
+  status: validating
+  scope: isolated implementation and synthetic tests only; not deployed
+  baseline: 90 agent tests; stale audio recaptured after source clear reproduced
+  result: 118 agent tests passed; no real device or live provider inference
+  next_review_date: 2026-09-12
+  limitations: endpoint AEC, actual playout tail, RTC load and user speech accuracy unverified
+
+benchmark_runs:
+  - research/voice-agent/RO-014-benchmark-local-2026-09-10.json
+benchmark_protocol: research/voice-agent/VOICE_AGENT_BENCHMARK_PROTOCOL.md
+benchmark_sources: research/voice-agent/VOICE_BENCHMARK_SOURCES_2026-09-10.json

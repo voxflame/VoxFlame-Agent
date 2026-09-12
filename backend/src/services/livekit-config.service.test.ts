@@ -1,3 +1,4 @@
+import { parseRtcStartSessionResult } from '../contracts/rtc-session'
 import assert from 'node:assert/strict'
 import { TokenVerifier } from 'livekit-server-sdk'
 import {
@@ -81,6 +82,27 @@ async function runLiveKitConfigTests(): Promise<void> {
       email: 'member@example.com',
     }),
     'new-stable-user-id',
+  )
+  assert.equal(
+    resolveAsrAccountId({
+      userId: 'phone-account-user-id',
+      email: '13818790456@example.com',
+    }),
+    'phone-account-user-id',
+  )
+  assert.equal(
+    resolveAsrAccountId({
+      userId: 'mixed-qq-user-id',
+      email: 'vox2307294809@qq.com',
+    }),
+    'mixed-qq-user-id',
+  )
+  assert.equal(
+    resolveAsrAccountId({
+      userId: '  stable-trimmed-user-id  ',
+      email: null,
+    }),
+    'stable-trimmed-user-id',
   )
   assert.equal(
     deriveRtcBrowserWebSocketUrl('ws://localhost:7880', 'http://localhost:3000'),
@@ -242,9 +264,15 @@ async function runLiveKitConfigTests(): Promise<void> {
   assert.equal(session.participantAttributes['vox.mode'], 'communication')
   assert.equal(session.agentDispatch?.agentName, 'voxflame-agent')
   assert.equal(JSON.parse(session.participantMetadata).asr_account_id, undefined)
+  assert.equal(JSON.parse(session.participantMetadata).authenticated_user_id, undefined)
+  assert.equal(session.participantAttributes['vox.authenticated_user_id'], undefined)
   assert.equal(
     JSON.parse(session.agentDispatch?.metadata ?? '{}').asr_account_id,
     '2307294809',
+  )
+  assert.equal(
+    JSON.parse(session.agentDispatch?.metadata ?? '{}').authenticated_user_id,
+    '64758dee-5026-4b53-a063-1d02d0834f67',
   )
 
   const verifier = new TokenVerifier('test_api_key', 'test_api_secret')
@@ -292,6 +320,11 @@ async function runLiveKitConfigTests(): Promise<void> {
           },
         })
 
+        assert.deepEqual(parseRtcStartSessionResult(JSON.parse(JSON.stringify(result))), result)
+        assert.equal(result.intent.scene, null)
+        for (const field of ['graphName', 'appId', 'token', 'rtmToken', 'rtmUserId', 'rtmChannelName', 'botUid', 'userUid', 'timeoutSeconds', 'controlServerUrl']) {
+          assert.equal(Object.prototype.hasOwnProperty.call(result, field), false, field)
+        }
         assert.equal(result.executionBackend, 'livekit')
         assert.equal(result.transport.agentDispatch?.agentName, 'voxflame-agent')
         assert.equal(

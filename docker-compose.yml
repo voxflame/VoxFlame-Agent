@@ -2,9 +2,15 @@
 x-npm-args: &npm-args
   npm_config_registry: https://registry.npmmirror.com
 
+x-runtime-logging: &runtime-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   livekit-server:
-    image: ${LIVEKIT_SERVER_IMAGE:-docker.m.daocloud.io/livekit/livekit-server:v1.10.1}
+    image: ${LIVEKIT_SERVER_IMAGE:-docker.m.daocloud.io/livekit/livekit-server:v1.13.6}
     container_name: voxflame-livekit-server
     network_mode: host
     environment:
@@ -24,6 +30,10 @@ services:
       - ./infra/livekit/start-livekit.sh:/etc/livekit/start-livekit.sh:ro
       - caddy_data:/var/lib/caddy:ro
     restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 64m
+    pids_limit: 128
+    logging: *runtime-logging
 
   frontend:
     image: voxflame-agent-frontend:latest
@@ -43,7 +53,6 @@ services:
         NEXT_PUBLIC_IOS_APP_DOWNLOAD_URL: ${NEXT_PUBLIC_IOS_APP_DOWNLOAD_URL:-}
         BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://backend:3001}
         VOXFLAME_PUBLIC_BASE_URL: ${VOXFLAME_PUBLIC_BASE_URL:-https://voxember.com}
-        VOXFLAME_ENABLE_PWA: ${VOXFLAME_ENABLE_PWA:-1}
         <<: *npm-args
     container_name: voxflame-frontend
     ports:
@@ -52,7 +61,6 @@ services:
       - NODE_ENV=production
       - BACKEND_INTERNAL_URL=http://backend:3001
       - VOXFLAME_PUBLIC_BASE_URL=${VOXFLAME_PUBLIC_BASE_URL:-https://voxember.com}
-      - VOXFLAME_ENABLE_PWA=${VOXFLAME_ENABLE_PWA:-1}
       - NEXT_PUBLIC_RTC_EXECUTION_BACKEND=${NEXT_PUBLIC_RTC_EXECUTION_BACKEND:-livekit}
       - LIVEKIT_SIGNAL_PROXY_TARGET=${LIVEKIT_SIGNAL_PROXY_TARGET:-http://host.docker.internal:7880}
       - npm_config_registry=https://registry.npmmirror.com
@@ -60,8 +68,6 @@ services:
       - ./logs:/app/logs
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
-      - backend
     healthcheck:
       test: ["CMD-SHELL", "IP=$$(hostname -I | awk '{print $$1}'); node -e \"require('http').get('http://$$IP:3000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)}).on('error', () => process.exit(1))\""]
       interval: 30s
@@ -69,6 +75,65 @@ services:
       retries: 3
       start_period: 10s
     restart: unless-stopped
+    mem_limit: 768m
+    mem_reservation: 128m
+    pids_limit: 256
+    logging: *runtime-logging
+    networks:
+      - voxflame-network
+
+  frontend-collection:
+    profiles:
+      - collection
+    image: voxflame-agent-frontend-collection:latest
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_PHONE_AUTH_ENABLED: ${NEXT_PUBLIC_PHONE_AUTH_ENABLED:-0}
+        NEXT_PUBLIC_API_URL: ${FRONTEND_NEXT_PUBLIC_API_URL:-/api}
+        NEXT_PUBLIC_RTC_EXECUTION_BACKEND: ${NEXT_PUBLIC_RTC_EXECUTION_BACKEND:-livekit}
+        NEXT_PUBLIC_ICP_BEIAN_NUMBER: ${NEXT_PUBLIC_ICP_BEIAN_NUMBER:-沪ICP备2026020229号}
+        NEXT_PUBLIC_ICP_BEIAN_URL: ${NEXT_PUBLIC_ICP_BEIAN_URL:-https://beian.miit.gov.cn/}
+        NEXT_PUBLIC_ICP_BEIAN_COMPANY_NAME: ${NEXT_PUBLIC_ICP_BEIAN_COMPANY_NAME:-上海生声不息科技有限公司}
+        NEXT_PUBLIC_ANDROID_APP_DOWNLOAD_URL: ${NEXT_PUBLIC_VOXFLAME_COLLECTION_ANDROID_APP_DOWNLOAD_URL:-}
+        NEXT_PUBLIC_IOS_APP_DOWNLOAD_URL: ${NEXT_PUBLIC_VOXFLAME_COLLECTION_IOS_APP_DOWNLOAD_URL:-}
+        BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://backend:3001}
+        VOXFLAME_PUBLIC_BASE_URL: ${VOXFLAME_COLLECTION_PUBLIC_BASE_URL:-http://localhost:3002}
+        NEXT_PUBLIC_VOXFLAME_SITE_MODE: collection
+        NEXT_PUBLIC_VOXFLAME_BRAND_NAME: ${NEXT_PUBLIC_VOXFLAME_COLLECTION_BRAND_NAME:-科菲}
+        NEXT_PUBLIC_VOXFLAME_BRAND_ENGLISH_NAME: ${NEXT_PUBLIC_VOXFLAME_COLLECTION_BRAND_ENGLISH_NAME:-}
+        NEXT_PUBLIC_VOXFLAME_BRAND_TAGLINE: ${NEXT_PUBLIC_VOXFLAME_COLLECTION_BRAND_TAGLINE:-让每一种表达，都有被听见的机会}
+        NEXT_PUBLIC_VOXFLAME_BRAND_LOGO_URL: ${NEXT_PUBLIC_VOXFLAME_COLLECTION_BRAND_LOGO_URL:-/brands/kofei.svg}
+        NEXT_PUBLIC_VOXFLAME_BRAND_ACCENT: ${NEXT_PUBLIC_VOXFLAME_COLLECTION_BRAND_ACCENT:-#176B61}
+        <<: *npm-args
+    container_name: voxflame-frontend-collection
+    ports:
+      - "127.0.0.1:3002:3000"
+    environment:
+      - NODE_ENV=production
+      - BACKEND_INTERNAL_URL=http://backend:3001
+      - VOXFLAME_PUBLIC_BASE_URL=${VOXFLAME_COLLECTION_PUBLIC_BASE_URL:-http://localhost:3002}
+      - NEXT_PUBLIC_RTC_EXECUTION_BACKEND=${NEXT_PUBLIC_RTC_EXECUTION_BACKEND:-livekit}
+      - LIVEKIT_SIGNAL_PROXY_TARGET=${LIVEKIT_SIGNAL_PROXY_TARGET:-http://host.docker.internal:7880}
+      - npm_config_registry=https://registry.npmmirror.com
+    volumes:
+      - ./logs/collection:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "IP=$$(hostname -I | awk '{print $$1}'); node -e \"require('http').get('http://$$IP:3000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)}).on('error', () => process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    mem_limit: 768m
+    mem_reservation: 128m
+    pids_limit: 256
+    logging: *runtime-logging
     networks:
       - voxflame-network
 
@@ -89,13 +154,16 @@ services:
       - NODE_ENV=production
       - PORT=3001
       - RTC_ENABLE_LIVEKIT_EXPERIMENT=${RTC_ENABLE_LIVEKIT_EXPERIMENT:-1}
-      - RTC_DEFAULT_GRAPH=voxflame_voice_assistant_rtc_preview
       - RTC_DEFAULT_TIMEOUT=120
       - LIVEKIT_URL=${LIVEKIT_INTERNAL_URL:-ws://host.docker.internal:7880}
       - LIVEKIT_BROWSER_URL=${LIVEKIT_BROWSER_URL:-ws://localhost:3000}
       - VOXFLAME_PUBLIC_BASE_URL=${VOXFLAME_PUBLIC_BASE_URL:-}
       - VOXFLAME_ALLOWED_ORIGINS=${VOXFLAME_ALLOWED_ORIGINS:-https://voxember.com}
+      - VOXFLAME_COLLECTION_PUBLIC_BASE_URL=${VOXFLAME_COLLECTION_PUBLIC_BASE_URL:-}
       - VOXFLAME_JSON_BODY_LIMIT=${VOXFLAME_JSON_BODY_LIMIT:-1mb}
+      - VOXFLAME_UPLOAD_SIGN_MAX_IN_FLIGHT=${VOXFLAME_UPLOAD_SIGN_MAX_IN_FLIGHT:-200}
+      - VOXFLAME_UPLOAD_COMPLETE_MAX_IN_FLIGHT=${VOXFLAME_UPLOAD_COMPLETE_MAX_IN_FLIGHT:-100}
+      - VOXFLAME_QUALITY_REVIEWER_EMAILS=${VOXFLAME_QUALITY_REVIEWER_EMAILS:-}
       - VOXFLAME_WEBHOOK_CONVERSATION_ENABLED=${VOXFLAME_WEBHOOK_CONVERSATION_ENABLED:-0}
       - VOXFLAME_WEBHOOK_CONVERSATION_SECRET=${VOXFLAME_WEBHOOK_CONVERSATION_SECRET:-}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
@@ -120,6 +188,10 @@ services:
       timeout: 10s
       retries: 3
     restart: unless-stopped
+    mem_limit: 768m
+    mem_reservation: 128m
+    pids_limit: 256
+    logging: *runtime-logging
     networks:
       - voxflame-network
 
@@ -151,14 +223,45 @@ services:
       - all_proxy=
       - NO_PROXY=127.0.0.1,localhost,livekit-server
       - no_proxy=127.0.0.1,localhost,livekit-server
-      - DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+      # Shared Compose provider settings; do not pin the agent to another account/region.
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
+      - DASHSCOPE_BASE_URL=${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      - QWEN_ASR_REALTIME_URL=${QWEN_ASR_REALTIME_URL:-wss://dashscope.aliyuncs.com/api-ws/v1/realtime}
+      - QWEN_TTS_REALTIME_URL=${QWEN_TTS_REALTIME_URL:-wss://dashscope.aliyuncs.com/api-ws/v1/realtime}
       - DASHSCOPE_TIMEOUT_SECONDS=15
       - QWEN_HTTP_ASR_URL=${QWEN_HTTP_ASR_URL:-http://127.0.0.1:8001/transcribe}
       - QWEN_HTTP_ASR_LANGUAGE=${QWEN_HTTP_ASR_LANGUAGE:-Chinese}
-      - QWEN_HTTP_ASR_TIMEOUT_SECONDS=${QWEN_HTTP_ASR_TIMEOUT_SECONDS:-30}
+      - QWEN_HTTP_ASR_TIMEOUT_SECONDS=${QWEN_HTTP_ASR_TIMEOUT_SECONDS:-5}
+      - VOXFLAME_AGENT_LOAD_THRESHOLD=${VOXFLAME_AGENT_LOAD_THRESHOLD:-0.7}
+      - VOXFLAME_AGENT_MAX_ACTIVE_JOBS=${VOXFLAME_AGENT_MAX_ACTIVE_JOBS:-8}
+      - VOXFLAME_AGENT_MEMORY_PRESSURE_PERCENT=${VOXFLAME_AGENT_MEMORY_PRESSURE_PERCENT:-85}
+      - VOXFLAME_AGENT_DRAIN_TIMEOUT_SECONDS=${VOXFLAME_AGENT_DRAIN_TIMEOUT_SECONDS:-1800}
+      - VOXFLAME_AGENT_IDLE_PROCESSES=${VOXFLAME_AGENT_IDLE_PROCESSES:-2}
+      - VOXFLAME_AGENT_JOB_MEMORY_WARN_MB=${VOXFLAME_AGENT_JOB_MEMORY_WARN_MB:-450}
+      - VOXFLAME_AGENT_JOB_MEMORY_LIMIT_MB=${VOXFLAME_AGENT_JOB_MEMORY_LIMIT_MB:-700}
+      - VOXFLAME_PROVIDER_CAPACITY_DIRECTORY=${VOXFLAME_PROVIDER_CAPACITY_DIRECTORY:-/tmp/voxflame-provider-capacity}
+      - VOXFLAME_PROVIDER_ASR_MAX_CONCURRENCY=${VOXFLAME_PROVIDER_ASR_MAX_CONCURRENCY:-4}
+      - VOXFLAME_PROVIDER_ASR_WAIT_TIMEOUT_SECONDS=${VOXFLAME_PROVIDER_ASR_WAIT_TIMEOUT_SECONDS:-0.25}
+      - VOXFLAME_PROVIDER_ASR_FALLBACK_MAX_CONCURRENCY=${VOXFLAME_PROVIDER_ASR_FALLBACK_MAX_CONCURRENCY:-4}
+      - VOXFLAME_PROVIDER_ASR_FALLBACK_WAIT_TIMEOUT_SECONDS=${VOXFLAME_PROVIDER_ASR_FALLBACK_WAIT_TIMEOUT_SECONDS:-0.25}
+      - VOXFLAME_PROVIDER_LLM_MAX_CONCURRENCY=${VOXFLAME_PROVIDER_LLM_MAX_CONCURRENCY:-8}
+      - VOXFLAME_PROVIDER_LLM_WAIT_TIMEOUT_SECONDS=${VOXFLAME_PROVIDER_LLM_WAIT_TIMEOUT_SECONDS:-0.25}
+      - VOXFLAME_PROVIDER_TTS_MAX_CONCURRENCY=${VOXFLAME_PROVIDER_TTS_MAX_CONCURRENCY:-3}
+      - VOXFLAME_PROVIDER_TTS_WAIT_TIMEOUT_SECONDS=${VOXFLAME_PROVIDER_TTS_WAIT_TIMEOUT_SECONDS:-3}
     depends_on:
       - livekit-server
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/', timeout=3).read()\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
+    stop_grace_period: 30m
+    mem_limit: 2g
+    mem_reservation: 512m
+    pids_limit: 512
+    logging: *runtime-logging
     network_mode: host
 
   caddy:
@@ -169,6 +272,7 @@ services:
     network_mode: host
     environment:
       - VOXFLAME_PUBLIC_HOST=${VOXFLAME_PUBLIC_HOST:-}
+      - VOXFLAME_COLLECTION_SITE_ADDRESS=${VOXFLAME_COLLECTION_SITE_ADDRESS:-http://127.0.0.1}
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ${VOXFLAME_ANDROID_RELEASE_DIR:-./releases/android}:/srv/releases/android:ro
@@ -176,7 +280,12 @@ services:
       - caddy_config:/config
     depends_on:
       - frontend
+      - backend
     restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 32m
+    pids_limit: 128
+    logging: *runtime-logging
 
   # Qdrant (向量数据库 - 可选)
   qdrant:

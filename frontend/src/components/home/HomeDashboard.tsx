@@ -6,15 +6,17 @@ import {
   AudioLines,
   BookMarked,
   MessageSquareText,
-  Mic,
   Smartphone,
 } from 'lucide-react'
+import { SiteBrandMark } from '@/components/branding/SiteBrandMark'
 import { Button } from '@/components/ui/button'
 import { IcpBeianFooter } from '@/components/legal/IcpBeianFooter'
 import { buildLoginPath } from '@/lib/auth/navigation'
 import { UserNav } from '@/components/ui/user-nav'
+import type { VoxFlameSiteBrand } from '@/lib/site-branding'
 
 interface HomeDashboardProps {
+  brand: VoxFlameSiteBrand
   isAuthenticated: boolean
   onStartCommunicate: () => void
   isOpeningCommunicate?: boolean
@@ -104,25 +106,19 @@ function CapabilityCardView({
 }
 
 export default function HomeDashboard({
+  brand,
   isAuthenticated,
   isOpeningCommunicate = false,
   onStartCommunicate,
 }: HomeDashboardProps) {
   const practiceHref = isAuthenticated ? '/practice' : buildLoginPath('/practice')
+  const contributeHref = isAuthenticated ? '/contribute' : buildLoginPath('/contribute')
 
   return (
     <div className="flex min-h-dvh flex-col overflow-x-hidden bg-[#f5f1ea] text-stone-950">
       <header className="sticky top-0 z-30 border-b border-stone-200 bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 sm:px-8">
-          <Link className="flex min-h-11 items-center gap-3" href="/" aria-label="燃言首页">
-            <div className="flex size-11 items-center justify-center rounded-2xl bg-stone-950 text-white">
-              <Mic className="size-5" aria-hidden="true" />
-            </div>
-            <div>
-              <div className="text-sm font-semibold text-orange-700">VoxFlame</div>
-              <div className="text-base font-semibold text-stone-950">燃言</div>
-            </div>
-          </Link>
+          <SiteBrandMark brand={brand} />
 
           <div className="flex items-center gap-2 sm:gap-3">
               <Button
@@ -150,31 +146,50 @@ export default function HomeDashboard({
         <section className="px-5 pb-10 pt-10 sm:px-8 sm:pb-16 sm:pt-20">
           <div className="mx-auto max-w-7xl">
             <div className="max-w-3xl">
-              <p className="text-sm font-semibold text-orange-700">让系统理解你真正想说的话</p>
+              <p className="text-sm font-semibold" style={{ color: brand.accentColor }}>
+                {brand.isCollectionSite ? '真实声音数据共建' : '让系统理解你真正想说的话'}
+              </p>
               <h1 className="mt-3 text-balance text-4xl font-semibold leading-tight text-stone-950 sm:mt-4 sm:text-5xl">
-                先把重要的话，说出去。
+                {brand.isCollectionSite ? brand.tagline : '先把重要的话，说出去。'}
               </h1>
               <p className="mt-5 max-w-2xl text-pretty text-base leading-8 text-stone-600 sm:text-lg">
-                沟通、练习和准备在同一条路上。你始终可以打断、改写和重新开始。
+                {brand.isCollectionSite
+                  ? '按题面用你平时的方式说。方言可以与普通话录同一句，也可以随时跳过；沟通、练习和准备功能仍然保留。'
+                  : '沟通、练习和准备在同一条路上。你始终可以打断、改写和重新开始。'}
               </p>
 
               <div className="mt-7 grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
-                <Button
-                  className="h-12 rounded-xl bg-stone-950 px-4 text-sm font-semibold text-white hover:bg-stone-800 sm:px-6"
-                  onClick={() => onStartCommunicate()}
-                  disabled={isOpeningCommunicate}
-                  type="button"
-                >
-                  {isOpeningCommunicate ? '正在确认登录状态…' : '现在开始沟通'}
-                  <ArrowRight className="size-4" aria-hidden="true" />
-                </Button>
+                {brand.isCollectionSite ? (
+                  <Button
+                    asChild
+                    className="h-12 rounded-xl px-4 text-sm font-semibold text-white hover:opacity-90 sm:px-6"
+                    style={{ backgroundColor: brand.accentColor }}
+                  >
+                    <Link href={contributeHref}>
+                      开始录音
+                      <ArrowRight className="size-4" aria-hidden="true" />
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button
+                    className="h-12 rounded-xl bg-stone-950 px-4 text-sm font-semibold text-white hover:bg-stone-800 sm:px-6"
+                    onClick={() => onStartCommunicate()}
+                    disabled={isOpeningCommunicate}
+                    type="button"
+                  >
+                    {isOpeningCommunicate ? '正在确认登录状态…' : '现在开始沟通'}
+                    <ArrowRight className="size-4" aria-hidden="true" />
+                  </Button>
+                )}
                 <Button
                   asChild
                   className="h-12 rounded-xl border-stone-300 bg-white px-4 text-sm font-semibold text-stone-800 hover:bg-stone-50 sm:px-6"
                   type="button"
                   variant="outline"
                 >
-                  <Link href={practiceHref}>先练一句</Link>
+                  <Link href={brand.isCollectionSite ? '/communicate' : practiceHref}>
+                    {brand.isCollectionSite ? '使用沟通功能' : '先练一句'}
+                  </Link>
                 </Button>
               </div>
             </div>

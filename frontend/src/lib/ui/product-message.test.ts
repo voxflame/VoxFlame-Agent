@@ -30,6 +30,13 @@ test('known permission and network failures use concise copy', () => {
   )
 })
 
+test('SMS provider limits explain the retry window', () => {
+  assert.equal(
+    toProductMessage(new Error('LimitExceeded.PhoneNumberOneHourLimit'), 'phone'),
+    '短信发送次数已达上限，请稍后再试。',
+  )
+})
+
 test('all fallback messages stay brief and hide input', () => {
   const secret = 'internal-provider-code-9384'
   const contexts = [

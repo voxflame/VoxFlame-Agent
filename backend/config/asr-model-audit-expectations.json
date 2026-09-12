@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "personalized_accounts": {
+    "2187054680": "exp29-2187054680-real-short-span-step250",
+    "2307294809": "exp24-2307294809-r784-step84-beam5-rank0",
+    "3083029019": "exp25-3083029019-r392-step403-beam5-rank0"
+  },
+  "fallback_model_version": "exp16l3-lambda025"
+}

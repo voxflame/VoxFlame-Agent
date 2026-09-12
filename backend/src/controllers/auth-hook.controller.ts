@@ -45,7 +45,12 @@ export async function handleSupabaseSendSmsHook(req: Request, res: Response): Pr
         providerCode: error.providerCode,
         requestId: error.requestId,
       })
-      return sendHookError(res, 502, 'SMS provider rejected the request')
+      const limited = error.providerCode.startsWith('LimitExceeded.')
+      return sendHookError(
+        res,
+        limited ? 429 : 502,
+        limited ? 'SMS sending limit reached; please try again later' : 'SMS provider rejected the request',
+      )
     }
 
     console.error('[SmsHook] Unexpected SMS hook failure', {

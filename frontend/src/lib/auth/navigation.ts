@@ -1,4 +1,4 @@
-const DEFAULT_NEXT_PATH = '/'
+const DEFAULT_NEXT_PATH = '/contribute'
 
 const EXACT_PROTECTED_PATHS = new Set([
   '/assessment',

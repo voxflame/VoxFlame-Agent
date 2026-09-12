@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +12,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from asr_runtime import (
+    ServerEventHandler,
     LiveKitASRRuntime,
     QwenHttpASRClient,
     RMSVoiceActivityDetector,
@@ -18,6 +20,7 @@ from asr_runtime import (
     build_livekit_audio_apm_options,
     extract_http_asr_transcript,
     frame_to_pcm_bytes,
+    get_authenticated_user_id,
     get_asr_account_id,
     pcm_bytes_to_wav_bytes,
     should_use_qwen_http_asr,
@@ -28,6 +31,7 @@ from asr_runtime import (
     should_enable_livekit_audio_apm,
     with_model_query,
 )
+from capacity import ProcessSlotPool, ProviderCapacityExceeded
 from config import LiveKitAgentConfig
 
 
@@ -63,7 +67,6 @@ def create_config() -> LiveKitAgentConfig:
         livekit_audio_apm_auto_gain_control=False,
         dashscope_asr_vad_threshold=0.032,
         dashscope_asr_vad_silence_duration_ms=860,
-        dashscope_asr_vad_hop_size_ms=16,
         dashscope_asr_barge_in_min_speech_ms=360,
         dashscope_asr_min_commit_speech_ms=420,
         dashscope_tts_url="wss://dashscope.aliyuncs.com/api-ws/v1/realtime",
@@ -112,6 +115,8 @@ class FakeASRClient:
 
 class FakeFallbackASRClient:
     def __init__(self) -> None:
+        self.handler: ServerEventHandler | None = None
+        self.stopped = False
         self.started_payloads: list[dict[str, object]] = []
         self.appended_audio: list[bytes] = []
         self.commit_calls = 0
@@ -125,12 +130,13 @@ class FakeFallbackASRClient:
 
     async def commit_audio(self) -> None:
         self.commit_calls += 1
+        await self.handler({"type": "conversation.item.input_audio_transcription.completed", "transcript": "备用识别结果"})
 
     async def clear_audio(self) -> None:
         self.clear_calls += 1
 
     async def stop(self) -> None:
-        return
+        self.stopped = True
 
 
 class FakeHttpResponse:
@@ -153,7 +159,7 @@ class FakeHttpClient:
     response_payload: dict[str, object] = {}
     requests: list[dict[str, object]] = []
 
-    def __init__(self, *, timeout: float) -> None:
+    def __init__(self, *, timeout: float, trust_env: bool = False) -> None:
         self.timeout = timeout
 
     async def post(self, url: str, **kwargs: object) -> FakeHttpResponse:
@@ -192,8 +198,11 @@ class TestASRRuntime(unittest.TestCase):
             (),
             {
                 "mode": "communication",
-                "participant_payload": {"authenticated_user_id": "64758dee-5026-4b53-a063-1d02d0834f67"},
-                "dispatch_payload": {},
+                "participant_payload": {},
+                "dispatch_payload": {
+                    "authenticated_user_id": "64758dee-5026-4b53-a063-1d02d0834f67",
+                    "asr_account_id": "2307294809",
+                },
                 "raw_attributes": {},
             },
         )()
@@ -202,11 +211,11 @@ class TestASRRuntime(unittest.TestCase):
             (),
             {
                 "mode": "communication",
-                "participant_payload": {
+                "participant_payload": {},
+                "dispatch_payload": {
                     "authenticated_user_id": "other-user",
                     "asr_account_id": "other-user",
                 },
-                "dispatch_payload": {},
                 "raw_attributes": {},
             },
         )()
@@ -215,8 +224,11 @@ class TestASRRuntime(unittest.TestCase):
             (),
             {
                 "mode": "training",
-                "participant_payload": {"authenticated_user_id": "64758dee-5026-4b53-a063-1d02d0834f67"},
-                "dispatch_payload": {},
+                "participant_payload": {},
+                "dispatch_payload": {
+                    "authenticated_user_id": "64758dee-5026-4b53-a063-1d02d0834f67",
+                    "asr_account_id": "2307294809",
+                },
                 "raw_attributes": {},
             },
         )()
@@ -225,8 +237,11 @@ class TestASRRuntime(unittest.TestCase):
             (),
             {
                 "mode": "quick_talk",
-                "participant_payload": {"authenticated_user_id": "64758dee-5026-4b53-a063-1d02d0834f67"},
-                "dispatch_payload": {},
+                "participant_payload": {},
+                "dispatch_payload": {
+                    "authenticated_user_id": "64758dee-5026-4b53-a063-1d02d0834f67",
+                    "asr_account_id": "2307294809",
+                },
                 "raw_attributes": {},
             },
         )()
@@ -247,31 +262,45 @@ class TestASRRuntime(unittest.TestCase):
         self.assertFalse(should_use_qwen_http_asr(config, quick_talk_ctx))
         self.assertFalse(should_use_qwen_http_asr(config, anonymous_ctx))
 
-    def test_get_asr_account_id_prefers_gateway_key_and_falls_back_to_authenticated_id(self) -> None:
+    def test_get_asr_account_id_accepts_only_backend_dispatch_metadata(self) -> None:
         routed_ctx = type(
+            "Ctx",
+            (),
+            {
+                "participant_payload": {},
+                "dispatch_payload": {
+                    "authenticated_user_id": "supabase-user-id",
+                    "asr_account_id": "2307294809",
+                },
+                "raw_attributes": {},
+            },
+        )()
+        participant_compat_ctx = type(
             "Ctx",
             (),
             {
                 "participant_payload": {
                     "authenticated_user_id": "supabase-user-id",
-                    "asr_account_id": "2307294809",
+                    "asr_account_id": "2187054680",
                 },
                 "dispatch_payload": {},
-                "raw_attributes": {},
+                "raw_attributes": {"vox.asr_account_id": "3083029019"},
             },
         )()
-        fallback_ctx = type(
+        missing_route_ctx = type(
             "Ctx",
             (),
             {
-                "participant_payload": {"authenticated_user_id": "supabase-user-id"},
-                "dispatch_payload": {},
+                "participant_payload": {},
+                "dispatch_payload": {"authenticated_user_id": "supabase-user-id"},
                 "raw_attributes": {},
             },
         )()
 
         self.assertEqual(get_asr_account_id(routed_ctx), "2307294809")
-        self.assertEqual(get_asr_account_id(fallback_ctx), "supabase-user-id")
+        self.assertIsNone(get_asr_account_id(participant_compat_ctx))
+        self.assertIsNone(get_authenticated_user_id(participant_compat_ctx))
+        self.assertIsNone(get_asr_account_id(missing_route_ctx))
 
     def test_pcm_bytes_to_wav_bytes_writes_standard_wav_header(self) -> None:
         wav_bytes = pcm_bytes_to_wav_bytes(b"\x01\x00" * 160, sample_rate=16000)
@@ -365,6 +394,41 @@ class TestASRRuntime(unittest.TestCase):
         self.assertEqual(request["data"], {"language": "Chinese"})
         self.assertIn("audio", request["files"])
 
+    def test_qwen_http_asr_client_respects_process_capacity(self) -> None:
+        async def handle_event(_payload: dict[str, object]) -> None:
+            return
+
+        with tempfile.TemporaryDirectory() as lock_directory:
+            pool = ProcessSlotPool(
+                provider="asr",
+                slots=1,
+                wait_timeout_seconds=0,
+                lock_directory=lock_directory,
+            )
+            client = QwenHttpASRClient(
+                url="http://127.0.0.1:8001/transcribe",
+                account_id="2307294809",
+                language="Chinese",
+                sample_rate=16000,
+                request_timeout_seconds=3,
+                event_handler=handle_event,
+                capacity_pool=pool,
+            )
+
+            async def run() -> None:
+                held_lease = await pool.acquire()
+                try:
+                    with patch.dict(
+                        sys.modules,
+                        {"httpx": SimpleNamespace(AsyncClient=FakeHttpClient)},
+                    ):
+                        with self.assertRaises(ProviderCapacityExceeded):
+                            await client._transcribe(b"\x01\x00" * 160)
+                finally:
+                    held_lease.release()
+
+            asyncio.run(run())
+
     def test_qwen_http_asr_client_rejects_response_for_another_account(self) -> None:
         async def handle_event(_payload: dict[str, object]) -> None:
             return
@@ -449,6 +513,10 @@ class TestASRRuntime(unittest.TestCase):
         events: list[dict[str, object]] = []
         fallback = FakeFallbackASRClient()
 
+        def factory(handler: ServerEventHandler) -> FakeFallbackASRClient:
+            fallback.handler = handler
+            return fallback
+
         async def handle_event(payload: dict[str, object]) -> None:
             events.append(payload)
 
@@ -459,7 +527,7 @@ class TestASRRuntime(unittest.TestCase):
             sample_rate=16000,
             request_timeout_seconds=3,
             event_handler=handle_event,
-            fallback_client=fallback,  # type: ignore[arg-type]
+            fallback_factory=factory,
         )
 
         async def fake_transcribe(_pcm_bytes: bytes) -> tuple[str, dict[str, object]]:
@@ -474,10 +542,94 @@ class TestASRRuntime(unittest.TestCase):
 
         asyncio.run(run_client())
 
-        self.assertTrue(client.fallback_active)
+        self.assertTrue(fallback.stopped)
         self.assertEqual(fallback.commit_calls, 1)
         self.assertEqual(fallback.appended_audio, [b"\x01\x00" * 160])
-        self.assertEqual(events[-1]["type"], "input_audio_buffer.committed")
+        self.assertEqual(events[-1]["provider"], "dashscope_realtime_asr_backup")
+
+    def test_http_asr_capacity_exhaustion_can_use_independent_realtime_fallback(self) -> None:
+        events: list[dict[str, object]] = []
+        fallback = FakeFallbackASRClient()
+
+        def factory(handler: ServerEventHandler) -> FakeFallbackASRClient:
+            fallback.handler = handler
+            return fallback
+
+        async def handle_event(payload: dict[str, object]) -> None:
+            events.append(payload)
+
+        with tempfile.TemporaryDirectory() as lock_directory:
+            primary_pool = ProcessSlotPool(
+                provider="asr",
+                slots=1,
+                wait_timeout_seconds=0,
+                lock_directory=lock_directory,
+            )
+            fallback_pool = ProcessSlotPool(
+                provider="asr-fallback",
+                slots=1,
+                wait_timeout_seconds=0,
+                lock_directory=lock_directory,
+            )
+            client = QwenHttpASRClient(
+                url="http://asr.example/transcribe",
+                account_id="2307294809",
+                language="Chinese",
+                sample_rate=16000,
+                request_timeout_seconds=3,
+                event_handler=handle_event,
+                fallback_factory=factory,
+                capacity_pool=primary_pool,
+            )
+
+            async def run_client() -> None:
+                held_primary = await primary_pool.acquire()
+                try:
+                    await client.start({"sample_rate": 16000})
+                    await client.append_audio(b"\x01\x00" * 160)
+                    with patch.dict(
+                        sys.modules,
+                        {"httpx": SimpleNamespace(AsyncClient=FakeHttpClient)},
+                    ):
+                        await client.commit_audio()
+                    async with fallback_pool.lease():
+                        pass
+                finally:
+                    held_primary.release()
+
+            asyncio.run(run_client())
+
+        self.assertTrue(fallback.stopped)
+        self.assertEqual(fallback.commit_calls, 1)
+        self.assertEqual(fallback.appended_audio, [b"\x01\x00" * 160])
+        self.assertEqual(events[-1]["provider"], "dashscope_realtime_asr_backup")
+
+    def test_runtime_builds_distinct_primary_and_realtime_fallback_capacity_pools(self) -> None:
+        config = create_config()
+        config = type(config)(
+            **{
+                **config.__dict__,
+                "provider_capacity_directory": "/tmp/voxflame-test-asr-pools",
+                "provider_asr_max_concurrency": 4,
+                "provider_asr_fallback_max_concurrency": 6,
+            }
+        )
+        runtime = LiveKitASRRuntime(
+            config=config,
+            ctx=type("Ctx", (), {"room_name": "room", "participant_identity": "user"})(),
+            participant=None,
+            publish_payload=None,
+            on_final_transcript=None,
+        )
+
+        primary = runtime._primary_capacity_pool()
+        fallback = runtime._realtime_fallback_capacity_pool()
+
+        self.assertIsNot(primary, fallback)
+        self.assertEqual(primary.provider, "asr")
+        self.assertEqual(primary.slots, 4)
+        self.assertEqual(fallback.provider, "asr-fallback")
+        self.assertEqual(fallback.slots, 6)
 
     def test_livekit_audio_apm_defaults_are_conservative_for_remote_tracks(self) -> None:
         options = build_livekit_audio_apm_options(create_config())

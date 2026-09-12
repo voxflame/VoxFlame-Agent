@@ -5,7 +5,6 @@ import type {
 } from 'livekit-client'
 import type {
   RtcCapabilityId,
-  RtcExecutionBackend,
   RtcResolvedSessionIntent,
   RtcSessionReadiness,
 } from './session-contract'
@@ -28,40 +27,7 @@ export interface VoiceProfileSyncEvent {
   timestamp: Date
 }
 
-export interface LiveKitTransportRuntime {
-  provider: 'livekit'
-  serverUrl: string
-  roomName: string
-  participantIdentity: string
-  participantName: string
-  participantToken: string
-  participantMetadata: string
-  participantAttributes: Record<string, string>
-  agentDispatch: {
-    agentName: string
-  } | null
-}
-
-export type RtcTransportRuntime = LiveKitTransportRuntime
-
-export interface StartRtcSessionResponse {
-  requestId: string
-  channelName: string
-  graphName: string
-  executionBackend: RtcExecutionBackend
-  userUid: number
-  botUid: number
-  appId: string
-  token: string
-  rtmUserId: string
-  rtmChannelName: string
-  rtmToken: string
-  timeoutSeconds: number
-  controlServerUrl: string
-  transport: RtcTransportRuntime
-  intent: RtcResolvedSessionIntent
-  readiness: RtcSessionReadiness
-}
+export type { LiveKitTransportRuntime, RtcTransportRuntime, RtcStartSessionResult as StartRtcSessionResponse } from './generated/rtc-session'
 
 export interface RtcMessageEnvelope {
   type?: string
@@ -141,24 +107,9 @@ export interface RtmStatusEvent {
   reason?: string
 }
 
+/** LiveKit room data publishing; connection state belongs to the SDK room. */
 export interface SessionControlClient {
-  login(options?: { token?: string }): Promise<unknown>
-  logout(): Promise<unknown>
-  publish(
-    channelName: string,
-    message: string | Uint8Array,
-    options?: { channelType: 'MESSAGE' | 'STREAM' },
-  ): Promise<unknown>
-  subscribe(channelName: string): Promise<unknown>
-  unsubscribe(channelName: string): Promise<unknown>
-  addEventListener(
-    eventName: 'message' | 'status',
-    listener: ((event: RtmMessageEvent) => void) | ((event: RtmStatusEvent) => void),
-  ): void
-  removeEventListener(
-    eventName: 'message' | 'status',
-    listener: ((event: RtmMessageEvent) => void) | ((event: RtmStatusEvent) => void),
-  ): void
+  publish(channelName: string, message: string | Uint8Array): Promise<void>
 }
 
 export interface SessionMicrophoneTrack {

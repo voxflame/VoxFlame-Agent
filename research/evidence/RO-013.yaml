@@ -1,0 +1,69 @@
+research_id: RO-013
+status: outcome_review
+evidence_class: engineering
+claim: 阈值触发的安全 Docker prune 与日志轮转可降低单机磁盘耗尽风险，同时保护运行资源和回滚路径。
+sources:
+  - source_id: docker-pruning-docs
+    url: https://docs.docker.com/engine/manage-resources/pruning/
+    evidence_level: primary
+    accessed_at: 2026-08-29
+    published_or_version: current docs
+    supports: prune object scope and volume caveat
+    limitations: does not define VoxFlame policy
+  - source_id: local-docker-df-2026-08-29
+    url: internal://docker-system-df
+    evidence_level: primary
+    accessed_at: 2026-08-29
+    published_or_version: Docker 26.1.3 snapshot
+    supports: cache reclaimed and no container reclaimable
+    limitations: one host/time point
+independent_review:
+  required: true
+  reviewer: pending platform operator review
+  relationship_to_author: separate operator
+  completed_at: pending
+  result: pending
+authority_gate:
+  status: pending
+  release_or_expansion: product_default
+  claim_scope: current single production host
+  authority_sources:
+    - source_id: docker-pruning-docs
+      url: https://docs.docker.com/engine/manage-resources/pruning/
+      tier: primary
+      independence_basis: Docker official docs
+      supports: deletion scope
+      limitations: no host-specific safety
+    - source_id: local-docker-df-2026-08-29
+      url: internal://docker-system-df
+      tier: primary
+      independence_basis: host telemetry
+      supports: baseline
+      limitations: not independent of deployment
+  independent_review:
+    reviewer: pending
+    institution_or_scope: platform maintenance review
+    conflict_of_interest: maintainer installed timer
+    result: pending
+    reviewed_at: pending
+  counterevidence_recorded: true
+  population_device_scenario_bounds_recorded: true
+  failure_conditions: protected resource deletion or post-cleanup disk >70%
+  rollback_or_withdrawal: disable timer and restore manual prune-safe
+  recheck_date: 2026-09-05
+reproducibility:
+  code_or_protocol: scripts/docker_disk_maintenance.sh status/prune-safe/auto
+  data_version_and_license: host metadata only
+  commit_or_release: working tree 2026-08-29
+  run_command: bash scripts/docker_disk_maintenance.sh status
+  seed_or_determinism: deterministic threshold policy
+  raw_artifacts: systemd journal and docker system df
+uncertainty_and_counterevidence:
+  uncertainty: long-term growth and named volume usage need observation
+  counterevidence: build cache regrows after rebuild
+  out_of_scope: multi-node orchestration
+outcome_gates:
+  scholarly: not_applicable
+  patent: not_applicable
+  software_copyright: not_applicable
+  product: pending

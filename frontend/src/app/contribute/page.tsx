@@ -1,5 +1,7 @@
 'use client'
 
+import { readDialectProfiles, type DialectProfile } from '@/lib/auth/dialect-profile'
+
 import Link from 'next/link'
 import {
   type ChangeEvent,
@@ -20,15 +22,18 @@ import {
   RotateCcw,
   Sparkles,
   UploadCloud,
+  Volume2,
 } from 'lucide-react'
 import { MicrophoneInputFeedback } from '@/components/runtime/MicrophoneInputFeedback'
+import { SiteBrandMark } from '@/components/branding/SiteBrandMark'
+import { RecordingDurationSummary } from '@/components/recording/RecordingDurationSummary'
 import { useAuth } from '@/hooks/useAuth'
 import { useMandarinTrainingSession } from '@/hooks/useMandarinTrainingSession'
+import { useRecordingProgress } from '@/hooks/useRecordingProgress'
 import { useWorkspaceMemorySnapshot } from '@/hooks/useWorkspaceMemorySnapshot'
 import { type UploadReceipt, useVoiceUpload } from '@/hooks/useVoiceUpload'
 import {
   savePreparedExpressionAsset,
-  saveWorkspaceUserProfileMemory,
 } from '@/lib/memory/workspace-client'
 import {
   LEGAL_CONSENT_VERSION,
@@ -41,6 +46,7 @@ import {
   getExercisesByCategory,
 } from '@/lib/corpus/mandarin-training'
 import { cn } from '@/lib/utils'
+import { getSiteBrand } from '@/lib/site-branding'
 import type {
   VoxFlameConsentScope,
   VoxFlameRecordingEnvelope,
@@ -55,6 +61,7 @@ import {
   type MandarinTrainingFeedback,
   analyzeMandarinAttempt,
 } from '@/lib/training/mandarin-feedback'
+import { mergeCaptureBoundResult } from '@/lib/training/final-transcript'
 import {
   appendUploadedTrainingRecord,
   getUploadedTrainingExerciseIds,
@@ -74,6 +81,15 @@ import {
   assessTrainingSampleQuality,
   type TrainingSampleQuality,
 } from '@/lib/training/training-sample-quality'
+import { getNextExerciseAfterAcceptedRecording } from '@/lib/training/training-attempt-navigation'
+import {
+  buildSpeechVariantMetadata,
+  createUtterancePairId,
+  shouldOfferDialectPair,
+  type DialectCollectionTarget,
+  type TrainingSpeechVariant,
+} from '@/lib/training/dialect-collection'
+import { shouldDisableTrainingRecordingControl } from '@/lib/training/training-recording-control'
 import {
   calculateCharacterEditDistance,
   summarizeAssessmentAttempts,
@@ -81,8 +97,6 @@ import {
 import { buildSpeechPerformanceReport } from '@/lib/training/speech-performance-report'
 import {
   DEFAULT_TRAINING_GUIDANCE_PROFILE,
-  TRAINING_ETIOLOGY_OPTIONS,
-  type TrainingEtiology,
   type TrainingSeverity,
 } from '@/lib/training/training-guidance-profile'
 import { buildTrainingSampleLineage } from '@/lib/training/training-sample-lineage'
@@ -102,39 +116,44 @@ import {
   type PhonologyGroupId,
 } from '@/lib/training/phonology-groups'
 import type { WorkspaceMemorySnapshot } from '@/lib/memory/workspace-snapshot'
+import type { MandarinReadingArticle } from '@/lib/corpus/reading-articles'
+import { shouldBlockTrainingPageForProgress } from '@/lib/training/training-page-loading'
+
+const siteBrand = getSiteBrand()
 
 type AttemptSaveTrigger = 'auto' | 'manual'
 type CollectionFlowStep = 'prepare' | 'record' | 'review'
+type ExerciseStatusFilter = 'unread' | 'read' | 'all'
 
 type PracticeSourceMode = 'prepared_content' | 'sentence_corpus'
 type PracticeExercise = MandarinTrainingExercise | PreparedExpressionPracticeExercise
 
 interface TrainingUploadLabels {
-  etiology?: TrainingEtiology
+  disabilityCategory?: string
+  condition?: string
+  etiology?: string
   severity?: TrainingSeverity
-  ageBand?: string
-  sex?: 'male' | 'female' | 'other' | 'unspecified'
+  hasDialect?: boolean
+  dialectName?: string
+  dialectRegion?: string
 }
-
-const COLLECTION_AGE_BANDS = ['unspecified', '18–39', '40–59', '60–69', '70–79', '80+'] as const
-const COLLECTION_SEX_OPTIONS = [
-  { value: 'unspecified', label: '不愿说明' },
-  { value: 'female', label: '女' },
-  { value: 'male', label: '男' },
-  { value: 'other', label: '其他' },
-] as const
 
 interface PracticeAttempt {
   createdAt: number
   clientCaptureId: string
   exercise: PracticeExercise
   transcript: string
+  transcriptStatus: 'pending' | 'complete'
   transcriptLatencyMs: number
   feedback: MandarinTrainingFeedback
   sampleQuality: TrainingSampleQuality
+  readingAssistanceUsed: boolean
   recording: VoxFlameRecordingEnvelope | null
   uploadStatus: TrainingAttemptUploadStatus
   uploadReceipt: UploadReceipt | null
+  speechVariant: TrainingSpeechVariant
+  utterancePairId?: string
+  dialect?: DialectProfile
 }
 
 interface NoticeState {
@@ -171,7 +190,7 @@ const UPLOAD_STATUS_LABELS: Record<TrainingAttemptUploadStatus, string> = {
   idle: '这条录音还没进入保存流程',
   saving: '正在自动保存',
   uploaded: '已写入训练语料',
-  retrying: '正在后台自动补登',
+  local_only: '已安全保存在本机',
   auth_required: '需要重新登录恢复自动保存',
   failed: '保存失败',
   discarding: '正在撤回收录',
@@ -249,8 +268,13 @@ function buildUploadMetadata(
   transcript: string,
   feedback: MandarinTrainingFeedback,
   sampleQuality: TrainingSampleQuality,
+  readingAssistanceUsed: boolean,
   uploadLabels?: TrainingUploadLabels | null,
   collectionPlanId?: CollectionPlanId,
+  readingArticle?: MandarinReadingArticle | null,
+  readingRoundId?: string | null,
+  speechVariant: TrainingSpeechVariant = 'mandarin',
+  utterancePairId?: string,
 ): Record<string, unknown> {
   const lineage = buildTrainingSampleLineage(exercise, recording)
   const metadata: Record<string, unknown> = {
@@ -278,8 +302,36 @@ function buildUploadMetadata(
     recording_dedupe_key: lineage.recordingDedupeKey,
     consent_version: LEGAL_CONSENT_VERSION,
     collection_plan_id: collectionPlanId,
+    reading_assistance_used: readingAssistanceUsed,
+    ...buildSpeechVariantMetadata({
+      speechVariant,
+      utterancePairId,
+      dialectName: uploadLabels?.dialectName,
+      dialectRegion: uploadLabels?.dialectRegion,
+    }),
   }
 
+  if (readingArticle) {
+    const segment = readingArticle.segments.find((item) => item.id === exercise.id)
+    if (segment) {
+      metadata.reading_material_kind = readingArticle.source.kind
+      metadata.reading_article_id = readingArticle.id
+      metadata.reading_article_version = readingArticle.version
+      metadata.reading_segment_id = segment.id
+      metadata.reading_segment_index = segment.index
+      metadata.reading_segment_count = readingArticle.segments.length
+      if (readingRoundId) {
+        metadata.reading_round_id = readingRoundId
+      }
+    }
+  }
+
+  if (uploadLabels?.disabilityCategory) {
+    metadata.disability_category = uploadLabels.disabilityCategory
+  }
+  if (uploadLabels?.condition) {
+    metadata.condition = uploadLabels.condition
+  }
   if (uploadLabels?.etiology && uploadLabels.etiology !== DEFAULT_TRAINING_GUIDANCE_PROFILE.etiology) {
     metadata.etiology = uploadLabels.etiology
   }
@@ -287,13 +339,6 @@ function buildUploadMetadata(
   if (uploadLabels?.severity && uploadLabels.severity !== DEFAULT_TRAINING_GUIDANCE_PROFILE.severity) {
     metadata.severity = uploadLabels.severity
   }
-  if (uploadLabels?.ageBand && uploadLabels.ageBand !== 'unspecified') {
-    metadata.age_band = uploadLabels.ageBand
-  }
-  if (uploadLabels?.sex && uploadLabels.sex !== 'unspecified') {
-    metadata.sex = uploadLabels.sex
-  }
-
   for (const key of Object.keys(metadata)) {
     const value = metadata[key]
     if (Array.isArray(value) && value.length === 0) {
@@ -387,11 +432,20 @@ function getRecorderStatusCopy(
 function getAssessmentTranscriptNotice(
   transcript: string,
   hasRecording: boolean,
+  transcriptStatus: PracticeAttempt['transcriptStatus'] = 'complete',
 ): {
   heardText: string
   helperText: string
   tone: 'sky' | 'amber'
 } {
+  if (transcriptStatus === 'pending') {
+    return {
+      heardText: '正在后台完成识别…',
+      helperText: '录音已经收下，你可以继续操作，不需要等待识别完成。',
+      tone: 'sky',
+    }
+  }
+
   if (transcript.trim()) {
     return {
       heardText: transcript,
@@ -557,6 +611,8 @@ export default function ContributePage() {
     userId,
     isAuthenticated,
   })
+  const { localQueueItems } = useVoiceUpload()
+  const recordingProgress = useRecordingProgress(userId, isAuthenticated, localQueueItems)
 
   const preparedExpression = workspaceSnapshot?.prepared_expression ?? null
   const preparedExpressionExercises = useMemo(
@@ -568,7 +624,6 @@ export default function ContributePage() {
     [workspaceSnapshot?.prepared_expression?.training_reports],
   )
   const trainingActivity = workspaceSnapshot?.training_activity ?? null
-  const dailyPracticeSlogan = trainingActivity?.slogan ?? '每天先练 20 句'
 
   if (isLoading) {
     return (
@@ -582,192 +637,63 @@ export default function ContributePage() {
     return null
   }
 
-  const collectionCategories = MANDARIN_TRAINING_CATEGORIES.filter(
-    (category) => category !== '评估筛查',
-  )
-  const recommendedCategory = collectionCategories.find((category) => category === '日常与出行')
-    ?? collectionCategories[0]
-  const readingCategory = collectionCategories.find((category) => category === '现代文章朗读')
-  const phonologyCategory = collectionCategories.find((category) => category === '音系强化')
-  const additionalCategories = collectionCategories.filter((category) => (
-    category !== recommendedCategory
-    && category !== readingCategory
-    && category !== phonologyCategory
-  ))
-  const featuredCategories = [phonologyCategory, readingCategory].filter(
-    (category): category is NonNullable<typeof category> => Boolean(category),
-  )
-
   return (
     <div className="min-h-dvh bg-stone-50">
       <header className="border-b border-stone-200 bg-white">
-        <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-6xl items-start justify-between gap-4 px-4 py-4 sm:px-6">
           <div>
             <Link href="/practice" className="inline-flex min-h-11 items-center text-sm font-medium text-amber-700 hover:text-amber-800">
               ← 返回练习选择
             </Link>
             <h1 className="text-balance text-2xl font-semibold text-gray-900">录下你真正会说的话</h1>
-            <p className="mt-1 text-sm text-gray-600 text-pretty">
-              从一句有用的话开始，或者带上自己的材料。每句都能回听、重录或不收录。
-            </p>
+            <p className="mt-1 text-sm text-gray-600 text-pretty">选择一种方式开始。</p>
           </div>
+          <SiteBrandMark brand={siteBrand} compact />
         </div>
       </header>
 
       <main className="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-5 sm:gap-6 sm:px-6 sm:py-8">
+        <RecordingDurationSummary
+          todayDurationSeconds={recordingProgress.todayDurationSeconds}
+          totalDurationSeconds={recordingProgress.totalDurationSeconds}
+          pendingUploadCount={recordingProgress.pendingUploadCount}
+          isLoading={recordingProgress.isLoading}
+          error={recordingProgress.error}
+        />
         <section id="training-topics" className="scroll-mt-4 space-y-4">
-          <div className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-7">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium text-amber-800">马上开始</p>
-                <h2 className="mt-2 text-balance text-2xl font-semibold text-gray-900">先录几句今天用得上的话</h2>
-                <p className="mt-2 max-w-2xl text-pretty text-sm leading-6 text-gray-600">
-                  不用挑发音难度，也不用一次录完。系统会优先给你还没录过的句子。
-                </p>
-              </div>
-              <span className="rounded-full bg-stone-100 px-4 py-2 text-sm text-gray-700">
-                建议 {dailyPracticeSlogan}
-              </span>
-            </div>
-
-            {recommendedCategory ? (() => {
-              const meta = MANDARIN_TRAINING_CATEGORY_META[recommendedCategory]
-              return (
-                <Link
-                  href={getTrainingTopicHref(getTrainingTopicIdForCategory(recommendedCategory))}
-                  className="mt-5 grid min-h-44 gap-5 rounded-3xl border border-amber-300 bg-amber-50 p-5 transition-colors duration-150 hover:border-amber-400 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 sm:grid-cols-[1fr_auto] sm:items-end sm:p-6"
-                >
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-amber-800">推荐从这里开始</span>
-                      <span className="text-xs font-medium text-stone-600">{meta.label}</span>
-                      <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-stone-700 tabular-nums">可录 {meta.corpusCount} 句</span>
-                    </div>
-                    <h3 className="mt-4 text-balance text-2xl font-semibold text-stone-950">日常真正会用到的话</h3>
-                    <p className="mt-2 max-w-2xl text-pretty text-sm leading-6 text-stone-700">
-                      见面、出门、乘车、点餐和付款。按你平时的方式说，录 8–15 句就算完成一轮。
-                    </p>
-                    <p className="mt-3 line-clamp-1 text-sm text-stone-600">例如：{meta.examples.join(' · ')}</p>
-                  </div>
-                  <span className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-amber-700 px-5 py-3 text-sm font-semibold text-white">
-                    录第一句
-                    <ChevronRight className="size-4" aria-hidden="true" />
-                  </span>
-                </Link>
-              )
-            })() : null}
-
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {featuredCategories.map((category) => {
-                const meta = MANDARIN_TRAINING_CATEGORY_META[category]
-                const isPhonology = category === phonologyCategory
-                return (
-                  <Link
-                    key={category}
-                    href={getTrainingTopicHref(getTrainingTopicIdForCategory(category))}
-                    className="rounded-2xl border border-stone-200 bg-white p-5 transition-colors duration-150 hover:border-amber-300 hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-medium text-amber-800">{meta.label}</p>
-                        <h3 className="text-balance text-lg font-semibold text-stone-950">
-                          {isPhonology ? '让系统多认识一些说法' : '按自己的节奏读一段'}
-                        </h3>
-                        <p className="mt-2 text-pretty text-sm leading-6 text-stone-600">
-                          {isPhonology
-                            ? '录系统较少见、容易听错的自然字词和短句，不需要模仿标准发音。'
-                            : '用现代短句练连续表达，保留真实停顿和回读。'}
-                        </p>
-                      </div>
-                      <span className="shrink-0 rounded-full bg-stone-100 px-3 py-1 text-xs font-medium text-stone-700 tabular-nums">
-                        可录 {meta.corpusCount} 句
-                      </span>
-                    </div>
-                    <p className="mt-4 text-sm font-semibold text-amber-800">开始录音 →</p>
-                  </Link>
-                )
-              })}
-            </div>
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-            <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
-              <div className="flex items-start gap-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Link
+              href={preparedExpression ? getTrainingTopicHref('custom-material') : `${getTrainingTopicHref('custom-material')}?new=1`}
+              className="group flex min-h-36 items-center justify-between gap-5 rounded-3xl border border-stone-200 bg-white p-6 shadow-sm transition-colors duration-150 hover:border-amber-300 hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
+            >
+              <span className="flex min-w-0 items-center gap-4">
                 <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-800">
                   <FileText className="size-5" aria-hidden="true" />
                 </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-amber-800">用自己的内容</p>
-                  <h2 className="mt-1 text-balance text-xl font-semibold text-stone-950">
-                    {preparedExpression ? `继续录《${preparedExpression.title}》` : '上传或粘贴一份材料'}
-                  </h2>
-                  <p className="mt-2 text-pretty text-sm leading-6 text-stone-600">
-                    {preparedExpression
-                      ? `已经自动切成 ${preparedExpressionExercises.length} 句，可以直接继续，也可以换一份新材料。`
-                      : '支持 .txt / .md，也可以直接粘贴。保存后会自动切成适合逐句录音的训练材料。'}
-                  </p>
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    {preparedExpression ? (
-                      <Link
-                        href={getTrainingTopicHref('custom-material')}
-                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-stone-900 px-4 py-2.5 text-sm font-semibold text-white"
-                      >
-                        继续录 {preparedExpressionExercises.length} 句
-                        <ChevronRight className="size-4" aria-hidden="true" />
-                      </Link>
-                    ) : null}
-                    <Link
-                      href={`${getTrainingTopicHref('custom-material')}?new=1`}
-                      className={cn(
-                        'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold',
-                        preparedExpression
-                          ? 'border border-stone-300 bg-white text-stone-800'
-                          : 'bg-stone-900 text-white',
-                      )}
-                    >
-                      <UploadCloud className="size-4" aria-hidden="true" />
-                      {preparedExpression ? '换一份材料' : '添加我的材料'}
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            </section>
+                <span className="min-w-0">
+                  <span className="block text-balance text-xl font-semibold text-stone-950">用自己的材料</span>
+                  {preparedExpression ? (
+                    <span className="mt-1 block truncate text-sm text-stone-500">《{preparedExpression.title}》</span>
+                  ) : null}
+                </span>
+              </span>
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-stone-100 text-stone-600 group-hover:bg-amber-100 group-hover:text-amber-800">
+                <ChevronRight className="size-5" aria-hidden="true" />
+              </span>
+            </Link>
 
-            <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h2 className="text-balance text-lg font-semibold text-stone-950">按沟通场景选择</h2>
-                  <p className="mt-1 text-pretty text-sm text-stone-500">每个主题都列出当前可录句数。</p>
-                </div>
-                <span className="shrink-0 rounded-full bg-stone-100 px-3 py-1 text-xs text-stone-600">{additionalCategories.length} 个主题</span>
-              </div>
-              <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
-                {additionalCategories.map((category) => {
-                  const meta = MANDARIN_TRAINING_CATEGORY_META[category]
-                  return (
-                    <Link
-                      key={category}
-                      href={getTrainingTopicHref(getTrainingTopicIdForCategory(category))}
-                      className="flex min-h-16 items-center justify-between gap-4 rounded-2xl border border-stone-200 bg-white px-4 py-3 transition-colors duration-150 hover:border-amber-300 hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
-                    >
-                      <span className="min-w-0">
-                        <span className="block text-sm font-semibold text-stone-950">{meta.label}</span>
-                        <span className="mt-1 block truncate text-xs text-stone-500">{meta.examples.slice(0, 2).join(' · ')}</span>
-                      </span>
-                      <span className="shrink-0 text-xs font-medium text-stone-600 tabular-nums">可录 {meta.corpusCount} 句</span>
-                    </Link>
-                  )
-                })}
-              </div>
-            </section>
-          </div>
-
-          <div className="rounded-2xl border border-stone-200 bg-stone-100 px-4 py-3">
-            <div>
-              <p className="text-pretty text-xs leading-5 text-stone-600">
-                想先了解系统目前能听清哪些字词？可返回“练习选择”完成 20 词筛查。这里专注录真实表达和训练材料。
-              </p>
-            </div>
+            <Link
+              href="/contribute/materials"
+              className="group flex min-h-36 items-center justify-between gap-5 rounded-3xl border border-stone-200 bg-white p-6 shadow-sm transition-colors duration-150 hover:border-amber-300 hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
+            >
+              <span className="min-w-0">
+                <span className="block text-balance text-xl font-semibold text-stone-950">选择已有材料</span>
+                <span className="mt-1 block text-sm text-stone-500 tabular-nums">9 个材料区</span>
+              </span>
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-stone-100 text-stone-600 group-hover:bg-amber-100 group-hover:text-amber-800">
+                <ChevronRight className="size-5" aria-hidden="true" />
+              </span>
+            </Link>
           </div>
         </section>
 
@@ -823,21 +749,37 @@ export default function ContributePage() {
 export function TrainingRecorderPage({
   topicId,
   wantsNewMaterial = false,
+  exerciseOverride,
+  readingArticle = null,
+  allowRecordedExercises = false,
+  readingRoundId = null,
+  returnHrefOverride,
+  returnLabelOverride,
+  nextPathOverride,
 }: {
   topicId: TrainingTopicId
   wantsNewMaterial?: boolean
+  exerciseOverride?: MandarinTrainingExercise[]
+  readingArticle?: MandarinReadingArticle | null
+  allowRecordedExercises?: boolean
+  readingRoundId?: string | null
+  returnHrefOverride?: string
+  returnLabelOverride?: string
+  nextPathOverride?: string
 }) {
   const topicSelection = useMemo(
     () => resolveTrainingTopicSelection(topicId),
     [topicId],
   )
-  const returnHref = topicId === 'assessment-screening' ? '/practice' : '/contribute'
-  const returnLabel = topicId === 'assessment-screening' ? '返回练习选择' : '返回主题选择'
+  const returnHref = returnHrefOverride
+    ?? (topicId === 'assessment-screening' ? '/practice' : '/contribute')
+  const returnLabel = returnLabelOverride
+    ?? (topicId === 'assessment-screening' ? '返回练习选择' : '返回主题选择')
   const { user, userId, session, isLoading, isAuthenticated } = useAuth({
     redirectToLogin: true,
-    nextPath: wantsNewMaterial
+    nextPath: nextPathOverride ?? (wantsNewMaterial
       ? `${getTrainingTopicHref(topicId)}?new=1`
-      : getTrainingTopicHref(topicId),
+      : getTrainingTopicHref(topicId)),
   })
   const {
     status,
@@ -858,9 +800,9 @@ export function TrainingRecorderPage({
     uploadRecording,
     discardUploadedRecording,
     refreshLocalQueueCount,
-    isUploading,
     localQueueItems,
   } = useVoiceUpload()
+  const recordingProgress = useRecordingProgress(userId, isAuthenticated, localQueueItems)
   const {
     snapshot: workspaceSnapshot,
     refresh: refreshWorkspaceSnapshot,
@@ -872,6 +814,8 @@ export function TrainingRecorderPage({
   const [selectedExerciseId, setSelectedExerciseId] = useState(
     '',
   )
+  const [exerciseStatusFilter, setExerciseStatusFilter] = useState<ExerciseStatusFilter>('unread')
+  const [visibleInventoryLimit, setVisibleInventoryLimit] = useState(DEFAULT_VISIBLE_SENTENCES)
   const [selectedPhonologyGroupId, setSelectedPhonologyGroupId] = useState<PhonologyGroupId>(
     topicSelection.category === '音系强化' ? DEFAULT_PHONOLOGY_GROUP_ID : 'all',
   )
@@ -882,16 +826,13 @@ export function TrainingRecorderPage({
   const [assessmentAttemptsByExercise, setAssessmentAttemptsByExercise] = useState<
     Record<string, PracticeAttempt>
   >({})
-  const [trainingEtiology, setTrainingEtiology] = useState<TrainingEtiology>('unknown')
-  const [isSavingTrainingLabels, setIsSavingTrainingLabels] = useState(false)
   const [notice, setNotice] = useState<NoticeState | null>(null)
   const [isPreparedPreviewOpen, setIsPreparedPreviewOpen] = useState(false)
   const [attemptPlaybackUrl, setAttemptPlaybackUrl] = useState<string | null>(null)
   const [environmentReady, setEnvironmentReady] = useState(false)
   const [distanceReady, setDistanceReady] = useState(false)
-  const [ageBand, setAgeBand] = useState<string>('unspecified')
-  const [sex, setSex] = useState<TrainingUploadLabels['sex']>('unspecified')
   const [collectionFlowStep, setCollectionFlowStep] = useState<CollectionFlowStep>('prepare')
+  const [pendingDialectTarget, setPendingDialectTarget] = useState<DialectCollectionTarget<PracticeExercise> | null>(null)
   const [isReplacingAttempt, setIsReplacingAttempt] = useState(false)
   const [isMaterialEditorOpen, setIsMaterialEditorOpen] = useState(wantsNewMaterial)
   const [materialTitle, setMaterialTitle] = useState('')
@@ -899,12 +840,20 @@ export function TrainingRecorderPage({
   const [materialSource, setMaterialSource] = useState('manual_input')
   const [materialStatus, setMaterialStatus] = useState<string | null>(null)
   const [isSavingMaterial, setIsSavingMaterial] = useState(false)
+  const [isReadingAssistancePlaying, setIsReadingAssistancePlaying] = useState(false)
+  const [readingAssistanceStatus, setReadingAssistanceStatus] = useState<string | null>(null)
 
   const disconnectRef = useRef(disconnect)
   disconnectRef.current = disconnect
   const discardedAttemptIdsRef = useRef<Set<number>>(new Set())
-  const pendingReplacementExerciseRef = useRef<PracticeExercise | null>(null)
+  const pendingReplacementExerciseRef = useRef<DialectCollectionTarget<PracticeExercise> | null>(null)
   const recordingExerciseRef = useRef<PracticeExercise | null>(null)
+  const recordingDialectRef = useRef<DialectProfile | undefined>(undefined)
+  const recordingSpeechVariantRef = useRef<TrainingSpeechVariant>('mandarin')
+  const recordingUtterancePairIdRef = useRef<string | undefined>(undefined)
+  const exerciseSelectionTouchedRef = useRef(false)
+  const recordingReadingAssistanceRef = useRef(false)
+  const readingAssistanceExerciseIdsRef = useRef<Set<string>>(new Set())
   const materialFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const canSaveTrainingSample = hasRequiredLegalConsent(user)
@@ -947,11 +896,13 @@ export function TrainingRecorderPage({
 
   const baseCategoryExercises = useMemo(
     () => (
-      practiceMode === 'prepared_content'
+      exerciseOverride
+        ? exerciseOverride
+        : practiceMode === 'prepared_content'
         ? preparedExpressionExercises
         : getExercisesByCategory(selectedCategory)
     ),
-    [practiceMode, preparedExpressionExercises, selectedCategory],
+    [exerciseOverride, practiceMode, preparedExpressionExercises, selectedCategory],
   )
   const fullTrainingExercises = useMemo(
     () => getExercisesByCategory('all'),
@@ -990,20 +941,64 @@ export function TrainingRecorderPage({
 
   const recordedExerciseIds = useMemo(() => {
     const persistedExerciseIds = userId ? getUploadedTrainingExerciseIds(userId) : []
-    const queuedExerciseIds = localQueueItems
-      .map((item) => (typeof item.sentenceId === 'string' ? item.sentenceId.trim() : ''))
-      .filter((item) => item.length > 0)
-
-    return [...persistedExerciseIds, ...queuedExerciseIds]
-  }, [localQueueItems, userId])
+    return [...persistedExerciseIds, ...recordingProgress.recordedSentenceIds]
+  }, [recordingProgress.recordedSentenceIds, userId])
+  const recordedExerciseIdSet = useMemo(
+    () => new Set(recordedExerciseIds),
+    [recordedExerciseIds],
+  )
+  const recordedCategoryExerciseCount = useMemo(
+    () => categoryExercises.reduce(
+      (count, exercise) => count + (recordedExerciseIdSet.has(exercise.id) ? 1 : 0),
+      0,
+    ),
+    [categoryExercises, recordedExerciseIdSet],
+  )
+  const unreadCategoryExerciseCount = Math.max(
+    0,
+    categoryExercises.length - recordedCategoryExerciseCount,
+  )
+  const effectiveReadingRoundId = readingArticle
+    ? recordingProgress.readingArticleRoundIds[readingArticle.id] ?? readingRoundId
+    : null
+  const effectiveAllowRecordedExercises = allowRecordedExercises || Boolean(effectiveReadingRoundId)
+  const resumeScopeKey = practiceMode === 'prepared_content' && preparedExpression?.id
+    ? `prepared_expression:${preparedExpression.id}`
+    : `category:${selectedCategory}`
+  const resumeAfterExerciseId = readingArticle
+    ? null
+    : recordingProgress.lastRecordedExerciseIds[resumeScopeKey] ?? null
 
   const selectableExerciseState = useMemo(
-    () => selectTrainingExercises({
-      exercises: categoryExercises,
-      recordedExerciseIds,
-      sessionExerciseIds: sessionPracticedExerciseIds,
-    }),
-    [categoryExercises, recordedExerciseIds, sessionPracticedExerciseIds],
+    () => {
+      if (readingArticle) {
+        const recordedIds = effectiveAllowRecordedExercises && effectiveReadingRoundId
+          ? new Set(recordingProgress.recordedReadingRoundKeys
+              .filter((key) => key.startsWith(`${effectiveReadingRoundId}:`))
+              .map((key) => key.slice(effectiveReadingRoundId.length + 1)))
+          : new Set(recordedExerciseIds)
+        const sessionIds = new Set(sessionPracticedExerciseIds)
+        const exercises = categoryExercises.filter((exercise) => (
+          !sessionIds.has(exercise.id)
+          && (effectiveAllowRecordedExercises || !recordedIds.has(exercise.id))
+        ))
+        return {
+          exercises,
+          stage: 'unrecorded' as const,
+          unrecordedCount: exercises.length,
+          unrepeatedCount: exercises.length,
+          totalCount: categoryExercises.length,
+        }
+      }
+
+      return selectTrainingExercises({
+        exercises: categoryExercises,
+        recordedExerciseIds,
+        sessionExerciseIds: sessionPracticedExerciseIds,
+        resumeAfterExerciseId,
+      })
+    },
+    [categoryExercises, effectiveAllowRecordedExercises, effectiveReadingRoundId, readingArticle, recordedExerciseIds, recordingProgress.recordedReadingRoundKeys, resumeAfterExerciseId, sessionPracticedExerciseIds],
   )
 
   const normalizedQuery = exerciseQuery.trim().toLowerCase()
@@ -1022,17 +1017,51 @@ export function TrainingRecorderPage({
     [matchingExercises, normalizedQuery],
   )
 
+  const inventoryMatchingExercises = useMemo(() => {
+    const byStatus = categoryExercises.filter((exercise) => {
+      const isRecorded = recordedExerciseIdSet.has(exercise.id)
+      if (exerciseStatusFilter === 'read') return isRecorded
+      if (exerciseStatusFilter === 'unread') return !isRecorded
+      return true
+    })
+
+    if (!normalizedQuery) return byStatus
+    return byStatus.filter((exercise) => exercise.text.toLowerCase().includes(normalizedQuery))
+  }, [categoryExercises, exerciseStatusFilter, normalizedQuery, recordedExerciseIdSet])
+  const visibleInventoryExercises = useMemo(
+    () => inventoryMatchingExercises.slice(0, visibleInventoryLimit),
+    [inventoryMatchingExercises, visibleInventoryLimit],
+  )
+
   const currentExercise = useMemo(
     () => (
       selectableExerciseState.exercises.find((exercise) => exercise.id === selectedExerciseId) ??
+      (!readingArticle ? categoryExercises.find((exercise) => exercise.id === selectedExerciseId) : null) ??
       visibleExercises[0] ??
       selectableExerciseState.exercises[0] ??
-      categoryExercises.find((exercise) => exercise.id === selectedExerciseId) ??
-      categoryExercises[0] ??
+      (!readingArticle ? categoryExercises[0] : null) ??
       null
     ),
-    [categoryExercises, selectableExerciseState.exercises, selectedExerciseId, visibleExercises],
+    [categoryExercises, readingArticle, selectableExerciseState.exercises, selectedExerciseId, visibleExercises],
   )
+
+  useEffect(() => {
+    setVisibleInventoryLimit(normalizedQuery ? SEARCH_VISIBLE_SENTENCES : DEFAULT_VISIBLE_SENTENCES)
+  }, [exerciseStatusFilter, normalizedQuery])
+
+  useEffect(() => {
+    setReadingAssistanceStatus(null)
+    setIsReadingAssistancePlaying(false)
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+    }
+  }, [currentExercise?.id])
+
+  useEffect(() => () => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+    }
+  }, [])
 
   const currentPreparedAnchorLine = useMemo(
     () => (
@@ -1082,7 +1111,7 @@ export function TrainingRecorderPage({
     [workspaceSnapshot?.prepared_expression?.training_reports],
   )
   const trainingActivity = workspaceSnapshot?.training_activity ?? null
-  const dailyPracticeSlogan = trainingActivity?.slogan ?? '每天先练 20 句'
+  const dailyPracticeSlogan = '按自己的状态录几分钟'
   const assessmentSummary = useMemo(
     () => (
       isAssessmentTopic
@@ -1124,16 +1153,42 @@ export function TrainingRecorderPage({
     ),
     [assessmentAttemptsByExercise, isAssessmentTopic],
   )
+  const dialectOptions = useMemo(() => readDialectProfiles(workspaceSnapshot?.registration_profile), [workspaceSnapshot?.registration_profile])
+  const [selectedDialectKey, setSelectedDialectKey] = useState('')
+  const selectedDialect = dialectOptions.find((entry) => JSON.stringify(entry) === selectedDialectKey)
+    ?? (dialectOptions.length === 1 ? dialectOptions[0] : undefined)
   const trainingUploadLabels = useMemo<TrainingUploadLabels>(() => {
     return {
-      etiology: trainingEtiology,
+      disabilityCategory: workspaceSnapshot?.registration_profile?.disability_category,
+      condition: workspaceSnapshot?.registration_profile?.condition,
+      etiology: workspaceSnapshot?.user_profile_memory?.etiology,
       severity: isAssessmentTopic
         ? undefined
         : workspaceSnapshot?.user_profile_memory?.severity as TrainingSeverity | undefined,
-      ageBand,
-      sex,
+      hasDialect: workspaceSnapshot?.registration_profile?.has_dialect,
+      dialectName: selectedDialect?.name,
+      dialectRegion: selectedDialect?.region,
     }
-  }, [ageBand, isAssessmentTopic, sex, trainingEtiology, workspaceSnapshot?.user_profile_memory?.severity])
+  }, [
+    isAssessmentTopic,
+    workspaceSnapshot?.registration_profile?.condition,
+    workspaceSnapshot?.registration_profile?.disability_category,
+    selectedDialect?.name,
+    selectedDialect?.region,
+    workspaceSnapshot?.registration_profile?.has_dialect,
+    workspaceSnapshot?.user_profile_memory?.etiology,
+    workspaceSnapshot?.user_profile_memory?.severity,
+  ])
+  const dialectPairEnabled = shouldOfferDialectPair({
+    hasDialect: Boolean(trainingUploadLabels.hasDialect),
+    dialectName: dialectOptions[0]?.name,
+    isAssessment: isAssessmentTopic,
+  })
+  const activeSpeechVariant = pendingDialectTarget?.speechVariant ?? 'mandarin'
+  const activeCollectionExercise = pendingDialectTarget?.exercise ?? currentExercise
+  const activeSpeechVariantLabel = activeSpeechVariant === 'dialect'
+    ? `${trainingUploadLabels.dialectName ?? '方言'}表达`
+    : '普通话表达'
   const recorderStatus = getRecorderStatusCopy(status, sessionError, isAssessmentTopic)
   const currentAttemptCharacterAccuracy = useMemo(() => {
     if (!attempt || !isAssessmentTopic || attempt.feedback.normalizedTarget.length === 0) {
@@ -1152,7 +1207,11 @@ export function TrainingRecorderPage({
   const assessmentTranscriptNotice = useMemo(
     () => (
       isAssessmentTopic && attempt
-        ? getAssessmentTranscriptNotice(attempt.transcript, Boolean(attempt.recording))
+        ? getAssessmentTranscriptNotice(
+            attempt.transcript,
+            Boolean(attempt.recording),
+            attempt.transcriptStatus,
+          )
         : null
     ),
     [attempt, isAssessmentTopic],
@@ -1262,22 +1321,18 @@ export function TrainingRecorderPage({
       return
     }
 
+    setSelectedDialectKey('')
     setSessionPracticedExerciseIds([])
     setAssessmentAttemptsByExercise({})
     setSelectedPhonologyGroupId(topicSelection.category === '音系强化' ? DEFAULT_PHONOLOGY_GROUP_ID : 'all')
+    setExerciseStatusFilter('unread')
+    setVisibleInventoryLimit(DEFAULT_VISIBLE_SENTENCES)
+    exerciseSelectionTouchedRef.current = false
     setAttempt(null)
+    setPendingDialectTarget(null)
     setCollectionFlowStep('prepare')
     void refreshLocalQueueCount()
   }, [refreshLocalQueueCount, topicId, userId])
-
-  useEffect(() => {
-    const etiology = workspaceSnapshot?.user_profile_memory?.etiology
-    setTrainingEtiology(
-      TRAINING_ETIOLOGY_OPTIONS.some((option) => option.value === etiology)
-        ? (etiology as TrainingEtiology)
-        : 'unknown',
-    )
-  }, [workspaceSnapshot?.user_profile_memory?.etiology])
 
   useEffect(() => {
     return () => {
@@ -1286,15 +1341,21 @@ export function TrainingRecorderPage({
   }, [])
 
   useEffect(() => {
-    if (!visibleExercises.length) {
+    const selectionPool = readingArticle ? visibleExercises : categoryExercises
+    if (!selectionPool.length) {
       return
     }
 
-    const stillVisible = visibleExercises.some((exercise) => exercise.id === selectedExerciseId)
-    if (!stillVisible) {
-      setSelectedExerciseId(visibleExercises[0].id)
+    const stillVisible = selectionPool.some((exercise) => exercise.id === selectedExerciseId)
+    const shouldApplyCloudResume = !recordingProgress.isLoading && !exerciseSelectionTouchedRef.current
+    const nextDefaultExercise = visibleExercises[0] ?? selectableExerciseState.exercises[0]
+    if ((!stillVisible || shouldApplyCloudResume) && nextDefaultExercise) {
+      setSelectedExerciseId(nextDefaultExercise.id)
+      if (shouldApplyCloudResume) {
+        exerciseSelectionTouchedRef.current = true
+      }
     }
-  }, [selectedExerciseId, visibleExercises])
+  }, [categoryExercises, readingArticle, recordingProgress.isLoading, selectableExerciseState.exercises, selectedExerciseId, visibleExercises])
 
   useEffect(() => {
     if (!isRecording) {
@@ -1394,6 +1455,7 @@ export function TrainingRecorderPage({
       if (refreshedExercises.length > 0) {
         setIsMaterialEditorOpen(false)
         setCollectionFlowStep('prepare')
+        exerciseSelectionTouchedRef.current = true
         setSelectedExerciseId(refreshedExercises[0].id)
       }
     } catch (error) {
@@ -1422,16 +1484,20 @@ export function TrainingRecorderPage({
     }
 
     const nextIndex = (currentIndex + offset + visibleExercises.length) % visibleExercises.length
+    exerciseSelectionTouchedRef.current = true
     setSelectedExerciseId(visibleExercises[nextIndex].id)
     setAttempt(null)
+    setPendingDialectTarget(null)
   }, [currentExercise, isProcessing, isRecording, visibleExercises])
 
   const handleSelectExercise = useCallback((exerciseId: string) => {
     if (isRecording || isProcessing) {
       return
     }
+    exerciseSelectionTouchedRef.current = true
     setSelectedExerciseId(exerciseId)
     setAttempt(null)
+    setPendingDialectTarget(null)
   }, [isProcessing, isRecording])
 
   const handleSelectPhonologyGroup = useCallback((groupId: PhonologyGroupId) => {
@@ -1440,13 +1506,46 @@ export function TrainingRecorderPage({
     }
 
     setSelectedPhonologyGroupId(groupId)
+    exerciseSelectionTouchedRef.current = false
     setSelectedExerciseId('')
     setExerciseQuery('')
     setAttempt(null)
+    setPendingDialectTarget(null)
   }, [isProcessing, isRecording, selectedPhonologyGroupId])
 
+  const handlePlayReadingAssistance = useCallback(() => {
+    if (!currentExercise || isRecording || isProcessing) {
+      return
+    }
+
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      setReadingAssistanceStatus('当前浏览器暂不支持朗读，可以换一句。')
+      return
+    }
+
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(currentExercise.text)
+    utterance.lang = 'zh-CN'
+    utterance.rate = 0.85
+    setIsReadingAssistancePlaying(true)
+    setReadingAssistanceStatus('正在准备朗读，听完后再开始录音。')
+    utterance.onstart = () => {
+      readingAssistanceExerciseIdsRef.current.add(currentExercise.id)
+      setReadingAssistanceStatus('正在朗读，听完后再开始录音。')
+    }
+    utterance.onend = () => {
+      setIsReadingAssistancePlaying(false)
+      setReadingAssistanceStatus('朗读完成，请按你平时的方式说。')
+    }
+    utterance.onerror = () => {
+      setIsReadingAssistancePlaying(false)
+      setReadingAssistanceStatus('朗读没有完成，可以再点一次或换一句。')
+    }
+    window.speechSynthesis.speak(utterance)
+  }, [currentExercise, isProcessing, isRecording])
+
   const handleStartRecording = useCallback(async () => {
-    if (!currentExercise || isUploading || isProcessing) {
+    if (!activeCollectionExercise || isProcessing) {
       return
     }
 
@@ -1458,24 +1557,50 @@ export function TrainingRecorderPage({
       return
     }
 
+    if (isReadingAssistancePlaying) {
+      setNotice({
+        tone: 'info',
+        message: '请等示例朗读结束后再开始录音。',
+      })
+      return
+    }
+
+    const collectionTarget: DialectCollectionTarget<PracticeExercise> = pendingDialectTarget ?? {
+      exercise: activeCollectionExercise,
+      speechVariant: 'mandarin',
+      utterancePairId: dialectPairEnabled ? createUtterancePairId() : undefined,
+    }
+    if (collectionTarget.speechVariant === 'dialect' && !selectedDialect) {
+      setNotice({ tone: 'info', message: '请先选择本次录音使用的方言，也可以跳过。' })
+      return
+    }
+    recordingDialectRef.current = collectionTarget.speechVariant === 'dialect' ? selectedDialect : undefined
     setAttempt(null)
     setNotice(null)
     setCollectionFlowStep('record')
-    recordingExerciseRef.current = currentExercise
+    recordingExerciseRef.current = collectionTarget.exercise
+    recordingSpeechVariantRef.current = collectionTarget.speechVariant
+    recordingUtterancePairIdRef.current = collectionTarget.utterancePairId
+    recordingReadingAssistanceRef.current = readingAssistanceExerciseIdsRef.current.has(collectionTarget.exercise.id)
 
     try {
       await startRecording()
     } catch (error) {
       recordingExerciseRef.current = null
+      recordingSpeechVariantRef.current = 'mandarin'
+      recordingUtterancePairIdRef.current = undefined
       console.error('[contribute] start recording failed:', error)
       setNotice({
         tone: 'error',
         message: '录音失败，请重试。',
       })
     }
-  }, [collectionPreflightReady, currentExercise, isProcessing, isUploading, startRecording])
+  }, [selectedDialect, activeCollectionExercise, collectionPreflightReady, dialectPairEnabled, isProcessing, isReadingAssistancePlaying, pendingDialectTarget, startRecording])
 
   const removeAttemptFromProgress = useCallback((attemptToRemove: PracticeAttempt) => {
+    if (attemptToRemove.speechVariant === 'dialect') {
+      return
+    }
     setSessionPracticedExerciseIds((currentIds) => (
       currentIds.filter((exerciseId) => exerciseId !== attemptToRemove.exercise.id)
     ))
@@ -1488,11 +1613,22 @@ export function TrainingRecorderPage({
     }
   }, [isAssessmentTopic])
 
-  const startReplacementRecording = useCallback(async (exerciseToRetry: PracticeExercise) => {
+  const startReplacementRecording = useCallback(async (targetToRetry: DialectCollectionTarget<PracticeExercise>) => {
+    const exerciseToRetry = targetToRetry.exercise
+    if (targetToRetry.speechVariant === 'dialect' && !targetToRetry.dialect) {
+      setIsReplacingAttempt(false)
+      setNotice({ tone: 'info', message: '请先选择本次录音使用的方言，再开始录音。' })
+      return
+    }
+    recordingDialectRef.current = targetToRetry.dialect
+    exerciseSelectionTouchedRef.current = true
     setSelectedExerciseId(exerciseToRetry.id)
     setAttempt(null)
     setCollectionFlowStep('record')
     recordingExerciseRef.current = exerciseToRetry
+    recordingSpeechVariantRef.current = targetToRetry.speechVariant
+    recordingUtterancePairIdRef.current = targetToRetry.utterancePairId
+    recordingReadingAssistanceRef.current = readingAssistanceExerciseIdsRef.current.has(exerciseToRetry.id)
 
     try {
       await startRecording()
@@ -1502,6 +1638,8 @@ export function TrainingRecorderPage({
       })
     } catch (error) {
       recordingExerciseRef.current = null
+      recordingSpeechVariantRef.current = 'mandarin'
+      recordingUtterancePairIdRef.current = undefined
       console.error('[contribute] retry recording failed:', error)
       setNotice({
         tone: 'error',
@@ -1538,6 +1676,19 @@ export function TrainingRecorderPage({
       Boolean(attemptToReplace?.recording),
     )
 
+    if (attemptToReplace?.transcriptStatus === 'pending') {
+      discardedAttemptIdsRef.current.add(attemptToReplace.createdAt)
+      removeAttemptFromProgress(attemptToReplace)
+      setIsReplacingAttempt(true)
+      await startReplacementRecording({
+        exercise: exerciseToRetry,
+        speechVariant: attemptToReplace.speechVariant,
+        utterancePairId: attemptToReplace.utterancePairId,
+        dialect: attemptToReplace.dialect,
+      })
+      return
+    }
+
     if (replacementPlan === 'wait_for_discard') {
       setNotice({
         tone: 'info',
@@ -1548,11 +1699,21 @@ export function TrainingRecorderPage({
 
     if (replacementPlan === 'start_without_discard' || !attemptToReplace?.recording) {
       setIsReplacingAttempt(true)
-      await startReplacementRecording(exerciseToRetry)
+      await startReplacementRecording({
+        exercise: exerciseToRetry,
+        speechVariant: attemptToReplace?.speechVariant ?? activeSpeechVariant,
+        utterancePairId: attemptToReplace?.utterancePairId ?? pendingDialectTarget?.utterancePairId,
+        dialect: attemptToReplace?.dialect ?? selectedDialect,
+      })
       return
     }
 
-    pendingReplacementExerciseRef.current = exerciseToRetry
+    pendingReplacementExerciseRef.current = {
+      exercise: exerciseToRetry,
+      speechVariant: attemptToReplace?.speechVariant ?? activeSpeechVariant,
+      utterancePairId: attemptToReplace?.utterancePairId ?? pendingDialectTarget?.utterancePairId,
+      dialect: attemptToReplace?.dialect ?? selectedDialect,
+    }
     setIsReplacingAttempt(true)
     discardedAttemptIdsRef.current.add(attemptToReplace.createdAt)
     setAttempt((current) => (
@@ -1599,71 +1760,77 @@ export function TrainingRecorderPage({
 
     discardedAttemptIdsRef.current.delete(attemptToReplace.createdAt)
     removeAttemptFromProgress(attemptToReplace)
-    await startReplacementRecording(exerciseToRetry)
+    await startReplacementRecording({
+      exercise: exerciseToRetry,
+      speechVariant: attemptToReplace?.speechVariant ?? activeSpeechVariant,
+      utterancePairId: attemptToReplace?.utterancePairId ?? pendingDialectTarget?.utterancePairId,
+      dialect: attemptToReplace?.dialect ?? selectedDialect,
+    })
   }, [
     attempt,
+    selectedDialect,
+    activeSpeechVariant,
     collectionPreflightReady,
     currentExercise,
     discardUploadedRecording,
     isProcessing,
     isRecording,
     isReplacingAttempt,
+    pendingDialectTarget?.utterancePairId,
     removeAttemptFromProgress,
     startReplacementRecording,
     userId,
   ])
 
+  const advanceAfterCompletedPair = useCallback((completedExercise: PracticeExercise) => {
+    const nextExercise = getNextExerciseAfterAcceptedRecording({
+      accepted: true,
+      currentExerciseId: completedExercise.id,
+      activeExercises: matchingExercises,
+      fallbackExercises: !readingArticle && normalizedQuery.length === 0
+        ? categoryExercises
+        : [],
+    })
+    if (nextExercise && nextExercise.id !== completedExercise.id) {
+      exerciseSelectionTouchedRef.current = true
+      setSelectedExerciseId(nextExercise.id)
+    }
+    return nextExercise
+  }, [categoryExercises, matchingExercises, normalizedQuery.length, readingArticle])
+
   const handleContinueAfterAttempt = useCallback(() => {
+    if (attempt?.speechVariant === 'mandarin' && dialectPairEnabled && attempt.utterancePairId) {
+      setPendingDialectTarget({
+        exercise: attempt.exercise,
+        speechVariant: 'dialect',
+        utterancePairId: attempt.utterancePairId,
+      })
+      setAttempt(null)
+      setNotice({
+        tone: 'info',
+        message: `接下来仍是同一句，请用${trainingUploadLabels.dialectName ?? '方言'}自然地说一遍。`,
+      })
+      setCollectionFlowStep('record')
+      return
+    }
+
+    setPendingDialectTarget(null)
     setAttempt(null)
     setNotice(null)
     setCollectionFlowStep('record')
-  }, [])
+  }, [attempt, dialectPairEnabled, trainingUploadLabels.dialectName])
 
-  const handleSaveTrainingLabels = useCallback(async () => {
-    if (!userId || !isAuthenticated) {
-      setNotice({
-        tone: 'error',
-        message: '先登录后才能保存训练资料标签。',
-      })
-      return
-    }
-
-    if (trainingEtiology === 'unknown') {
-      setNotice({
-        tone: 'error',
-        message: '请先选择一个疾病种类，再保存训练资料标签。',
-      })
-      return
-    }
-
-    setIsSavingTrainingLabels(true)
-
-    try {
-      await saveWorkspaceUserProfileMemory(userId, {
-        document: workspaceSnapshot?.user_profile_memory.document ?? undefined,
-        etiology: trainingEtiology,
-      })
-      await refreshWorkspaceSnapshot()
-      setNotice({
-        tone: 'success',
-        message: '病因信息已保存。系统听清率和训练支持建议不会写成医学严重程度。',
-      })
-    } catch (error) {
-      console.error('[contribute] save training labels failed:', error)
-      setNotice({
-        tone: 'error',
-        message: '训练资料标签保存失败了，请稍后再试。',
-      })
-    } finally {
-      setIsSavingTrainingLabels(false)
-    }
-  }, [
-    isAuthenticated,
-    refreshWorkspaceSnapshot,
-    trainingEtiology,
-    userId,
-    workspaceSnapshot?.user_profile_memory.document,
-  ])
+  const handleSkipDialect = useCallback(() => {
+    if (!attempt || attempt.speechVariant !== 'mandarin') return
+    const nextExercise = advanceAfterCompletedPair(attempt.exercise)
+    setPendingDialectTarget(null)
+    setAttempt(null)
+    setCollectionFlowStep('record')
+    setNotice({
+      tone: 'success',
+      message: nextExercise ? '已跳过方言录音，继续下一句。' : '已跳过方言录音，这一组已经完成。',
+    })
+  }, [advanceAfterCompletedPair, attempt])
 
   const persistTrainingAttempt = useCallback(async (
     attemptToPersist: PracticeAttempt,
@@ -1720,10 +1887,16 @@ export function TrainingRecorderPage({
         attemptToPersist.transcript,
         attemptToPersist.feedback,
         attemptToPersist.sampleQuality,
-        trainingUploadLabels,
+        attemptToPersist.readingAssistanceUsed,
+        { ...trainingUploadLabels, dialectName: attemptToPersist.dialect?.name, dialectRegion: attemptToPersist.dialect?.region },
         collectionPlanId,
+        readingArticle,
+        effectiveReadingRoundId,
+        attemptToPersist.speechVariant,
+        attemptToPersist.utterancePairId,
       ),
     })
+    void recordingProgress.refresh()
     const wasDiscarded = discardedAttemptIdsRef.current.has(attemptToPersist.createdAt)
 
     if (wasDiscarded) {
@@ -1758,6 +1931,7 @@ export function TrainingRecorderPage({
       if (userId) {
         removeUploadedTrainingRecord(userId, attemptToPersist.recording.recordingId)
       }
+      void recordingProgress.refresh()
 
       const replacementExercise = pendingReplacementExerciseRef.current
       if (replacementExercise) {
@@ -1810,10 +1984,10 @@ export function TrainingRecorderPage({
       return
     }
 
-    if (result.status === 'retrying') {
+    if (result.status === 'local_only') {
       setNotice({
         tone: 'info',
-        message: '录音已保存，稍后会自动同步。',
+        message: '录音已安全保存在本机；网络或服务恢复后会在明确的恢复事件上继续同步。',
       })
       return
     }
@@ -1839,6 +2013,9 @@ export function TrainingRecorderPage({
     trainingUploadLabels,
     uploadRecording,
     userId,
+    readingArticle,
+    effectiveReadingRoundId,
+    recordingProgress,
   ])
 
   const handleDiscardAttempt = useCallback(async () => {
@@ -1851,16 +2028,19 @@ export function TrainingRecorderPage({
       return
     }
 
-    discardedAttemptIdsRef.current.add(attempt.createdAt)
-    setSessionPracticedExerciseIds((currentIds) => (
-      currentIds.filter((exerciseId) => exerciseId !== attempt.exercise.id)
-    ))
-    if (isAssessmentTopic) {
-      setAssessmentAttemptsByExercise((current) => {
-        const next = { ...current }
-        delete next[attempt.exercise.id]
-        return next
+    if (attempt.transcriptStatus === 'pending') {
+      discardedAttemptIdsRef.current.add(attempt.createdAt)
+      removeAttemptFromProgress(attempt)
+      setAttempt((current) => (
+        current?.createdAt === attempt.createdAt
+          ? { ...current, uploadStatus: 'discarded' }
+          : current
+      ))
+      setNotice({
+        tone: 'success',
+        message: '已取消收录，后台识别完成后也不会上传这条录音。',
       })
+      return
     }
 
     setAttempt((current) => (
@@ -1873,6 +2053,7 @@ export function TrainingRecorderPage({
     ))
 
     if (attempt.uploadStatus === 'saving') {
+      discardedAttemptIdsRef.current.add(attempt.createdAt)
       setNotice({
         tone: 'info',
         message: '已标记不收录；如果上传已经开始，完成后会自动撤回。',
@@ -1887,9 +2068,11 @@ export function TrainingRecorderPage({
     })
 
     if (result.ok) {
+      removeAttemptFromProgress(attempt)
       if (userId) {
         removeUploadedTrainingRecord(userId, attempt.recording.recordingId)
       }
+      void recordingProgress.refresh()
       setAttempt((current) => (
         current?.createdAt === attempt.createdAt
           ? {
@@ -1918,7 +2101,7 @@ export function TrainingRecorderPage({
       tone: 'error',
       message: result.errorMessage || '撤回失败，请稍后再试。',
     })
-  }, [attempt, discardUploadedRecording, isAssessmentTopic, userId])
+  }, [attempt, discardUploadedRecording, recordingProgress, removeAttemptFromProgress, userId])
 
   const handleStopRecording = useCallback(async () => {
     const recordedExercise = recordingExerciseRef.current
@@ -1930,34 +2113,55 @@ export function TrainingRecorderPage({
       return
     }
 
+    const dialect = recordingDialectRef.current
+    const speechVariant = recordingSpeechVariantRef.current
+    const utterancePairId = recordingUtterancePairIdRef.current
+    const readingAssistanceUsed = recordingReadingAssistanceRef.current
+
     try {
       const result = await stopRecording()
-      const transcript = result.transcript.trim()
-      const feedback = analyzeMandarinAttempt(recordedExercise, transcript)
-      const sampleQuality = assessTrainingSampleQuality({
-        feedback,
-        recording: result.recording,
-        transcriptLatencyMs: result.transcriptLatencyMs,
-      })
-      const nextAttempt: PracticeAttempt = {
-        createdAt: Date.now(),
-        clientCaptureId: result.clientCaptureId,
-        exercise: recordedExercise,
-        transcript,
-        transcriptLatencyMs: result.transcriptLatencyMs,
-        feedback,
-        sampleQuality,
-        recording: result.recording,
-        uploadStatus: result.recording
-          ? canSaveTrainingSample
-            ? 'saving'
-            : 'auth_required'
-          : 'idle',
-        uploadReceipt: null,
-      }
-      const hasUsableAssessmentTranscript = !(isAssessmentTopic && transcript.length === 0)
+      const createdAt = Date.now()
+      const buildAttempt = (
+        transcript: string,
+        transcriptLatencyMs: number,
+        transcriptStatus: PracticeAttempt['transcriptStatus'],
+      ): PracticeAttempt => {
+        const feedback = analyzeMandarinAttempt(recordedExercise, transcript)
+        const sampleQuality = assessTrainingSampleQuality({
+          feedback,
+          recording: result.recording,
+          transcriptLatencyMs,
+        })
 
-      if (hasUsableAssessmentTranscript) {
+        return {
+          createdAt,
+          clientCaptureId: result.clientCaptureId,
+          exercise: recordedExercise,
+          transcript,
+          transcriptStatus,
+          transcriptLatencyMs,
+          feedback,
+          sampleQuality,
+          readingAssistanceUsed,
+          recording: result.recording,
+          uploadStatus: result.recording
+            ? canSaveTrainingSample
+              ? 'saving'
+              : 'auth_required'
+            : 'idle',
+          uploadReceipt: null,
+          speechVariant,
+          dialect,
+          utterancePairId,
+        }
+      }
+      const nextAttempt = buildAttempt(
+        result.immediateTranscript.trim(),
+        0,
+        'pending',
+      )
+
+      if (!isAssessmentTopic && result.recording) {
         setSessionPracticedExerciseIds((currentIds) => (
           currentIds.includes(recordedExercise.id)
             ? currentIds
@@ -1968,50 +2172,83 @@ export function TrainingRecorderPage({
       if (!isAssessmentTopic) {
         setCollectionFlowStep(result.recording ? 'review' : 'record')
       }
-      if (isAssessmentTopic && hasUsableAssessmentTranscript) {
-        setAssessmentAttemptsByExercise((current) => ({
-          ...current,
-          [recordedExercise.id]: nextAttempt,
-        }))
-      }
-      const currentIndex = visibleExercises.findIndex((exercise) => exercise.id === recordedExercise.id)
-      const shouldAutoAdvance = isAssessmentTopic
-        ? hasUsableAssessmentTranscript && visibleExercises.length > 1 && currentIndex >= 0
-        : (
-            sampleQuality.action !== 'retry'
-            && visibleExercises.length > 1
-            && currentIndex >= 0
-          )
-      const nextExercise = shouldAutoAdvance
-        ? visibleExercises[(currentIndex + 1) % visibleExercises.length]
-        : null
+      const shouldWaitForDialect = Boolean(result.recording)
+        && speechVariant === 'mandarin'
+        && dialectPairEnabled
+      const nextExercise = shouldWaitForDialect
+        ? null
+        : getNextExerciseAfterAcceptedRecording({
+            accepted: Boolean(result.recording),
+            currentExerciseId: recordedExercise.id,
+            activeExercises: matchingExercises,
+            fallbackExercises: !readingArticle && normalizedQuery.length === 0
+              ? categoryExercises
+              : [],
+          })
 
       if (nextExercise && nextExercise.id !== recordedExercise.id) {
+        exerciseSelectionTouchedRef.current = true
         setSelectedExerciseId(nextExercise.id)
       }
 
       setNotice({
-        tone: !result.recording || (isAssessmentTopic && !hasUsableAssessmentTranscript)
+        tone: !result.recording
           ? 'error'
           : canSaveTrainingSample && result.recording
             ? 'info'
             : 'success',
         message: !result.recording
           ? '这次没有生成完整录音文件，请重新录一次。'
-          : isAssessmentTopic && !hasUsableAssessmentTranscript
-          ? '识别结果不完整，请放慢一点再录一次。'
+          : shouldWaitForDialect
+          ? `普通话录音已经收下，识别和保存会在后台完成。确认后可继续录${trainingUploadLabels.dialectName ?? '方言'}，也可以跳过。`
           : canSaveTrainingSample && result.recording
           ? nextExercise
-            ? '录音已经收下，正在自动保存这条样本，并且已经切到下一句。'
-            : '录音已经收下，正在自动保存这条样本。'
+            ? '录音已经收下，识别和保存正在后台进行，并且已经切到下一句。'
+            : '录音已经收下，识别和保存正在后台进行。'
           : nextExercise
             ? '录音已经收下，已经切到下一句继续练。'
-            : '录音已经收下，可以直接看系统听到的结果。',
+            : '录音已经收下，识别结果会在后台补上。',
       })
 
-      if (nextAttempt.recording && canSaveTrainingSample && hasUsableAssessmentTranscript) {
-        void persistTrainingAttempt(nextAttempt, 'auto')
-      }
+      void result.transcriptCompletion.then(({ transcript, transcriptLatencyMs }) => {
+        if (discardedAttemptIdsRef.current.has(createdAt)) {
+          discardedAttemptIdsRef.current.delete(createdAt)
+          return
+        }
+
+        const finalizedAttempt = buildAttempt(
+          transcript.trim(),
+          transcriptLatencyMs,
+          'complete',
+        )
+        const hasUsableAssessmentTranscript = !isAssessmentTopic || transcript.trim().length > 0
+
+        setAttempt((current) => (
+          mergeCaptureBoundResult(current, finalizedAttempt)
+        ))
+        if (isAssessmentTopic && hasUsableAssessmentTranscript) {
+          setSessionPracticedExerciseIds((currentIds) => (
+            currentIds.includes(recordedExercise.id)
+              ? currentIds
+              : [...currentIds, recordedExercise.id]
+          ))
+          setAssessmentAttemptsByExercise((current) => ({
+            ...current,
+            [recordedExercise.id]: finalizedAttempt,
+          }))
+        }
+
+        if (finalizedAttempt.recording && canSaveTrainingSample && hasUsableAssessmentTranscript) {
+          void persistTrainingAttempt(finalizedAttempt, 'auto')
+        }
+      }).catch((completionError: unknown) => {
+        console.error('[contribute] transcript finalization failed:', completionError)
+        setAttempt((current) => (
+          current?.clientCaptureId === result.clientCaptureId
+            ? { ...current, transcriptStatus: 'complete' }
+            : current
+        ))
+      })
     } catch (error) {
       console.error('[contribute] stop recording failed:', error)
       setNotice({
@@ -2020,16 +2257,24 @@ export function TrainingRecorderPage({
       })
     } finally {
       recordingExerciseRef.current = null
+      recordingSpeechVariantRef.current = 'mandarin'
+      recordingUtterancePairIdRef.current = undefined
+      recordingReadingAssistanceRef.current = false
     }
   }, [
     canSaveTrainingSample,
+    categoryExercises,
+    dialectPairEnabled,
     isAssessmentTopic,
+    matchingExercises,
+    normalizedQuery.length,
     persistTrainingAttempt,
+    readingArticle,
     stopRecording,
-    visibleExercises,
+    trainingUploadLabels.dialectName,
   ])
 
-  if (isLoading) {
+  if (isLoading || shouldBlockTrainingPageForProgress(Boolean(readingArticle), recordingProgress.isLoading)) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-stone-50">
         <div className="text-center text-sm text-gray-600">正在准备训练页...</div>
@@ -2144,6 +2389,45 @@ export function TrainingRecorderPage({
   }
 
   if (!currentExercise) {
+    if (readingArticle) {
+      return (
+        <div className="min-h-dvh bg-stone-50">
+          <header className="border-b border-stone-200 bg-white">
+            <div className="mx-auto max-w-4xl px-4 py-4 sm:px-6">
+              <Link href={returnHref} className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-amber-700 hover:text-amber-800">
+                <ArrowLeft className="size-4" aria-hidden="true" />
+                {returnLabel}
+              </Link>
+              <h1 className="mt-1 text-balance text-2xl font-semibold text-stone-950">{readingArticle.title}</h1>
+            </div>
+          </header>
+          <main className="mx-auto flex max-w-4xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-10">
+            <RecordingDurationSummary
+              compact
+              todayDurationSeconds={recordingProgress.todayDurationSeconds}
+              totalDurationSeconds={recordingProgress.totalDurationSeconds}
+              pendingUploadCount={recordingProgress.pendingUploadCount}
+              isLoading={recordingProgress.isLoading}
+              error={recordingProgress.error}
+            />
+            <section className="rounded-3xl border border-emerald-200 bg-white px-6 py-8 text-center shadow-sm">
+              <CheckCircle2 className="mx-auto size-10 text-emerald-700" aria-hidden="true" />
+              <h2 className="mt-4 text-balance text-2xl font-semibold text-stone-950">
+                {effectiveAllowRecordedExercises ? '这一轮已经读完' : '这篇已经全部录过'}
+              </h2>
+              <p className="mx-auto mt-3 max-w-xl text-pretty text-sm leading-7 text-stone-600">
+                系统已经停止继续出题，不会自动重复。返回文章页可以查看每句状态，想再读时再主动开启新一轮。
+              </p>
+              <Link href={returnHref} className="mt-6 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-amber-700 px-6 py-3 text-sm font-semibold text-white">
+                查看文章进度
+                <ChevronRight className="size-4" aria-hidden="true" />
+              </Link>
+            </section>
+          </main>
+        </div>
+      )
+    }
+
     return (
       <div className="min-h-dvh bg-stone-50">
         <header className="border-b border-stone-200 bg-white">
@@ -2173,13 +2457,6 @@ export function TrainingRecorderPage({
   }
 
   if (usesGuidedCollectionFlow(isAssessmentTopic)) {
-    const flowSteps: Array<{ id: CollectionFlowStep; label: string }> = [
-      { id: 'prepare', label: '准备' },
-      { id: 'record', label: '录一句' },
-      { id: 'review', label: '确认结果' },
-    ]
-    const activeStepIndex = flowSteps.findIndex((step) => step.id === collectionFlowStep)
-
     return (
       <div className="min-h-dvh bg-stone-50">
         <header className="border-b border-stone-200 bg-white">
@@ -2195,41 +2472,10 @@ export function TrainingRecorderPage({
               <h1 className="mt-1 text-balance text-2xl font-semibold text-gray-900">{topicSelection.label}</h1>
               <p className="mt-1 text-pretty text-sm text-gray-600">一次只做一步，录完再确认结果。</p>
             </div>
-            <span className="hidden rounded-full bg-white px-4 py-2 text-sm text-stone-600 ring-1 ring-stone-200 sm:block">
-              本轮已完成 {sessionPracticedExerciseIds.length} 句
-            </span>
           </div>
         </header>
 
         <main className="mx-auto flex max-w-4xl flex-col gap-5 px-4 py-5 sm:px-6 sm:py-8">
-          <nav aria-label="数据录入进度" className="rounded-2xl border border-stone-200 bg-white px-4 py-4 sm:px-6">
-            <ol className="grid grid-cols-3 gap-2">
-              {flowSteps.map((step, index) => {
-                const isActive = step.id === collectionFlowStep
-                const isComplete = index < activeStepIndex
-                return (
-                  <li key={step.id} className="flex items-center gap-2 sm:gap-3">
-                    <span
-                      aria-current={isActive ? 'step' : undefined}
-                      className={cn(
-                        'flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold',
-                        isActive
-                          ? 'bg-amber-600 text-white'
-                          : isComplete
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-stone-100 text-stone-500',
-                      )}
-                    >
-                      {isComplete ? <Check className="size-4" aria-hidden="true" /> : index + 1}
-                    </span>
-                    <span className={cn('text-sm font-medium', isActive ? 'text-stone-950' : 'text-stone-500')}>
-                      {step.label}
-                    </span>
-                  </li>
-                )
-              })}
-            </ol>
-          </nav>
 
           {notice ? (
             <div
@@ -2252,8 +2498,7 @@ export function TrainingRecorderPage({
             <section aria-labelledby="collection-prepare-heading" className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-7">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <p className="text-sm font-medium text-amber-800">第 1 步</p>
-                  <h2 id="collection-prepare-heading" className="mt-2 text-balance text-2xl font-semibold text-stone-950">
+                  <h2 id="collection-prepare-heading" className="text-balance text-2xl font-semibold text-stone-950">
                     准备好后再开始
                   </h2>
                 </div>
@@ -2315,32 +2560,6 @@ export function TrainingRecorderPage({
                 </span>
               </div>
 
-              <details className="mt-5 rounded-2xl border border-stone-200">
-                <summary className="flex min-h-12 cursor-pointer items-center justify-between gap-4 px-4 py-3 text-sm font-semibold text-stone-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500">
-                  <span>可选：补充采集资料</span>
-                  <span className="text-xs font-normal text-stone-500">任务、年龄段、性别</span>
-                </summary>
-                <div className="grid gap-4 border-t border-stone-200 p-4 sm:grid-cols-3">
-                  <div className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-3">
-                    <span className="text-sm font-medium text-stone-700">本次任务</span>
-                    <p className="mt-1 text-sm font-semibold text-stone-950">{collectionPlan.label}</p>
-                    <p className="mt-1 text-pretty text-xs leading-5 text-stone-600">由当前主题自动确定，避免录音被分到错误任务。</p>
-                  </div>
-                  <label className="block space-y-2">
-                    <span className="text-sm font-medium text-stone-700">年龄段</span>
-                    <select value={ageBand} onChange={(event) => setAgeBand(event.target.value)} className="h-11 w-full rounded-xl border border-stone-300 bg-white px-3 text-sm text-stone-900 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500">
-                      {COLLECTION_AGE_BANDS.map((band) => <option key={band} value={band}>{band === 'unspecified' ? '不愿说明' : band}</option>)}
-                    </select>
-                  </label>
-                  <label className="block space-y-2">
-                    <span className="text-sm font-medium text-stone-700">性别</span>
-                    <select value={sex} onChange={(event) => setSex(event.target.value as TrainingUploadLabels['sex'])} className="h-11 w-full rounded-xl border border-stone-300 bg-white px-3 text-sm text-stone-900 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500">
-                      {COLLECTION_SEX_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </select>
-                  </label>
-                </div>
-              </details>
-
               <div className="mt-6 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-pretty text-sm text-stone-500">
                   {!environmentReady || !distanceReady ? '完成上面两项确认后即可继续。' : canSaveTrainingSample ? '准备完成，可以录第一句了。' : '需要先补充数据授权。'}
@@ -2364,21 +2583,64 @@ export function TrainingRecorderPage({
             <section aria-labelledby="collection-record-heading" className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-7">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-medium text-amber-800">第 2 步</p>
-                  <h2 id="collection-record-heading" className="mt-2 text-balance text-2xl font-semibold text-stone-950">读出这一句</h2>
-                  <p className="mt-2 text-pretty text-sm text-stone-600">按平时说话的方式读，读完点停止。</p>
+                  <h2 id="collection-record-heading" className="text-balance text-2xl font-semibold text-stone-950">
+                    {activeSpeechVariant === 'dialect' ? `用${trainingUploadLabels.dialectName ?? '方言'}说同一句` : '读出这一句'}
+                  </h2>
+                  <p className="mt-2 text-pretty text-sm text-stone-600">
+                    {activeSpeechVariant === 'dialect'
+                      ? '按你平时最自然的说法表达。题面相同，不要求逐字对应普通话。'
+                      : '按平时说话的方式读，读完点停止。'}
+                  </p>
                 </div>
-                <span className="rounded-full bg-stone-100 px-4 py-2 text-sm font-medium text-stone-700">
-                  {isRecording ? formatRecordingTime(recordingSeconds) : recorderStatus.label}
-                </span>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {dialectPairEnabled ? (
+                    <span className={cn(
+                      'rounded-full px-3 py-2 text-sm font-semibold',
+                      activeSpeechVariant === 'dialect' ? 'bg-amber-100 text-amber-900' : 'bg-sky-100 text-sky-900',
+                    )}>
+                      {activeSpeechVariantLabel}
+                    </span>
+                  ) : null}
+                  <span className="rounded-full bg-stone-100 px-4 py-2 text-sm font-medium text-stone-700">
+                    {isRecording ? formatRecordingTime(recordingSeconds) : recorderStatus.label}
+                  </span>
+                </div>
               </div>
 
+              {activeSpeechVariant === 'dialect' ? (
+                <div className="mt-4 space-y-2">
+                  <label htmlFor="recording-dialect" className="text-sm font-medium text-stone-900">本次录音使用的方言</label>
+                  <select id="recording-dialect" value={selectedDialect ? JSON.stringify(selectedDialect) : ''}
+                    disabled={isRecording || isProcessing || isReplacingAttempt}
+                    aria-describedby="recording-dialect-help"
+                    onChange={(event) => setSelectedDialectKey(event.target.value)}
+                    className="min-h-11 w-full rounded-md border border-input bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500">
+                    <option value="">请选择一种方言</option>
+                    {dialectOptions.map((entry) => <option key={JSON.stringify(entry)} value={JSON.stringify(entry)}>{entry.name}{entry.region ? ` · ${entry.region}` : ' · 来源地区未填写'}</option>)}
+                  </select>
+                  <p id="recording-dialect-help" className="text-pretty text-sm text-stone-600">只标记这条方言录音；普通话录音不会使用此标签。录音开始后不能更改。</p>
+                </div>
+              ) : null}
               <div className="mt-6 rounded-3xl bg-amber-50 px-5 py-7 text-center ring-1 ring-amber-200 sm:px-8 sm:py-9">
-                <p className="text-sm font-medium text-amber-800">目标句</p>
-                <p className="mt-3 text-balance text-2xl font-semibold leading-relaxed text-stone-950 sm:text-3xl">{currentExercise.text}</p>
+                <p className="text-balance text-2xl font-semibold leading-relaxed text-stone-950 sm:text-3xl">{activeCollectionExercise?.text}</p>
                 {currentPhonologyTarget?.focus ? (
                   <p className="mt-3 text-pretty text-sm text-amber-900">本句重点：{currentPhonologyTarget.focus}</p>
                 ) : null}
+                <div className="mt-5 flex flex-col items-center gap-2">
+                  <p className="text-pretty text-sm text-stone-600">有字不认识？</p>
+                  <button
+                    type="button"
+                    onClick={handlePlayReadingAssistance}
+                    disabled={isRecording || isProcessing || isReadingAssistancePlaying}
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-900 transition-colors duration-150 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Volume2 className="size-4" aria-hidden="true" />
+                    {isReadingAssistancePlaying ? '正在朗读' : '听一下'}
+                  </button>
+                  <p className="min-h-5 text-pretty text-xs leading-5 text-stone-500" aria-live="polite">
+                    {readingAssistanceStatus ?? '只在需要时播放，听完仍按你平时的方式说。'}
+                  </p>
+                </div>
               </div>
 
               <div className="mt-7 flex flex-col items-center text-center">
@@ -2386,7 +2648,11 @@ export function TrainingRecorderPage({
                   type="button"
                   aria-label={isRecording ? '停止录音' : '开始录音'}
                   onClick={isRecording ? () => void handleStopRecording() : () => void handleStartRecording()}
-                  disabled={isUploading || isProcessing || status === 'connecting'}
+                  disabled={shouldDisableTrainingRecordingControl({
+                    isProcessing,
+                    isReadingAssistancePlaying,
+                    status,
+                  })}
                   className={cn(
                     'flex size-28 items-center justify-center rounded-full text-white shadow-lg transition-transform duration-150 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-4 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100',
                     isRecording ? 'bg-rose-600 focus-visible:ring-rose-500' : 'bg-amber-600 focus-visible:ring-amber-500',
@@ -2416,10 +2682,36 @@ export function TrainingRecorderPage({
 
               <details className="mt-6 rounded-2xl border border-stone-200">
                 <summary className="flex min-h-12 cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-stone-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500">
-                  <span>换一句</span>
-                  <span className="text-xs font-normal text-stone-500">当前主题还有 {matchingExercises.length} 句</span>
+                  <span>{readingArticle ? '换一句' : '查看已读和未读'}</span>
+                  <span className="text-xs font-normal text-stone-500">
+                    {readingArticle ? `当前还有 ${matchingExercises.length} 句` : `已读 ${recordedCategoryExerciseCount} · 未读 ${unreadCategoryExerciseCount}`}
+                  </span>
                 </summary>
                 <div className="border-t border-stone-200 p-4">
+                  {!readingArticle ? (
+                    <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="按朗读状态筛选">
+                      {([
+                        ['unread', `未读 ${unreadCategoryExerciseCount}`],
+                        ['read', `已读 ${recordedCategoryExerciseCount}`],
+                        ['all', `全部 ${categoryExercises.length}`],
+                      ] as Array<[ExerciseStatusFilter, string]>).map(([filter, label]) => (
+                        <button
+                          key={filter}
+                          type="button"
+                          aria-pressed={exerciseStatusFilter === filter}
+                          onClick={() => setExerciseStatusFilter(filter)}
+                          className={cn(
+                            'min-h-10 rounded-full px-4 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2',
+                            exerciseStatusFilter === filter
+                              ? 'bg-amber-700 text-white'
+                              : 'bg-stone-100 text-stone-700 hover:bg-stone-200',
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                   <label className="block">
                     <span className="sr-only">搜索训练句子</span>
                     <input
@@ -2430,8 +2722,9 @@ export function TrainingRecorderPage({
                     />
                   </label>
                   <div className="mt-3 max-h-72 space-y-2 overflow-y-auto">
-                    {visibleExercises.map((exercise) => {
+                    {(readingArticle ? visibleExercises : visibleInventoryExercises).map((exercise) => {
                       const isActive = currentExercise.id === exercise.id
+                      const isRecorded = recordedExerciseIdSet.has(exercise.id)
                       return (
                         <button
                           key={exercise.id}
@@ -2444,11 +2737,37 @@ export function TrainingRecorderPage({
                             isActive ? 'border-amber-400 bg-amber-50 text-stone-950' : 'border-stone-200 bg-white text-stone-700 hover:border-amber-300',
                           )}
                         >
-                          {exercise.text}
+                          <span className="flex items-start justify-between gap-3">
+                            <span>{exercise.text}</span>
+                            {!readingArticle ? (
+                              <span className={cn(
+                                'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
+                                isRecorded
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-amber-100 text-amber-900',
+                              )}>
+                                {isRecorded ? '已读' : '未读'}
+                              </span>
+                            ) : null}
+                          </span>
                         </button>
                       )
                     })}
+                    {!readingArticle && visibleInventoryExercises.length === 0 ? (
+                      <p className="rounded-xl bg-stone-50 px-4 py-5 text-center text-sm text-stone-600">
+                        当前筛选下没有句子。
+                      </p>
+                    ) : null}
                   </div>
+                  {!readingArticle && visibleInventoryExercises.length < inventoryMatchingExercises.length ? (
+                    <button
+                      type="button"
+                      onClick={() => setVisibleInventoryLimit((current) => current + DEFAULT_VISIBLE_SENTENCES)}
+                      className="mt-3 min-h-11 w-full rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-700 hover:border-amber-300 hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                    >
+                      显示更多（还有 {inventoryMatchingExercises.length - visibleInventoryExercises.length} 句）
+                    </button>
+                  ) : null}
                 </div>
               </details>
 
@@ -2482,14 +2801,15 @@ export function TrainingRecorderPage({
                     : <Check className="size-6" aria-hidden="true" />}
                 </span>
                 <div>
-                  <p className={cn('text-sm font-medium', isReplacingAttempt ? 'text-amber-900' : 'text-emerald-800')}>
-                    {isReplacingAttempt ? '正在替换' : '录音成功'}
-                  </p>
                   <h2
                     id="collection-review-heading"
-                    className={cn('mt-1 text-balance text-xl font-semibold', isReplacingAttempt ? 'text-amber-950' : 'text-emerald-950')}
+                    className={cn('text-balance text-xl font-semibold', isReplacingAttempt ? 'text-amber-950' : 'text-emerald-950')}
                   >
-                    {isReplacingAttempt ? '先撤回旧录音，再重新录这一句' : '很好，这一句已经完整收下了'}
+                    {isReplacingAttempt
+                      ? '先撤回旧录音，再重新录这一句'
+                      : attempt.speechVariant === 'dialect'
+                        ? `${attempt.dialect?.name ?? '方言'}录音已经完整收下`
+                        : '很好，这一句已经完整收下了'}
                   </h2>
                   <p className={cn('mt-1 text-pretty text-sm leading-6', isReplacingAttempt ? 'text-amber-900' : 'text-emerald-800')}>
                     {isReplacingAttempt
@@ -2498,8 +2818,8 @@ export function TrainingRecorderPage({
                       ? '正在自动保存，你可以先确认系统听到的内容。'
                       : attempt.uploadStatus === 'uploaded'
                         ? '已经安全保存到你的训练数据中。'
-                        : attempt.uploadStatus === 'retrying'
-                          ? '录音已留在本机，网络恢复后会自动补登。'
+                        : attempt.uploadStatus === 'local_only'
+                          ? '录音已留在本机，网络或服务恢复后再继续同步。'
                           : '你可以回听、重录或继续下一句。'}
                   </p>
                 </div>
@@ -2512,7 +2832,11 @@ export function TrainingRecorderPage({
                 </div>
                 <div className="grid gap-1 py-4 sm:grid-cols-[5rem_1fr] sm:gap-4">
                   <dt className="text-sm font-medium text-stone-500">系统听到</dt>
-                  <dd className="text-pretty text-base leading-7 text-stone-950">{attempt.transcript || '这次没有拿到稳定的识别文本，但录音仍可回听。'}</dd>
+                  <dd className="text-pretty text-base leading-7 text-stone-950">
+                    {attempt.transcriptStatus === 'pending'
+                      ? '正在后台完成识别…'
+                      : attempt.transcript || '这次没有拿到稳定的识别文本，但录音仍可回听。'}
+                  </dd>
                 </div>
               </dl>
 
@@ -2528,8 +2852,6 @@ export function TrainingRecorderPage({
                 </div>
               ) : null}
 
-              <p className="mt-4 text-pretty text-sm leading-6 text-stone-600">{attempt.sampleQuality.summary}</p>
-
               <div className="mt-6 grid gap-3 sm:grid-cols-2">
                 <button
                   type="button"
@@ -2537,7 +2859,7 @@ export function TrainingRecorderPage({
                   disabled={isReplacingAttempt}
                   className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-amber-700 px-5 py-3 text-sm font-semibold text-white transition-colors duration-150 hover:bg-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-stone-300"
                 >
-                  继续下一句
+                  {attempt.speechVariant === 'mandarin' && dialectPairEnabled ? `继续录${trainingUploadLabels.dialectName ?? '方言'}` : '继续下一句'}
                   <ChevronRight className="size-4" aria-hidden="true" />
                 </button>
                 <button
@@ -2550,6 +2872,16 @@ export function TrainingRecorderPage({
                   {isReplacingAttempt ? '正在撤回旧录音…' : '重录这一句'}
                 </button>
               </div>
+              {attempt.speechVariant === 'mandarin' && dialectPairEnabled ? (
+                <button
+                  type="button"
+                  onClick={handleSkipDialect}
+                  disabled={isReplacingAttempt}
+                  className="mt-3 min-h-11 w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 transition-colors duration-150 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  这句先跳过方言
+                </button>
+              ) : null}
               <p className="mt-3 text-pretty text-xs leading-5 text-stone-500">
                 重录会先撤回当前版本，再保存新录音，不会同时留下两条。
               </p>
@@ -2602,7 +2934,7 @@ export function TrainingRecorderPage({
             </p>
           </div>
           <div className="hidden rounded-full border border-stone-200 bg-stone-50 px-4 py-2 text-sm text-gray-700 sm:block">
-            当前账号：{user?.email || '已登录用户'}
+            {workspaceSnapshot?.registration_profile?.full_name || user?.email || '用户'}
           </div>
         </div>
       </header>
@@ -2614,6 +2946,14 @@ export function TrainingRecorderPage({
       ) : null}
 
       <main className="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-5 sm:gap-6 sm:px-6 sm:py-8">
+        <RecordingDurationSummary
+          compact
+          todayDurationSeconds={recordingProgress.todayDurationSeconds}
+          totalDurationSeconds={recordingProgress.totalDurationSeconds}
+          pendingUploadCount={recordingProgress.pendingUploadCount}
+          isLoading={recordingProgress.isLoading}
+          error={recordingProgress.error}
+        />
         <section className="order-2 grid gap-4 sm:grid-cols-3 xl:order-none">
           {currentProgressStats.map((stat) => (
             <div
@@ -2640,35 +2980,19 @@ export function TrainingRecorderPage({
                   <div>
                     <h2 className="text-2xl font-semibold text-gray-900 text-balance">完成固定词表，建立你的沟通表现基线</h2>
                     <p className="mt-2 text-sm text-gray-600 text-pretty">
-                      疾病种类可选填；报告重点看系统听清、音系差异、节奏和收音，不从一次录音诊断疾病。
+                      注册时登记的残疾类别会自动随样本保存；报告重点看系统听清、音系差异、节奏和收音，不从一次录音诊断疾病。
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void handleSaveTrainingLabels()}
-                    disabled={isSavingTrainingLabels || trainingEtiology === 'unknown'}
-                    className="rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {isSavingTrainingLabels ? '保存中...' : '保存标签'}
-                  </button>
                 </div>
 
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  <label className="block space-y-2">
-                    <span className="text-sm font-medium text-gray-900">疾病种类</span>
-                    <select
-                      value={trainingEtiology}
-                      onChange={(event) => setTrainingEtiology(event.target.value as TrainingEtiology)}
-                      className="h-12 w-full rounded-2xl border border-stone-200 bg-stone-50 px-4 text-sm text-gray-900 outline-none transition focus:border-amber-300 focus:bg-white"
-                    >
-                      {TRAINING_ETIOLOGY_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
+                  <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+                    <p className="text-sm font-medium text-gray-900">残疾类别</p>
+                    <p className="mt-2 text-lg font-semibold text-gray-900">
+                      {workspaceSnapshot?.registration_profile?.disability_category || '沿用已有用户资料'}
+                    </p>
+                    <p className="mt-1 text-sm text-gray-600">来自注册资料，训练页不再重复填写。</p>
+                  </div>
                   <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
                     <p className="text-sm font-medium text-gray-900">训练支持级别</p>
                     <p className="mt-2 text-lg font-semibold text-gray-900">
@@ -2819,25 +3143,13 @@ export function TrainingRecorderPage({
                     <span>麦克风位置稳定，约 20–30 cm</span>
                   </label>
                 </div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                <div className="mt-3">
                   <div className="rounded-xl border border-stone-200 bg-white px-3 py-2">
                     <span className="text-xs font-medium text-stone-600">本次任务</span>
                     <p className="mt-1 text-sm font-semibold text-stone-900">{collectionPlan.label}</p>
                   </div>
-                  <label className="block space-y-1">
-                    <span className="text-xs font-medium text-stone-600">年龄段（可选）</span>
-                    <select value={ageBand} onChange={(event) => setAgeBand(event.target.value)} className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-sm">
-                      {COLLECTION_AGE_BANDS.map((band) => <option key={band} value={band}>{band === 'unspecified' ? '不愿说明' : band}</option>)}
-                    </select>
-                  </label>
-                  <label className="block space-y-1">
-                    <span className="text-xs font-medium text-stone-600">性别（可选）</span>
-                    <select value={sex} onChange={(event) => setSex(event.target.value as TrainingUploadLabels['sex'])} className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-sm">
-                      {COLLECTION_SEX_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </select>
-                  </label>
                 </div>
-                <p className="mt-3 text-xs leading-5 text-stone-500">默认只保存音频、目标文本、实际转写、严重程度、病种、年龄段和性别；其他信息只在质检需要时使用。</p>
+                <p className="mt-3 text-xs leading-5 text-stone-500">样本会自动带上注册资料中的残疾类别/病种；姓名、电话和证件号不会写入录音样本。</p>
               </div>
               <div className="mt-5 rounded-[24px] border border-stone-200 bg-stone-50 p-5">
                 {practiceMode === 'prepared_content' ? (
@@ -3255,7 +3567,11 @@ export function TrainingRecorderPage({
                 <button
                   type="button"
                   onClick={isRecording ? () => void handleStopRecording() : () => void handleStartRecording()}
-                  disabled={isUploading || isProcessing || status === 'connecting'}
+                  disabled={shouldDisableTrainingRecordingControl({
+                    isProcessing,
+                    isReadingAssistancePlaying: false,
+                    status,
+                  })}
                   className={`flex h-28 w-28 items-center justify-center rounded-full text-white shadow-lg transition ${
                     isRecording
                       ? 'bg-rose-500 hover:bg-rose-600'
@@ -3355,7 +3671,9 @@ export function TrainingRecorderPage({
                       <dd className="text-base leading-7 text-gray-950">
                         {isAssessmentTopic
                           ? assessmentTranscriptNotice?.heardText
-                          : attempt.transcript || '这次还没有稳定拿到最终结果。'}
+                          : attempt.transcriptStatus === 'pending'
+                            ? '正在后台完成识别…'
+                            : attempt.transcript || '这次还没有稳定拿到最终结果。'}
                       </dd>
                     </div>
                   </dl>
@@ -3379,7 +3697,9 @@ export function TrainingRecorderPage({
 
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                     <p className="max-w-xl text-sm leading-6 text-gray-700">
-                      {isAssessmentTopic && !attempt.transcript
+                      {attempt.transcriptStatus === 'pending'
+                        ? '录音已经收下，你可以继续操作，不需要等待识别完成。'
+                        : isAssessmentTopic && !attempt.transcript
                         ? '识别结果为空，请重新录制。'
                         : isAssessmentTopic
                           ? assessmentTranscriptNotice?.helperText
@@ -3479,10 +3799,10 @@ export function TrainingRecorderPage({
               <div className="rounded-[20px] bg-emerald-50 px-4 py-4">
                 <p className="text-sm font-medium text-gray-900">每日练习目标</p>
                 <p className="mt-3 text-sm leading-7 text-gray-700">
-                  {dailyPracticeSlogan}。先完成固定小目标，再看今日总结和 7 天总结。
+                  {dailyPracticeSlogan}。页面会自动累计今日时长，不要求凑满固定句数。
                 </p>
                 <div className="mt-4">
-                  {renderChips(['20 句', '先完成一轮', '不公开账号'], 'emerald')}
+                  {renderChips(['想停就停', '自动累计时长', '不公开账号'], 'emerald')}
                 </div>
               </div>
             </div>

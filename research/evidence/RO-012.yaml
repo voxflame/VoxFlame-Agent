@@ -1,0 +1,76 @@
+research_id: RO-012
+status: outcome_review
+evidence_class: engineering
+claim: 通过数据库汇总、刷新去重和可退出的后台刷新，可消除长历史训练页的循环遮挡；需真实设备回归确认。
+sources:
+  - source_id: local-prod-logs-2026-08-28
+    url: internal://production-logs
+    evidence_level: primary
+    accessed_at: 2026-08-29
+    published_or_version: production snapshot
+    supports: 852 successful recordings, 896 progress failures, zero JWT failures
+    limitations: internal telemetry; no independent user study
+  - source_id: local-progress-rpc-2026-08-28
+    url: internal://recording-progress-rpc
+    evidence_level: primary
+    accessed_at: 2026-08-29
+    published_or_version: migration 20260828010000
+    supports: 1.22–1.47s first call and 0.26–0.53s warm calls for account 308
+    limitations: one account and one production database
+  - source_id: nextjs-fetch-abort-docs
+    url: https://nextjs.org/docs
+    evidence_level: primary
+    accessed_at: 2026-08-29
+    published_or_version: current docs
+    supports: frontend request cancellation and server/client boundaries
+    limitations: framework contract does not prove product recovery
+independent_review:
+  required: true
+  reviewer: pending device owner review
+  relationship_to_author: separate operator
+  completed_at: pending
+  result: pending
+authority_gate:
+  status: pending
+  release_or_expansion: product_default
+  claim_scope: current Web training flow for authenticated users
+  authority_sources:
+    - source_id: local-prod-logs-2026-08-28
+      url: internal://production-logs
+      tier: primary
+      independence_basis: production telemetry
+      supports: failure frequency
+      limitations: internal
+    - source_id: nextjs-fetch-abort-docs
+      url: https://nextjs.org/docs
+      tier: primary
+      independence_basis: framework documentation
+      supports: cancellation mechanism
+      limitations: not user outcome evidence
+  independent_review:
+    reviewer: pending
+    institution_or_scope: device smoke
+    conflict_of_interest: maintainer executes code; device reviewer separate
+    result: pending
+    reviewed_at: pending
+  counterevidence_recorded: true
+  population_device_scenario_bounds_recorded: true
+  failure_conditions: P95 >2s, recovery <99%, cross-account leakage
+  rollback_or_withdrawal: revert frontend and migration-compatible API
+  recheck_date: 2026-09-05
+reproducibility:
+  code_or_protocol: backend recording progress tests + frontend tests
+  data_version_and_license: production aggregate only; no raw audio
+  commit_or_release: working tree 2026-08-29
+  run_command: npm test; backend build; device smoke
+  seed_or_determinism: deterministic API fixtures
+  raw_artifacts: .tasks/current.md and production diagnostics
+uncertainty_and_counterevidence:
+  uncertainty: real-device and large-history regression pending
+  counterevidence: old path took 6.2s and repeated refreshes
+  out_of_scope: RTC capacity
+outcome_gates:
+  scholarly: not_applicable
+  patent: not_applicable
+  software_copyright: not_applicable
+  product: pending

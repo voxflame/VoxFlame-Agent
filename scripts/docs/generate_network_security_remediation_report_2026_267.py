@@ -15,7 +15,7 @@ from docx.shared import Cm, Pt
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = ROOT / "docs/上海生声不息科技有限公司网络安全整改报告_沪浦网信安通2026_267号.md"
+SOURCE = ROOT / "research/product-engineering/上海生声不息科技有限公司网络安全整改报告_沪浦网信安通2026_267号.md"
 OUTPUT = ROOT / "上海生声不息科技有限公司网络安全整改报告（沪浦网信安通〔2026〕267号）.docx"
 
 BODY_FONT = "Noto Serif CJK SC"

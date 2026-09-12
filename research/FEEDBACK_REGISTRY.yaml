@@ -1,5 +1,5 @@
-version: 1
-updated_at: 2026-08-14
+version: 2
+updated_at: 2026-08-29
 purpose: >-
   把用户反馈、沟通伙伴观察、运行监控和失败样本转成可验证的优化输入。
   每条反馈必须关联 research_id；反馈本身不是结论。
@@ -23,17 +23,115 @@ required_fields:
   - state
 states: [new, triaged, experiment_ready, validating, resolved, rejected, accepted_risk]
 entries:
-  - feedback_id: FB-000
-    research_id: RO-000
+  - feedback_id: FB-001
+    research_id: RO-012
+    source: user
+    observed_at: 2026-08-28
+    scenario: 账号308连续训练保存下一句
+    observation: 保存后反复显示“正在准备训练页”，页面无法稳定进入下一句。
+    severity: high
+    failure_type: ux
+    evidence_ref: research/product-engineering/RO-012-training-progress-stability-2026-08-29.md
+    hypothesis: 全量历史进度读取与重复刷新叠加，后台刷新被误判为初始加载。
+    owner: frontend + backend training workbench
+    action: 数据库聚合、single-flight、超时和后台刷新不遮挡；执行真实设备回归。
+    validation: progress P95 <2s、重复刷新率下降、恢复率 >=99%、无跨账户串读。
+    state: validating
+  - feedback_id: FB-002
+    research_id: RO-013
+    source: telemetry
+    observed_at: 2026-08-29
+    scenario: 单机 Docker 部署与重建
+    observation: Build Cache 曾约 4.03 GiB，悬空镜像和宿主日志会随时间增长。
+    severity: medium
+    failure_type: network
+    evidence_ref: research/product-engineering/RO-013-docker-resource-governance-2026-08-29.md
+    hypothesis: 没有阈值化、可审计的安全清理和日志轮转会增加磁盘耗尽风险。
+    owner: platform operations
+    action: 启用每日 timer、prune-safe 和 logrotate，保留卷与回滚镜像。
+    validation: 连续7天趋势、保护对象回归、清理前后 df 对比。
+    state: validating
+  - feedback_id: FB-003
+    research_id: RO-014
     source: maintainer
-    observed_at: 2026-08-14
-    scenario: TEMPLATE
-    observation: TEMPLATE - replace before use
-    severity: low
+    observed_at: 2026-08-29
+    scenario: 多用户实时语音容量评估
+    observation: 当前单 Agent Worker；每房间独立 Job 并持有 ASR/TTS/LLM 连接；8001 ASR 服务监听状态未知。
+    severity: high
     failure_type: unknown
-    evidence_ref: TBD
-    hypothesis: TBD
-    owner: TBD
-    action: replace this template entry
-    validation: TBD
-    state: new
+    evidence_ref: research/voice-agent/RO-014-livekit-asr-concurrency-capacity-2026-08-29.md
+    hypothesis: 单 Worker、单 Job 内存和外部 provider 并发配额将先于 LiveKit SFU 房间上限成为瓶颈。
+    owner: livekit_agent + platform operations
+    action: 完成5→10→20→50路真实 RTC 阶梯压测，补信号量、熔断和第二 Worker 接管实验。
+    validation: OOM=0、拒绝率 <=1%、ASR/TTS/LLM 与丢包保护阈值达标。
+    state: experiment_ready
+  - feedback_id: FB-004
+    research_id: RO-015
+    source: maintainer
+    observed_at: 2026-09-03
+    scenario: 注册方言自述并进入训练数据采集
+    observation: 用户希望方言信息在注册时可跳过；有方言时同一句话普通话和方言各说一遍，方言数据需要额外标注以便训练。
+    severity: high
+    failure_type: data
+    evidence_ref: research/speech-health/RO-015-dialect-paired-speech-collection-2026-09-03.md
+    hypothesis: 如果没有语义题面、变体角色、配对 ID、来源和说话人隔离，方言 ASR/书写差异会被误判为用户错误或造成训练泄漏。
+    owner: frontend + backend training workbench + data governance
+    action: 保留用户自报与可选标准标签；实现可跳过的 paired state machine；扩展前后端元数据白名单；按 contributor 做 speaker-disjoint 评测。
+    validation: 方言跳过不阻塞普通话进度；pair_id/role 稳定；证件/电话不出现在 manifest；同一说话人的 pair 不跨 split；ASR 仅诊断不拒收。
+    state: experiment_ready
+  - feedback_id: FB-005
+    research_id: RO-016
+    source: maintainer
+    observed_at: 2026-09-03
+    scenario: Web/App 训练撤回、工作区打开和移动端切换材料
+    observation: 撤回接近 10 秒；审计发现多个远程清理串行、工作区重复查 profile、移动目录重复请求。
+    severity: high
+    failure_type: network
+    evidence_ref: research/product-engineering/RO-016-cross-surface-lookup-efficiency-2026-09-03.md
+    hypothesis: 跨服务往返和全量/重复读取是主要延迟来源，独立步骤并行与短 TTL 去重可降低 P95。
+    owner: frontend + backend + mobile workbench
+    action: 并行撤回外部清理、合并 workspace profile 读取、增加活动与目录短缓存；补阶段耗时指标。
+    validation: discard P95 <3s、progress P95 <2s、无跨账户缓存命中、部分清理可安全重试。
+    state: validating
+  - feedback_id: FB-006
+    research_id: RO-017
+    source: user
+    observed_at: 2026-09-07
+    scenario: 余杭经营为主并拟在杭州其他区与上海设子公司的政策汇报
+    observation: 用户要求将政策内容改为合伙人可读的正式商务布局建议，反对余杭优先标题、学术化表述及内部核验流水。
+    severity: medium
+    failure_type: unknown
+    evidence_ref: research/product-engineering/RO-017-compute-policy-briefing-2026-09-07.md
+    hypothesis: 以官方原文分层标记状态、费用归属及拟设主体资格，可避免把最高补贴误作为当前可得收入。
+    owner: company management + finance
+    action: 重写8页商务报告并生成PDF，正文提供区域比较、经营分工与实施安排，9项官方依据集中附录；完整12份证据继续保留。
+    validation: PDF文本及排版完整；官方日期可追溯；缺失细则明确标记；公司资格获得书面回复前不计确定收益。
+    state: validating
+  - feedback_id: FB-007
+    research_id: RO-018
+    source: user
+    observed_at: 2026-09-07
+    scenario: 1000用户、2万小时采集的阿里云充值及两台8卡GPU谈判
+    observation: 用户要求结合现有8页政策PDF生成合伙人充值申请与阿里云算力谈判两份文档，原飞书配置/报价表不可见。
+    severity: medium
+    failure_type: unknown
+    evidence_ref: research/product-engineering/RO-018-aliyun-budget-and-compute-2026-09-07.md
+    hypothesis: 将基础云、GPU专项、政策、赠额与容量分开可减少过度承诺，并支持可核验报价。
+    owner: company management + finance + platform operations
+    action: 生成中文Word/PDF，补建议预算和参数边界，建立报价/试机/签约条件；不执行充值或采购。
+    validation: 金额与配置求和、全文和版式检查、官方来源哈希；独立财务与供方书面审核仍待完成。
+    state: validating
+  - feedback_id: FB-008
+    research_id: RO-014
+    source: user
+    observed_at: 2026-09-10
+    scenario: "语音积压、打断和无AEC硬件调试"
+    observation: "隔离复现TTS清源后回灌旧帧；收音等待HTTP ASR；旧回复FIFO与同步LLM无法完整取消。成员实际硬件路径尚未知。"
+    severity: "high"
+    failure_type: "runtime"
+    evidence_ref: "research/voice-agent/RO-014-voice-pipeline-repair-2026-09-10.md"
+    hypothesis: "取消生产者后清源、不可变capture归属及单轮可取消回复可消除已复现竞态；无AEC设备仍需半双工或有效端侧AEC。"
+    owner: "livekit_agent"
+    action: "已实现本地异步取消、有界缓存和半双工保护；官方工程指标协议与离线benchmark纳入Harness，证据挂同一RO；待单房间RTC与硬件验收，不部署。"
+    validation: "118项Agent测试通过；真机尾音/AEC/真实账号连续录音及并发保护指标未验收。"
+    state: validating

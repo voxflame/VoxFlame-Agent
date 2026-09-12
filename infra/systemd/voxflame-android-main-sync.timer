@@ -3,8 +3,8 @@ Description=Check origin/main for VoxFlame Android releases
 
 [Timer]
 OnBootSec=3min
-OnUnitActiveSec=5min
-RandomizedDelaySec=30s
+OnUnitActiveSec=15min
+RandomizedDelaySec=2min
 Persistent=true
 Unit=voxflame-android-main-sync.service
 

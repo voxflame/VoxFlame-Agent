@@ -1,13 +1,13 @@
 # VoxFlame Frontend
 
-前端已收口到 `RTC + RTM` 实时链路，不再接入旧 websocket 代理。
+前端已收口到 `LiveKit RTC + room data` 实时链路，不再接入旧 websocket 代理。
 
 ## 技术栈
 
 - Next.js 14 App Router
 - React 18 + TypeScript + Tailwind CSS
 - LiveKit client
-- PWA（默认开启，可按环境显式关闭）
+- Web 网站（原生 Android / iPhone App 通过独立下载页提供）
 - Web Audio API
 
 ## 当前职责
@@ -16,7 +16,7 @@
 - 沟通页实时会话与 starter kit
 - 训练页 RTC 会话、录音资产与上传回执
 - 沟通档案页与共享 `workspace` 读模型
-- PWA 安装、离线与更新提示
+- 旧 Web App 运行时迁移清理
 
 ## 当前主链
 
@@ -109,6 +109,14 @@ app (路由/页面入口)
 - 训练录音前端统一围绕 `recording envelope -> recorder queue -> upload receipt` 组织
 - 默认优先走同源 `/api` rewrite，而不是让浏览器直接访问 `:3001`
 
+### RTC HTTP 契约与生命周期
+
+`src/lib/realtime-audio/generated/rtc-session.ts` 来自 Backend canonical contract，不手改；`session-contract.ts` 只保留 Web 设备上下文与默认策略辅助函数。根目录 `npm run test:rtc-contract` 检查三端漂移与实际 HTTP 客户端解析。
+
+`session-bootstrap.ts` 只获取并校验 start 响应；`session-runtime.ts` 等待 Agent ACK 后标记连接成功，退出走 SDK disconnect，不再 HTTP ping/stop。`transport` 是唯一连接信息；`joinTokenTtlSeconds` 不是会话时长。历史 `rtm` 内部变量名表示 LiveKit room data，不是另一套 RTM SDK。
+
+发布需协调 Backend 与 App 版本；详见[接口边界](../research/product-engineering/RTC_CONTRACT_CLEANUP_2026-09-11.md)。
+
 ## 核心模块
 
 - `src/hooks/useRtcAgentSession.ts`
@@ -139,12 +147,6 @@ app (路由/页面入口)
 ```bash
 # 从项目根目录
 sudo docker-compose up -d frontend
-```
-
-如需排查本地浏览器缓存或 service worker 干扰，可临时关闭 PWA：
-
-```bash
-VOXFLAME_ENABLE_PWA=0 sudo docker-compose up -d --build frontend
 ```
 
 ### 本地开发
@@ -224,7 +226,6 @@ recording envelope
 ```bash
 # .env.local
 NEXT_PUBLIC_API_URL=http://localhost:3001/api
-VOXFLAME_ENABLE_PWA=1
 ```
 
 ## 开发经验
@@ -247,26 +248,18 @@ sudo docker-compose build frontend --no-cache
 sudo docker-compose up -d frontend
 ```
 
-### PWA 边界
+### Web 与原生 App 边界
 
-PWA 现在适合承担：
+当前 Web 负责直接打开即用的沟通、练习和准备工作；Android / iPhone 原生内测包统一从 `/download` 获取。Web 不再提供安装到桌面、离线缓存或网页版本更新提示，避免与原生 App 入口混淆。
 
-- 安装到桌面 / 主屏幕
-- 静态资源缓存
-- 安装感和较轻的离线体验
-- 与 recorder queue 结合，降低“临时断网就丢数据”的风险
-
-PWA 还不能替代未来原生 App / mobile workbench 的部分：
-
-- 更稳定的后台音频与长时录制
-- 更强的系统级权限与设备集成
-- 更完整的通知、后台同步和硬件协作
-- 更强的移动端 / 桌面端原生分发与系统入口
-
-当前建议是：先把 PWA 当作近端产品面，把“能安装、能录、能断网兜底、能持续验证”做扎实；原生 App 不需要立刻抢 P0，但也没有被完全替代。
+历史版本注册过 Web App 的浏览器，首次打开新版 Web 会自动注销旧 service worker 并删除旧缓存。录音待同步队列保存在 IndexedDB，不受这次清理影响。
 
 ## 相关文档
 
 - [主项目 README](../README.md)
 - [后端 README](../backend/README.md)
 - [LiveKit Agent README](../livekit_agent/README.md)
+
+### RTC 第二切片（本地未部署）
+
+连接生命周期由单会话 AbortController 持有：disconnect 先使旧任务失效，HTTP/SDK/ACK/profile/重试均可取消；晚到 room 只清理自身，旧音轨禁止播放。`npm run test:rtc-contract`（仓库根）包含延迟替身竞态回归，不代替真实麦克风/RTC 验收。

@@ -1,0 +1,117 @@
+research_id: RO-015
+status: evidence_review
+evidence_class: speech-health
+claim: 方言自报可作为采集分流与来源标签；普通话/方言可共享语义题面并以 utterance_pair_id 关联，但方言转写、标准语言代码和模型收益仍需独立验证。
+sources:
+  - source_id: rfc5646
+    url: https://www.rfc-editor.org/rfc/rfc5646.txt
+    evidence_level: primary
+    accessed_at: 2026-09-03
+    published_or_version: RFC 5646 September 2009
+    supports: language tags for spoken language varieties, region/variant/private-use boundaries
+    limitations: standard syntax does not validate a user's dialect self-report or product taxonomy
+  - source_id: iana-language-subtag-registry
+    url: https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry
+    evidence_level: primary
+    accessed_at: 2026-09-03
+    published_or_version: registry snapshot accessed 2026-09-03
+    supports: cmn, yue, nan, hak, wuu, gan, hsn, cjy and cpx entries under zh macrolanguage
+    limitations: not every Chinese regional variety has a precise tag; tags do not establish speaker identity
+  - source_id: datasheets-for-datasets
+    url: https://arxiv.org/abs/1803.09010
+    evidence_level: primary
+    accessed_at: 2026-09-03
+    published_or_version: arXiv 1803.09010
+    supports: documenting provenance, missingness, relationships, splits, consent, withdrawal and distribution
+    limitations: framework guidance, not a dialect annotation algorithm
+  - source_id: data-statements-for-nlp
+    url: https://aclanthology.org/Q18-1041/
+    evidence_level: primary
+    accessed_at: 2026-09-03
+    published_or_version: TACL 2018
+    supports: language-variety tags plus prose, speaker demographics, disordered speech, speech situation and recording quality
+    limitations: proposal, not a medical consent or Chinese dialect ontology
+  - source_id: asha-dysarthria-adults
+    url: https://www.asha.org/practice-portal/clinical-topics/dysarthria-in-adults/
+    evidence_level: professional
+    accessed_at: 2026-08-17
+    published_or_version: ASHA Practice Portal page captured in repository evidence
+    supports: dysarthria as neurogenic speech disorder and need to consider all languages and specific dialects
+    limitations: professional practice guidance, not VoxFlame efficacy evidence
+  - source_id: kespeech-author-repository
+    url: https://github.com/tzyll/KeSpeech
+    evidence_level: primary
+    accessed_at: 2026-09-03
+    published_or_version: main branch README accessed 2026-09-03
+    supports: existence of an open Mandarin plus eight-subdialect corpus and license pointer
+    limitations: README is not the peer-reviewed paper; OpenReview PDF returned 403
+  - source_id: qifusion-net
+    url: https://arxiv.org/abs/2407.03026
+    evidence_level: primary
+    accessed_at: 2026-09-03
+    published_or_version: arXiv 2407.03026v1
+    supports: multi-accent ASR remains a distinct offline recognition problem
+    limitations: offline benchmark, not dysarthric-user or VoxFlame outcome evidence
+  - source_id: m2r-whisper
+    url: https://arxiv.org/abs/2409.11889
+    evidence_level: primary
+    accessed_at: 2026-09-03
+    published_or_version: arXiv 2409.11889v3
+    supports: subdialect recognition mismatch and retrieval mitigation as offline research
+    limitations: offline benchmark, not deployment or user-benefit evidence
+independent_review:
+  required: true
+  reviewer: pending linguistics/SLP/data-protection review
+  relationship_to_author: independent review required before default rollout
+  completed_at: pending
+  result: pending
+authority_gate:
+  status: pending
+  release_or_expansion: internal_only
+  claim_scope: optional registration label and paired recording prototype for authenticated training
+  authority_sources:
+    - source_id: rfc5646
+      url: https://www.rfc-editor.org/rfc/rfc5646.txt
+      tier: primary
+      independence_basis: IETF language-tag standard
+      supports: tag structure and private-use limits
+      limitations: no product taxonomy or user validation
+    - source_id: asha-dysarthria-adults
+      url: https://www.asha.org/practice-portal/clinical-topics/dysarthria-in-adults/
+      tier: professional
+      independence_basis: ASHA practice portal
+      supports: language/dialect context in dysarthria care
+      limitations: no model or product efficacy
+    - source_id: data-statements-for-nlp
+      url: https://aclanthology.org/Q18-1041/
+      tier: primary
+      independence_basis: peer-reviewed dataset documentation proposal
+      supports: speaker, variety, disorder, consent and recording metadata
+      limitations: guidance rather than validation result
+  independent_review:
+    reviewer: pending
+    institution_or_scope: Chinese dialect linguistics, SLP and privacy review
+    conflict_of_interest: implementation owner authored the prototype
+    result: pending
+    reviewed_at: pending
+  counterevidence_recorded: true
+  population_device_scenario_bounds_recorded: true
+  failure_conditions: dialect skip/fatigue causes completion drop; ASR quality rules reject dialect samples; pair or speaker leakage; sensitive profile fields enter training exports
+  rollback_or_withdrawal: disable dialect prompt and revert to Mandarin-only flow; quarantine affected dataset version; retain raw recordings and per-recording withdrawal path
+  recheck_date: 2026-09-17
+reproducibility:
+  code_or_protocol: repository audit at commit a75d292b805700bb4e387665a0b14b62b3df16fe plus source retrieval and metadata contract tests
+  data_version_and_license: source snapshots recorded by SHA-256 in research note; no user recordings used
+  commit_or_release: a75d292b805700bb4e387665a0b14b62b3df16fe plus working-tree metadata patch
+  run_command: cd frontend && npm test; npx tsc --noEmit; npm run build; cd ../backend && npm run build; bash scripts/check_ai_docs.sh; bash scripts/check_research_system.sh; python3 scripts/check_research_harness.py; python3 scripts/research/validate-research-loop.py
+  seed_or_determinism: deterministic metadata allow-list tests; no model experiment run
+  raw_artifacts: /tmp/voxflame-dialect-research.SzYUqE source snapshots (ephemeral)
+uncertainty_and_counterevidence:
+  uncertainty: no validated Chinese dialect ontology for all user self-reports; no completed paired-flow device study; no VoxFlame dialect model gain result; OpenReview KeSpeech PDF inaccessible
+  counterevidence: self-report may be broad or mixed; dialect ASR may orthographically mismatch semantic success; optional second recording increases burden
+  out_of_scope: diagnosis, therapy efficacy, dialect classification as identity inference, production-wide rollout, exact dialect inference from province/city
+outcome_gates:
+  scholarly: not_applicable
+  patent: not_applicable
+  software_copyright: not_applicable
+  product: pending

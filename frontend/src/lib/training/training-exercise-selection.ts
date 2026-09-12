@@ -8,6 +8,7 @@ export interface SelectTrainingExercisesOptions<TExercise extends TrainingExerci
   exercises: TExercise[]
   recordedExerciseIds?: Iterable<string>
   sessionExerciseIds?: Iterable<string>
+  resumeAfterExerciseId?: string | null
 }
 
 export interface SelectedTrainingExercises<TExercise extends TrainingExerciseLike> {
@@ -47,10 +48,20 @@ export function selectTrainingExercises<TExercise extends TrainingExerciseLike>(
     ...Array.from(sessionExerciseIds),
   ])
 
-  const unrecordedExercises = options.exercises.filter(
+  const resumeIndex = options.resumeAfterExerciseId
+    ? options.exercises.findIndex((exercise) => exercise.id === options.resumeAfterExerciseId)
+    : -1
+  const orderedExercises = resumeIndex >= 0
+    ? [
+        ...options.exercises.slice(resumeIndex + 1),
+        ...options.exercises.slice(0, resumeIndex + 1),
+      ]
+    : options.exercises
+
+  const unrecordedExercises = orderedExercises.filter(
     (exercise) => !completedExerciseIds.has(exercise.id),
   )
-  const unrepeatedExercises = options.exercises.filter(
+  const unrepeatedExercises = orderedExercises.filter(
     (exercise) => !sessionExerciseIds.has(exercise.id),
   )
 
@@ -60,7 +71,7 @@ export function selectTrainingExercises<TExercise extends TrainingExerciseLike>(
       stage: 'unrecorded',
       unrecordedCount: unrecordedExercises.length,
       unrepeatedCount: unrepeatedExercises.length,
-      totalCount: options.exercises.length,
+      totalCount: orderedExercises.length,
     }
   }
 
@@ -70,15 +81,15 @@ export function selectTrainingExercises<TExercise extends TrainingExerciseLike>(
       stage: 'unrepeated',
       unrecordedCount: 0,
       unrepeatedCount: unrepeatedExercises.length,
-      totalCount: options.exercises.length,
+      totalCount: orderedExercises.length,
     }
   }
 
   return {
-    exercises: options.exercises,
+    exercises: orderedExercises,
     stage: 'revisit',
     unrecordedCount: 0,
     unrepeatedCount: 0,
-    totalCount: options.exercises.length,
+    totalCount: orderedExercises.length,
   }
 }

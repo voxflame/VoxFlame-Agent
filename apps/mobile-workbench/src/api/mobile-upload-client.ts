@@ -8,6 +8,7 @@ import type {
   MobileAuthTokenProvider,
   MobileWorkbenchClientOptions,
 } from './mobile-workbench-client'
+import { MOBILE_LEGAL_CONSENT_VERSION } from '../auth/legal-consent'
 
 interface UploadSignResponse {
   url: string
@@ -26,14 +27,64 @@ interface UploadDiscardResponse {
   success: boolean
 }
 
+const MOBILE_UPLOAD_REQUEST_ATTEMPTS = 3
+
+function wait(delayMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, delayMs))
+}
+
+/** Bound every upload step; the persisted queue owns recovery after a timeout. */
+async function fetchUploadStep(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 20_000)
+  try {
+    return await fetch(input, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function fetchUploadApiWithRetry(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  tokenProvider: MobileAuthTokenProvider,
+  expectedUserId: string,
+): Promise<Response> {
+  let response: Response | null = null
+  let rejectedToken: string | undefined
+  let authRetried = false
+  for (let attempt = 0; attempt < MOBILE_UPLOAD_REQUEST_ATTEMPTS; attempt += 1) {
+    const token = await tokenProvider.getAccessToken({ expectedUserId, rejectedToken })
+    if (!token || token === rejectedToken) throw new Error('mobile_auth_expired')
+    const headers = new Headers(init.headers)
+    headers.set('Authorization', `Bearer ${token}`)
+    response = await fetchUploadStep(input, { ...init, headers })
+    if (response.status === 401) {
+      if (authRetried || attempt === MOBILE_UPLOAD_REQUEST_ATTEMPTS - 1) return response
+      authRetried = true
+      rejectedToken = token
+      continue
+    }
+    if ((response.status !== 408 && response.status !== 429 && response.status !== 503)
+      || attempt === MOBILE_UPLOAD_REQUEST_ATTEMPTS - 1) return response
+    const retryAfter = Number(response.headers.get('Retry-After'))
+    const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
+      ? Math.min(10_000, retryAfter * 1000)
+      : Math.min(4_000, 500 * 2 ** attempt)
+    await wait(delayMs)
+  }
+  return response as Response
+}
+
 function buildApiUrl(apiBaseUrl: string, path: string): string {
   return `${apiBaseUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`
 }
 
 async function getAuthorizationHeader(
   tokenProvider: MobileAuthTokenProvider,
+  expectedUserId: string,
 ): Promise<Record<string, string>> {
-  const token = await tokenProvider.getAccessToken()
+  const token = await tokenProvider.getAccessToken({ expectedUserId })
   if (!token) {
     throw new Error('mobile_auth_required')
   }
@@ -88,7 +139,17 @@ const TRAINING_METADATA_KEYS = new Set([
   'recognized_text',
   'consent_version',
   'collection_plan_id',
+  'reading_assistance_used',
   'etiology',
+  'speech_variant',
+  'dialect_name', 'dialect_region',
+  'dialect_name_user_reported',
+  'dialect_code',
+  'language_tag',
+  'prompt_language',
+  'spoken_language',
+  'label_source',
+  'utterance_pair_id',
   'severity',
   'age_band',
   'sex',
@@ -104,6 +165,13 @@ const TRAINING_METADATA_KEYS = new Set([
   'speech_patterns',
   'articulation_tips',
   'pronunciation_summary',
+  'reading_material_kind',
+  'reading_article_id',
+  'reading_article_version',
+  'reading_segment_id',
+  'reading_segment_index',
+  'reading_segment_count',
+  'reading_round_id',
 ])
 
 function isNonEmptyString(value: unknown): value is string {
@@ -145,6 +213,16 @@ function buildUploadMetadata(
     sentence_id: item.sentenceId,
     target_text: item.text,
     audio_format: contentType,
+    sample_rate: item.recording.audio.sampleRate,
+    channel_count: item.recording.audio.channelCount,
+    duration_ms: item.recording.audio.durationMs,
+    file_size_bytes: item.recording.audio.fileSizeBytes,
+    capture_transport: item.recording.audio.captureTransport,
+    source_surface: item.recording.sourceSurface,
+    collection_mode: item.recording.collectionMode,
+    consent_version: MOBILE_LEGAL_CONSENT_VERSION,
+    audio_quality_disposition: item.recording.audio.quality?.disposition,
+    audio_quality_reasons: item.recording.audio.quality?.reasons,
     spoken_text: item.recognizedText ?? '',
   }
 }
@@ -157,10 +235,10 @@ export async function uploadMobileRecorderQueueItem(
   item: MobileWorkbenchRecorderQueueItem,
   options: MobileWorkbenchClientOptions,
 ): Promise<MobileWorkbenchUploadReceipt> {
-  const authHeaders = await getAuthorizationHeader(options.tokenProvider)
+  const authHeaders = await getAuthorizationHeader(options.tokenProvider, item.contributorId)
   const storagePath = buildMobileStoragePath(item)
   const contentType = contentTypeForFormat(item.recording.audio.format)
-  const signResponse = await fetch(
+  const signResponse = await fetchUploadApiWithRetry(
     buildApiUrl(options.apiBaseUrl, '/upload/sign'),
     {
       method: 'POST',
@@ -173,6 +251,8 @@ export async function uploadMobileRecorderQueueItem(
         contentType,
       }),
     },
+    options.tokenProvider,
+    item.contributorId,
   )
 
   if (!signResponse.ok) {
@@ -185,7 +265,7 @@ export async function uploadMobileRecorderQueueItem(
     throw new Error('mobile_upload_audio_missing')
   }
 
-  const putResponse = await fetch(signPayload.url, {
+  const putResponse = await fetchUploadStep(signPayload.url, {
     method: 'PUT',
     headers: {
       'Content-Type': contentType,
@@ -197,7 +277,7 @@ export async function uploadMobileRecorderQueueItem(
     throw new Error(`mobile_upload_put_${putResponse.status}`)
   }
 
-  const completeResponse = await fetch(
+  const completeResponse = await fetchUploadApiWithRetry(
     buildApiUrl(options.apiBaseUrl, '/upload/complete'),
     {
       method: 'POST',
@@ -215,6 +295,8 @@ export async function uploadMobileRecorderQueueItem(
         metadata: buildUploadMetadata(item, contentType),
       }),
     },
+    options.tokenProvider,
+    item.contributorId,
   )
 
   if (!completeResponse.ok) {
@@ -243,7 +325,7 @@ export async function discardMobileRecorderQueueItem(
   item: MobileWorkbenchRecorderQueueItem,
   options: MobileWorkbenchClientOptions,
 ): Promise<void> {
-  const authHeaders = await getAuthorizationHeader(options.tokenProvider)
+  const authHeaders = await getAuthorizationHeader(options.tokenProvider, item.contributorId)
   const response = await fetch(
     buildApiUrl(options.apiBaseUrl, '/upload/contribution'),
     {

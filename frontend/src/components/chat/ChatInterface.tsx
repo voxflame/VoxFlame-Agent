@@ -230,8 +230,6 @@ export default function ChatInterface({
     userId,
     accessToken,
     surface: 'communication_workspace',
-    executionBackend: 'livekit',
-    timeoutSeconds: 1800,
   })
 
   const [textInput, setTextInput] = useState('')

@@ -6,7 +6,7 @@ import {
 import type {
   RtcResolvedSessionIntent,
   RtcSessionReadiness,
-} from './rtc-orchestration.service'
+} from '../contracts/rtc-session'
 
 export interface LiveKitSessionInput {
   requestId: string
@@ -72,9 +72,6 @@ export class LiveKitSessionService {
       input.userDisplayName?.trim() || `voxflame-user-${input.userUid}`
     const participantMetadata = JSON.stringify({
       request_id: input.requestId,
-      ...(input.authenticatedUserId
-        ? { authenticated_user_id: input.authenticatedUserId }
-        : {}),
       session_intent: {
         surface: input.intent.surface,
         mode: input.intent.mode,
@@ -169,9 +166,6 @@ export class LiveKitSessionService {
       'vox.strategy': input.intent.sessionStrategy,
       ...(input.intent.scene ? { 'vox.scene': input.intent.scene } : {}),
       'vox.request_id': input.requestId,
-      ...(input.authenticatedUserId
-        ? { 'vox.authenticated_user_id': input.authenticatedUserId }
-        : {}),
     }
   }
 

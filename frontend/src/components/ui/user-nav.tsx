@@ -19,49 +19,28 @@ import {
 import { Button } from "@/components/ui/button"
 import { buildLoginPath, getCurrentPathWithSearch } from "@/lib/auth/navigation"
 import { createClient } from "@/lib/supabase/client"
+import { useAuth } from '@/hooks/useAuth'
+import { useWorkspaceMemorySnapshot } from '@/hooks/useWorkspaceMemorySnapshot'
 import { useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
-import { User } from "@supabase/supabase-js"
 import Link from "next/link"
 
 export function UserNav() {
-    const [user, setUser] = useState<User | null>(null)
-    const [mounted, setMounted] = useState(false)
+    const { user, isLoading, error } = useAuth()
+    const { snapshot: workspaceSnapshot } = useWorkspaceMemorySnapshot({
+        userId: user?.id,
+        isAuthenticated: Boolean(user),
+        enabled: Boolean(user),
+    })
     const router = useRouter()
     const supabase = createClient()
     const loginHref = buildLoginPath(getCurrentPathWithSearch())
-
-    useEffect(() => {
-        setMounted(true)
-        const getUser = async () => {
-            const { data: { user } } = await supabase.auth.getUser()
-            setUser(user)
-        }
-        getUser()
-
-        const { data: authListener } = supabase.auth.onAuthStateChange(
-            (event, session) => {
-                if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-                    setUser(session?.user ?? null)
-                }
-                if (event === 'SIGNED_OUT') {
-                    setUser(null)
-                    router.refresh()
-                }
-            }
-        )
-
-        return () => {
-            authListener.subscription.unsubscribe()
-        }
-    }, [supabase, router])
 
     const handleSignOut = async () => {
         await supabase.auth.signOut()
         router.refresh()
     }
 
-    if (!mounted) return null
+    if (isLoading || error) return null
 
     if (!user) {
         return (
@@ -74,31 +53,32 @@ export function UserNav() {
     const avatarUrl = typeof user.user_metadata?.avatar_url === 'string'
         ? user.user_metadata.avatar_url
         : null
-    const accountIdentifier = user.email || user.phone || 'VoxFlame 用户'
+    const displayName = workspaceSnapshot?.registration_profile?.full_name?.trim()
+        || (typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name.trim() : '')
+        || user.email
+        || user.phone
+        || '用户'
 
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
                 <Button
-                    aria-label={`打开账号菜单：${accountIdentifier}`}
+                    aria-label={`打开账号菜单：${displayName}`}
                     variant="ghost"
                     className="relative size-11 rounded-full p-1.5"
                 >
                     <Avatar className="size-8">
                         {avatarUrl ? (
-                            <AvatarImage src={avatarUrl} alt={accountIdentifier} />
+                            <AvatarImage src={avatarUrl} alt={displayName} />
                         ) : null}
-                        <AvatarFallback>{accountIdentifier.slice(0, 2).toUpperCase()}</AvatarFallback>
+                        <AvatarFallback>{displayName.slice(0, 2).toUpperCase()}</AvatarFallback>
                     </Avatar>
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-56" align="end" forceMount>
                 <DropdownMenuLabel className="font-normal">
                     <div className="flex flex-col space-y-1">
-                        <p className="text-sm font-medium leading-none">{user.user_metadata?.full_name || "用户"}</p>
-                        <p className="text-xs leading-none text-muted-foreground">
-                            {accountIdentifier}
-                        </p>
+                        <p className="text-sm font-medium leading-none">{displayName}</p>
                     </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />

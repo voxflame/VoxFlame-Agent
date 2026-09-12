@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -9,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from assistant_runtime import (
     CAPTION_ASR_FALLBACK_SOURCE,
+    DashScopeCompletionResult,
     AssistantReplyGenerationError,
     CommunicationAssistantRuntime,
     build_recent_correction_history,
@@ -19,6 +21,7 @@ from assistant_runtime import (
     normalize_history_correction_text,
     sanitize_correction_reply,
 )
+from capacity import ProcessSlotPool
 from config import LiveKitAgentConfig
 from session_context import VoxFlameSessionContext
 from session_userdata import build_session_userdata
@@ -56,7 +59,6 @@ def create_config() -> LiveKitAgentConfig:
         livekit_audio_apm_auto_gain_control=False,
         dashscope_asr_vad_threshold=0.032,
         dashscope_asr_vad_silence_duration_ms=860,
-        dashscope_asr_vad_hop_size_ms=16,
         dashscope_asr_barge_in_min_speech_ms=360,
         dashscope_asr_min_commit_speech_ms=420,
         dashscope_tts_url="wss://dashscope.aliyuncs.com/api-ws/v1/realtime",
@@ -88,20 +90,26 @@ def create_context() -> VoxFlameSessionContext:
 
 
 class FakeDashScopeClient:
+    async def aclose(self) -> None:
+        pass
+
     def __init__(self, text: str | list[str]) -> None:
         self.text = text
         self.requests: list[list[dict[str, object]]] = []
 
-    def complete(self, messages: list[dict[str, object]]) -> str:
+    async def complete(self, messages: list[dict[str, object]]) -> DashScopeCompletionResult:
         self.requests.append(messages)
         if isinstance(self.text, list):
             index = min(len(self.requests) - 1, len(self.text) - 1)
-            return self.text[index]
-        return self.text
+            return DashScopeCompletionResult(self.text[index])
+        return DashScopeCompletionResult(self.text)
 
 
 class FailingDashScopeClient:
-    def complete(self, messages: list[dict[str, object]]) -> str:  # noqa: ARG002
+    async def aclose(self) -> None:
+        pass
+
+    async def complete(self, messages: list[dict[str, object]]) -> DashScopeCompletionResult:  # noqa: ARG002
         raise RuntimeError("The read operation timed out")
 
 
@@ -183,7 +191,8 @@ class TestAssistantRuntime(unittest.TestCase):
             client=fake_client,
         )
 
-        asyncio.run(runtime.generate_reply("请帮我叫医生"))
+        reply, source = asyncio.run(runtime.generate_reply("请帮我叫医生"))
+        runtime.accept_reply("请帮我叫医生", reply, source)
         asyncio.run(runtime.generate_reply("我现在很难受"))
 
         self.assertIn("实时字幕纠错助手", fake_client.requests[0][0]["content"])
@@ -220,6 +229,36 @@ class TestAssistantRuntime(unittest.TestCase):
         self.assertEqual(exc.exception.code, "correction_timeout")
         self.assertIn("超时", exc.exception.user_message)
 
+    def test_generate_reply_reports_capacity_without_calling_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as lock_directory:
+            pool = ProcessSlotPool(
+                provider="llm",
+                slots=1,
+                wait_timeout_seconds=0,
+                lock_directory=lock_directory,
+            )
+            fake_client = FakeDashScopeClient("不应调用")
+            runtime = CommunicationAssistantRuntime(
+                config=create_config(),
+                ctx=create_context(),
+                userdata=build_session_userdata(create_context()),
+                client=fake_client,
+                capacity_pool=pool,
+            )
+
+            async def run() -> None:
+                held_lease = await pool.acquire()
+                try:
+                    with self.assertRaises(AssistantReplyGenerationError) as exc:
+                        await runtime.generate_reply("请帮我叫医生")
+                    self.assertEqual(exc.exception.code, "correction_capacity")
+                    self.assertIn("使用人数较多", exc.exception.user_message)
+                finally:
+                    held_lease.release()
+
+            asyncio.run(run())
+            self.assertEqual(fake_client.requests, [])
+
     def test_generate_reply_falls_back_to_asr_in_caption_mode_when_dashscope_times_out(self) -> None:
         userdata = build_session_userdata(create_context())
         userdata.set_caption_mode(True)
@@ -246,7 +285,8 @@ class TestAssistantRuntime(unittest.TestCase):
         )
 
         for index in range(6):
-            asyncio.run(runtime.generate_reply(f"第{index}句"))
+            reply, source = asyncio.run(runtime.generate_reply(f"第{index}句"))
+            runtime.accept_reply(f"第{index}句", reply, source)
 
         current_turn_prompt = fake_client.requests[-1][1]["content"]
         self.assertEqual(len(fake_client.requests[-1]), 2)

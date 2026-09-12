@@ -14,6 +14,7 @@ build/
 *.egg-info/
 coverage/
 .playwright-cli/
+/.playwright-mcp/
 output/playwright/
 ten-framework/
 # TEN Framework (large external dependency)
@@ -66,3 +67,7 @@ artifacts/oss-by-account/
 artifacts/oss-by-account-after-20260524/
 artifacts/oss-by-account-after-20260524-refresh-20260614/
 artifacts/training-corpus-20260524/
+
+# Versioned OSS account snapshots include restricted identity mappings
+artifacts/oss-by-account-v2*/
+*_contacts.private.json

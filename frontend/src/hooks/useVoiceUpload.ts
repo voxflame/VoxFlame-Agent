@@ -2,7 +2,7 @@
  * useVoiceUpload Hook
  * 
  * 处理语音录音的上传逻辑
- * 支持 Supabase 云端上传和本地降级
+ * 本机持久化录音，并在明确的恢复事件上同步到云端。
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react'
@@ -19,10 +19,15 @@ import type {
   VoxFlameRecorderQueueItem,
   VoxFlameRecordingEnvelope,
 } from '@/lib/recording/recording-contract'
-import { getValidToken } from '@/lib/supabase/client'
+import {
+  selectRecorderQueueItemsForAccount,
+  selectRecorderQueueItemsForSync,
+} from '@/lib/recording/recorder-sync-policy'
+import { getAccessToken } from '@/lib/supabase/client'
 import { useAuth } from './useAuth'
 import { config } from '@/lib/config'
 import { sanitizeTrainingUploadMetadata } from '@/lib/recording/upload-metadata'
+import { fetchUploadRequest, fetchUploadRequestWithRetry } from '@/lib/recording/upload-request'
 
 interface UploadOptions {
   /** 录音对应的文本内容 */
@@ -48,14 +53,14 @@ export interface UploadReceipt {
   storagePath?: string
   reusedContribution?: boolean
   manifestAlreadySynced?: boolean
-  source: 'cloud' | 'background_retry'
-  syncStatus: 'uploaded' | 'retrying'
+  source: 'cloud' | 'local_queue'
+  syncStatus: 'uploaded' | 'local_only'
   message: string
 }
 
 export interface UploadResult {
   ok: boolean
-  status: 'uploaded' | 'retrying' | 'auth_required' | 'failed'
+  status: 'uploaded' | 'local_only' | 'auth_required' | 'failed'
   receipt?: UploadReceipt
   errorMessage?: string
 }
@@ -92,27 +97,38 @@ export function useVoiceUpload() {
   const [localQueueCount, setLocalQueueCount] = useState(0)
   const [localQueueItems, setLocalQueueItems] = useState<VoxFlameRecorderQueueItem[]>([])
   const [lastUploadReceipt, setLastUploadReceipt] = useState<UploadReceipt | null>(null)
-  const autoRetryTimerRef = useRef<number | null>(null)
+  const activeUploadCountRef = useRef(0)
+  const lastAuthenticatedUserIdRef = useRef<string | null>(null)
+  const syncPromiseRef = useRef<Promise<{ synced: number; total: number }> | null>(null)
   const syncLocalRecordingsRef = useRef<(silent?: boolean) => Promise<{ synced: number; total: number }>>(async () => ({ synced: 0, total: 0 }))
 
   const { userId, isAuthenticated } = useAuth()
 
+  useEffect(() => {
+    if (userId) {
+      lastAuthenticatedUserIdRef.current = userId
+    }
+  }, [userId])
+
   const refreshLocalQueueCount = useCallback(async () => {
     try {
-      const items = await listRecorderQueueItems()
-      setLocalQueueItems(items)
-      setLocalQueueCount(items.length)
-      return items.length
+      const allItems = await listRecorderQueueItems()
+      const accountItems = selectRecorderQueueItemsForAccount(allItems, userId)
+      setLocalQueueItems(accountItems)
+      setLocalQueueCount(accountItems.length)
+      return accountItems.length
     } catch {
       setLocalQueueItems([])
       setLocalQueueCount(0)
       return 0
     }
-  }, [])
+  }, [userId])
 
-  /**
-   * 本地降级存储
-   */
+  useEffect(() => {
+    void refreshLocalQueueCount()
+  }, [refreshLocalQueueCount])
+
+  /** Persist the source recording before waiting for infrastructure recovery. */
   const saveLocally = useCallback(async (
     options: UploadOptions,
     contributorId: string,
@@ -120,7 +136,6 @@ export function useVoiceUpload() {
   ): Promise<UploadResult> => {
     try {
       const existingItem = await getRecorderQueueItem(options.recording.recordingId)
-      const syncStatus = existingItem ? 'failed' : 'local_only'
       const localRecord: VoxFlameRecorderQueueItem = {
         recordingId: options.recording.recordingId,
         contributorId,
@@ -128,7 +143,7 @@ export function useVoiceUpload() {
         sentenceId: options.sentenceId,
         source: options.source,
         consentScope: options.consentScope ?? 'training_only',
-        syncStatus,
+        syncStatus: 'local_only',
         syncAttempts: existingItem?.syncAttempts ?? 0,
         lastAttemptAt: existingItem?.lastAttemptAt,
         lastError: failureReason,
@@ -147,30 +162,20 @@ export function useVoiceUpload() {
       setUploadProgress(100)
       const receipt: UploadReceipt = {
         recordingId: options.recording.recordingId,
-        source: 'background_retry',
-        syncStatus: 'retrying',
+        source: 'local_queue',
+        syncStatus: 'local_only',
         message: existingItem
-          ? '这条录音的云端登记还没补齐，系统正在后台继续自动重试。'
-          : '录音已先保留为后台补登任务，系统会自动继续上传与登记。',
+          ? '这条录音仍安全保存在本机，云端恢复后可继续同步。'
+          : '录音已安全保存在本机，云端恢复后可继续同步。',
       }
       setLastUploadReceipt(receipt)
-      if (typeof window !== 'undefined') {
-        if (autoRetryTimerRef.current !== null) {
-          window.clearTimeout(autoRetryTimerRef.current)
-        }
-
-        autoRetryTimerRef.current = window.setTimeout(() => {
-          autoRetryTimerRef.current = null
-          void syncLocalRecordingsRef.current(true)
-        }, 2000)
-      }
       return {
         ok: true,
-        status: 'retrying',
+        status: 'local_only',
         receipt,
       }
-    } catch (err) {
-      console.error('本地保存失败:', err)
+    } catch {
+      console.error('[recording-upload] local persistence failed')
       setLastError('保存失败，请检查存储空间')
       return {
         ok: false,
@@ -187,6 +192,7 @@ export function useVoiceUpload() {
     audioBlob: Blob,
     options: UploadOptions
   ): Promise<UploadResult> => {
+    activeUploadCountRef.current += 1
     setIsUploading(true)
     setUploadProgress(0)
     setLastError(null)
@@ -194,7 +200,11 @@ export function useVoiceUpload() {
     let effectiveOptions: UploadOptions = options
 
     try {
+      const recordingOwnerId = userId ?? lastAuthenticatedUserIdRef.current
       if (!isAuthenticated || !userId) {
+        if (recordingOwnerId) {
+          return await saveLocally(options, recordingOwnerId, '登录会话暂时不可用')
+        }
         const errorMessage = '请先登录后再上传训练语料。'
         setLastError(errorMessage)
         return {
@@ -204,15 +214,9 @@ export function useVoiceUpload() {
         }
       }
 
-      const token = await getValidToken()
+      const token = await getAccessToken({ expectedUserId: userId })
       if (!token) {
-        const errorMessage = '登录状态已失效，请重新登录后再上传。'
-        setLastError(errorMessage)
-        return {
-          ok: false,
-          status: 'auth_required',
-          errorMessage,
-        }
+        return await saveLocally(options, userId, '登录会话暂时不可用')
       }
 
       const recordingForNormalization = audioBlob === options.recording.audio.blob
@@ -273,7 +277,7 @@ export function useVoiceUpload() {
       // 2. 尝试上传到 OSS (通过后端签名)
       try {
         // Use config.api.baseUrl which handles rewrites (e.g. /api)
-        const signRes = await fetch(`${config.api.baseUrl}/upload/sign`, {
+        const signRes = await fetchUploadRequestWithRetry(`${config.api.baseUrl}/upload/sign`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -283,13 +287,13 @@ export function useVoiceUpload() {
             filename: storagePath,
             contentType: normalizedAudioBlob.type || 'audio/wav'
           })
-        })
+        }, { onUnauthorized: (rejectedToken) => getAccessToken({ expectedUserId: userId, rejectedToken }) })
 
         if (!signRes.ok) throw new Error(`签名请求失败: ${signRes.statusText}`)
         const { url: uploadUrl } = await signRes.json()
 
         // PUT 上传
-        const uploadRes = await fetch(uploadUrl, {
+        const uploadRes = await fetchUploadRequest(uploadUrl, {
           method: 'PUT',
           headers: { 'Content-Type': normalizedAudioBlob.type || 'audio/wav' },
           body: normalizedAudioBlob
@@ -297,7 +301,7 @@ export function useVoiceUpload() {
 
         if (!uploadRes.ok) throw new Error(`OSS上传失败: ${uploadRes.statusText}`)
       } catch (uploadError: unknown) {
-        console.warn('云端保存失败，已转为本地保存。')
+        console.warn('[recording-upload] cloud unavailable; recording kept locally')
         return await saveLocally(
           normalizedOptions,
           userId,
@@ -307,12 +311,16 @@ export function useVoiceUpload() {
 
       setUploadProgress(50)
 
+      // A long PUT may cross the JWT expiry boundary. Re-read for this owner.
+      const completionToken = await getAccessToken({ expectedUserId: userId })
+      if (!completionToken) throw new Error('auth_required')
+
       // 3. 通知后端完成 (DB写入 + OSS Manifest追加)
-      const completeRes = await fetch(`${config.api.baseUrl}/upload/complete`, {
+      const completeRes = await fetchUploadRequestWithRetry(`${config.api.baseUrl}/upload/complete`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${completionToken}`,
         },
         body: JSON.stringify({
           audioPath: storagePath,
@@ -348,7 +356,7 @@ export function useVoiceUpload() {
             ...sanitizeTrainingUploadMetadata(normalizedOptions.metadata),
           }
         })
-      })
+      }, { onUnauthorized: (rejectedToken) => getAccessToken({ expectedUserId: userId, rejectedToken }) })
 
       if (!completeRes.ok) {
         throw new Error(`后端记录失败: ${completeRes.statusText}`)
@@ -390,27 +398,26 @@ export function useVoiceUpload() {
       }
 
     } catch (err) {
-      console.error('上传过程出错:', err)
-      // 尝试本地保存
+      console.error('[recording-upload] cloud persistence failed')
       return await saveLocally(
         effectiveOptions,
         userId || 'unknown-user',
         '云端保存失败',
       )
     } finally {
-      setIsUploading(false)
+      activeUploadCountRef.current = Math.max(0, activeUploadCountRef.current - 1)
+      setIsUploading(activeUploadCountRef.current > 0)
     }
   }, [isAuthenticated, refreshLocalQueueCount, saveLocally, userId])
 
   const discardUploadedRecording = useCallback(async (
     options: DiscardUploadOptions,
   ): Promise<DiscardUploadResult> => {
-    if (options.recordingId) {
-      await removeRecorderQueueItem(options.recordingId)
-      await refreshLocalQueueCount()
-    }
-
     if (!options.contributionId && !options.storagePath) {
+      if (options.recordingId) {
+        await removeRecorderQueueItem(options.recordingId)
+        await refreshLocalQueueCount()
+      }
       return {
         ok: true,
         status: 'discarded',
@@ -427,7 +434,7 @@ export function useVoiceUpload() {
       }
     }
 
-    const token = await getValidToken()
+    const token = await getAccessToken({ expectedUserId: userId })
     if (!token) {
       const errorMessage = '登录状态已失效，请重新登录后再撤回。'
       setLastError(errorMessage)
@@ -456,6 +463,10 @@ export function useVoiceUpload() {
         throw new Error(`discard_upload_${response.status}`)
       }
 
+      if (options.recordingId) {
+        await removeRecorderQueueItem(options.recordingId)
+        await refreshLocalQueueCount()
+      }
       setLastError(null)
       setLastUploadReceipt(null)
       return {
@@ -476,21 +487,35 @@ export function useVoiceUpload() {
   /**
    * 同步本地记录到云端
    */
-  const syncLocalRecordings = useCallback(async (silent: boolean = false) => {
-    if (!silent) {
-      setLastError(null)
+  const syncLocalRecordings = useCallback((silent: boolean = false) => {
+    if (syncPromiseRef.current) {
+      return syncPromiseRef.current
     }
 
-    setIsSyncingLocalQueue(true)
-    const unsynced = await listRecorderQueueItems()
-    if (unsynced.length === 0) {
-      setIsSyncingLocalQueue(false)
-      return { synced: 0, total: 0 }
-    }
+    const syncPromise = (async () => {
+      if (!silent) {
+        setLastError(null)
+      }
 
-    let syncedCount = 0
+      if (!isAuthenticated || !userId) {
+        return { synced: 0, total: 0 }
+      }
 
-    for (const record of unsynced) {
+      setIsSyncingLocalQueue(true)
+      const queued = await listRecorderQueueItems()
+      const unsynced = selectRecorderQueueItemsForSync(
+        queued,
+        userId,
+        Date.now(),
+        !silent,
+      )
+      if (unsynced.length === 0) {
+        return { synced: 0, total: 0 }
+      }
+
+      let syncedCount = 0
+
+      for (const record of unsynced) {
       try {
         await updateRecorderQueueItem(record.recordingId, (current) => {
           if (!current) {
@@ -538,19 +563,20 @@ export function useVoiceUpload() {
           break
         }
 
-        if (result.status === 'failed' || result.status === 'retrying') {
+        if (result.status === 'failed' || result.status === 'local_only') {
           await updateRecorderQueueItem(record.recordingId, (current) => (
             current
               ? {
                   ...current,
-                  syncStatus: result.status === 'retrying' ? 'upload_pending' : 'failed',
-                  lastError: result.errorMessage || '云端登记暂时异常，系统会继续自动重试。',
+                  syncStatus: 'local_only',
+                  lastError: result.errorMessage || '云端暂时不可用，录音仍保存在本机。',
                 }
               : current
           ))
+          break
         }
-      } catch (err) {
-        console.error('同步记录失败:', err)
+      } catch {
+        console.error('[recording-upload] queue sync failed')
         await updateRecorderQueueItem(record.recordingId, (current) => (
           current
             ? {
@@ -560,41 +586,28 @@ export function useVoiceUpload() {
               }
             : current
         ))
+        break
       }
-    }
-    await refreshLocalQueueCount()
-    setIsSyncingLocalQueue(false)
+      }
+      await refreshLocalQueueCount()
+      return { synced: syncedCount, total: unsynced.length }
+    })().finally(() => {
+      setIsSyncingLocalQueue(false)
+      syncPromiseRef.current = null
+    })
 
-    return { synced: syncedCount, total: unsynced.length }
-  }, [refreshLocalQueueCount, uploadRecording])
+    syncPromiseRef.current = syncPromise
+    return syncPromise
+  }, [isAuthenticated, refreshLocalQueueCount, uploadRecording, userId])
 
   syncLocalRecordingsRef.current = syncLocalRecordings
 
   useEffect(() => {
-    if (!isAuthenticated || localQueueCount === 0) {
+    if (!isAuthenticated || !userId) {
       return
     }
-
-    if (typeof window === 'undefined') {
-      return
-    }
-
-    if (autoRetryTimerRef.current !== null) {
-      window.clearTimeout(autoRetryTimerRef.current)
-    }
-
-    autoRetryTimerRef.current = window.setTimeout(() => {
-      autoRetryTimerRef.current = null
-      void syncLocalRecordingsRef.current(true)
-    }, 1500)
-
-    return () => {
-      if (autoRetryTimerRef.current !== null) {
-        window.clearTimeout(autoRetryTimerRef.current)
-        autoRetryTimerRef.current = null
-      }
-    }
-  }, [isAuthenticated, localQueueCount, syncLocalRecordings])
+    void syncLocalRecordingsRef.current(true)
+  }, [isAuthenticated, userId])
 
   useEffect(() => {
     if (typeof window === 'undefined') {

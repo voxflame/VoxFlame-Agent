@@ -3,22 +3,19 @@ import path from 'path'
 import dotenv from 'dotenv'
 import OSS from 'ali-oss'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { ACCOUNT_IDENTITY_SCHEMA, extractOssAccountKey, fetchAuthAccountIdentities, resolveOssAccountIdentity, type OssAccountIdentity } from '../src/services/oss-account-identity'
+import { createHash } from 'node:crypto'
 
 dotenv.config({ path: path.join(__dirname, '../.env') })
 
 interface ScriptOptions {
   outputDir: string
   dryRun: boolean
+  identityOnly: boolean
   maxObjects?: number
   prefixes: string[]
   since?: Date
   sinceInput?: string
-}
-
-interface AccountInfo {
-  id: string
-  email: string | null
-  label: string
 }
 
 interface ObjectDownloadRecord {
@@ -31,7 +28,7 @@ interface ObjectDownloadRecord {
   skipped: boolean
 }
 
-interface AccountSummary {
+interface AccountSummary extends OssAccountIdentity {
   accountKey: string
   accountLabel: string
   outputDir: string
@@ -39,12 +36,11 @@ interface AccountSummary {
   byteCount: number
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
 function parseArgs(argv: string[]): ScriptOptions {
   const options: ScriptOptions = {
-    outputDir: path.resolve(__dirname, '../../artifacts/oss-by-account'),
+    outputDir: path.resolve(__dirname, '../../artifacts/oss-by-account-v2'),
     dryRun: false,
+    identityOnly: false,
     prefixes: [],
   }
 
@@ -83,6 +79,11 @@ function parseArgs(argv: string[]): ScriptOptions {
       continue
     }
 
+    if (arg === '--identity-only') {
+      options.identityOnly = true
+      continue
+    }
+
     if (arg === '--dry-run') {
       options.dryRun = true
     }
@@ -111,11 +112,10 @@ function createOssClient(): OSS {
 
 function createSupabaseClient(): SupabaseClient {
   const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
-    process.env.SUPABASE_ANON_KEY?.trim()
+    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
 
   if (!key) {
-    throw new Error('SUPABASE_SERVICE_ROLE_KEY / SUPABASE_ANON_KEY 缺失，无法解析账号标签。')
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY 缺失，无法解析账号标签。')
   }
 
   return createClient(requireEnv('SUPABASE_URL'), key)
@@ -155,85 +155,6 @@ function formatBytes(bytes: number): string {
   }
 
   return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[unitIndex]}`
-}
-
-function shortKey(value: string): string {
-  return value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) || 'unknown'
-}
-
-function buildAccountLabel(accountKey: string, account: AccountInfo | undefined): string {
-  if (account?.email) {
-    const localPart = account.email.split('@')[0] || account.email
-    return `${sanitizePathSegment(localPart)}__${shortKey(accountKey)}`
-  }
-
-  if (accountKey === 'unassigned') {
-    return 'unassigned'
-  }
-
-  if (UUID_RE.test(accountKey)) {
-    return `unknown_user__${shortKey(accountKey)}`
-  }
-
-  return `legacy__${sanitizePathSegment(accountKey)}`
-}
-
-function extractAccountKey(objectName: string, knownUserIds: Set<string>): string {
-  const segments = objectName.split('/').filter((segment) => segment.length > 0)
-
-  if (segments[0] === 'dataset' && segments[1]) {
-    return segments[1]
-  }
-
-  if (segments[0] === 'supervised' && segments[1] === 'mandarin' && segments[3]) {
-    return segments[3]
-  }
-
-  const knownUserId = segments.find((segment) => knownUserIds.has(segment))
-  if (knownUserId) {
-    return knownUserId
-  }
-
-  const uuidSegment = segments.find((segment) => UUID_RE.test(segment))
-  if (uuidSegment) {
-    return uuidSegment
-  }
-
-  return 'unassigned'
-}
-
-async function fetchAuthAccounts(supabase: SupabaseClient): Promise<Map<string, AccountInfo>> {
-  const accounts = new Map<string, AccountInfo>()
-  const perPage = 1000
-
-  for (let page = 1; ; page += 1) {
-    const { data, error } = await supabase.auth.admin.listUsers({
-      page,
-      perPage,
-    })
-
-    if (error) {
-      throw error
-    }
-
-    for (const user of data.users) {
-      accounts.set(user.id, {
-        id: user.id,
-        email: user.email ?? null,
-        label: '',
-      })
-    }
-
-    if (data.users.length < perPage) {
-      break
-    }
-  }
-
-  for (const [id, account] of accounts) {
-    account.label = buildAccountLabel(id, account)
-  }
-
-  return accounts
 }
 
 async function listOssObjects(
@@ -299,19 +220,22 @@ async function fileSizeMatches(filePath: string, expectedSize: number): Promise<
 }
 
 async function writeJsonFile(filePath: string, value: unknown): Promise<void> {
-  await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
+  await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
 }
 
 async function main() {
   const options = parseArgs(process.argv.slice(2))
   const client = createOssClient()
   const supabase = createSupabaseClient()
-  const accountsById = await fetchAuthAccounts(supabase)
-  const knownUserIds = new Set(accountsById.keys())
+  const accountsById = await fetchAuthAccountIdentities(supabase)
   const bucket = requireEnv('OSS_BUCKET')
   const region = process.env.OSS_REGION?.trim() || 'oss-cn-hangzhou'
 
-  await fs.mkdir(options.outputDir, { recursive: true })
+  // Versioned snapshot only: do not silently rename/merge an existing corpus.
+  if (!options.dryRun) {
+    await fs.mkdir(path.dirname(options.outputDir), { recursive: true })
+    await fs.mkdir(options.outputDir, { mode: 0o700 })
+  }
 
   console.log(`[download_oss_by_account] listing bucket=${bucket} region=${region}`)
   const listedObjects = await listOssObjects(client, options.prefixes, options.maxObjects)
@@ -321,12 +245,13 @@ async function main() {
   const records: ObjectDownloadRecord[] = []
 
   for (const object of objects) {
-    const accountKey = extractAccountKey(object.name, knownUserIds)
-    const account = accountsById.get(accountKey)
-    const accountLabel = account?.label || buildAccountLabel(accountKey, account)
+    const identity = resolveOssAccountIdentity(extractOssAccountKey(object.name), accountsById, object.name)
+    const accountKey = identity.accountKey
+    const accountLabel = identity.storageKey
     const accountDir = path.join(options.outputDir, accountLabel)
     const localPath = path.join(accountDir, safeObjectRelativePath(object.name))
     const summary = accountSummaries.get(accountKey) || {
+      ...identity,
       accountKey,
       accountLabel,
       outputDir: accountDir,
@@ -340,7 +265,7 @@ async function main() {
 
     let skipped = false
 
-    if (!options.dryRun) {
+    if (!options.dryRun && !options.identityOnly) {
       await fs.mkdir(path.dirname(localPath), { recursive: true })
       skipped = await fileSizeMatches(localPath, object.size)
 
@@ -364,6 +289,10 @@ async function main() {
     .sort((left, right) => left.accountLabel.localeCompare(right.accountLabel))
 
   const inventory = {
+    schema: ACCOUNT_IDENTITY_SCHEMA,
+    identityOnly: options.identityOnly,
+    authAccountCount: accountsById.size,
+    completeBucketListing: !options.maxObjects && options.prefixes.length === 0 && !options.since,
     generatedAt: new Date().toISOString(),
     bucket,
     region,
@@ -380,10 +309,22 @@ async function main() {
 
   if (!options.dryRun) {
     await writeJsonFile(path.join(options.outputDir, '_inventory.json'), inventory)
+    // Restricted contacts are kept separately, never in training manifests or folder names.
+    await writeJsonFile(path.join(options.outputDir, '_contacts.private.json'), {
+      schema: ACCOUNT_IDENTITY_SCHEMA,
+      generatedAt: inventory.generatedAt,
+      accounts: summaries.flatMap((entry) => {
+        const account = accountsById.get(entry.accountKey)
+        return account ? [{ accountId: account.id, contacts: {
+          email: account.email ? { value: account.email, verified: account.emailVerified } : null,
+          phone: account.phone ? { value: account.phone, verified: account.phoneVerified } : null,
+        } }] : []
+      }),
+    })
     await fs.writeFile(
       path.join(options.outputDir, '_objects.jsonl'),
       records.map((record) => JSON.stringify(record)).join('\n') + (records.length > 0 ? '\n' : ''),
-      'utf8',
+      { encoding: 'utf8', mode: 0o600 },
     )
   }
 
@@ -391,12 +332,12 @@ async function main() {
 
   for (const summary of summaries) {
     console.log(
-      `[account] ${summary.accountLabel} objects=${summary.objectCount} bytes=${formatBytes(summary.byteCount)}`,
+      `[account] ${createHash('sha256').update(summary.accountKey).digest('hex').slice(0, 12)} status=${summary.status} contacts=${summary.contactType} objects=${summary.objectCount} bytes=${formatBytes(summary.byteCount)}`,
     )
   }
 }
 
 void main().catch((error) => {
-  console.error('[download_oss_by_account] failed:', error)
+  console.error('[download_oss_by_account] failed:', error instanceof Error && error.message === 'account_identity_auth_lookup_failed' ? error.message : 'check configuration, permissions and ensure output directory is new')
   process.exit(1)
 })

@@ -83,6 +83,74 @@ test('session-actions registers capture id before enabling audio and commits the
   assert.equal(harness.getState().isRecording, false)
 })
 
+test('session-actions releases recording state and times out stalled stop operations', async () => {
+  const harness = createStateHarness({
+    ...createInitialRtcAgentState(),
+    isRecording: true,
+  })
+  const calls: string[] = []
+  const neverSettles = new Promise<void>(() => undefined)
+  const micTrackRef = {
+    current: {
+      setEnabled: async () => {
+        calls.push('track:disabled')
+        await neverSettles
+      },
+    } as never,
+  }
+  const latestUserTranscriptRef = {
+    current: { text: '', clientCaptureId: null },
+  }
+  const startedAt = Date.now()
+
+  await assert.rejects(
+    stopRtcRecordingAction({
+      refs: {
+        micTrackRef,
+        latestUserTranscriptRef,
+      },
+      setState: harness.setState,
+      sendControlMessage: async (type) => {
+        calls.push(type)
+        await neverSettles
+      },
+      clientCaptureId: 'capture-stalled',
+      operationTimeoutMs: 25,
+    }),
+    /录音停止信号发送超时/,
+  )
+
+  assert.equal(harness.getState().isRecording, false)
+  assert.deepEqual(calls, ['track:disabled', 'speech_activity', 'end_audio'])
+  assert.ok(Date.now() - startedAt < 500)
+})
+
+test('session-actions still clears state and sends end_audio when the microphone track is absent', async () => {
+  const harness = createStateHarness({
+    ...createInitialRtcAgentState(),
+    isRecording: true,
+  })
+  const calls: string[] = []
+
+  await stopRtcRecordingAction({
+    refs: {
+      micTrackRef: { current: null },
+      latestUserTranscriptRef: {
+        current: { text: '', clientCaptureId: null },
+      },
+    },
+    setState: harness.setState,
+    sendControlMessage: async (type) => {
+      calls.push(type)
+    },
+    clientCaptureId: 'capture-no-track',
+    operationTimeoutMs: 25,
+  })
+
+  assert.equal(harness.getState().isRecording, false)
+  assert.deepEqual(calls, ['speech_activity', 'end_audio'])
+})
+
 test('session-actions sets a user-facing error when text is sent before the control channel is ready', async () => {
   const harness = createStateHarness()
   const sendControlCalls: Array<[string, Record<string, unknown> | undefined]> = []

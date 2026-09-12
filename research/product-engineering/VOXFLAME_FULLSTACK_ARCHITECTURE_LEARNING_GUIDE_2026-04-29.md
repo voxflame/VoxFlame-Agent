@@ -508,17 +508,17 @@ Owner：
 2. [前端 README](../../frontend/README.md)
 3. [后端 README](../../backend/README.md)
 4. [LiveKit Agent README](../../livekit_agent/README.md)
-5. [产品 PRD](../../docs/VOXFLAME_PRODUCT_PRD_2026-03-24.md)
+5. [产品 PRD](VOXFLAME_PRODUCT_PRD_2026-03-24.md)
 6. [LiveKit 记忆最佳实践](../voice-agent/VOXFLAME_LIVEKIT_MEMORY_BEST_PRACTICES_2026-04-05.md)
 7. [上下文与记忆研究综合](../voice-agent/CONTEXT_AND_MEMORY_RESEARCH_SYNTHESIS_2026-08-14.md)
 
 当前最该跟读的代码入口：
 
-1. [frontend/src/hooks/useRtcAgentSession.ts](../frontend/src/hooks/useRtcAgentSession.ts)
-2. [frontend/src/lib/realtime-audio/session-runtime.ts](../frontend/src/lib/realtime-audio/session-runtime.ts)
-3. [backend/src/services/rtc-orchestration.service.ts](../backend/src/services/rtc-orchestration.service.ts)
-4. [backend/src/services/livekit-session.service.ts](../backend/src/services/livekit-session.service.ts)
-5. [livekit_agent/session_userdata.py](../livekit_agent/session_userdata.py)
-6. [livekit_agent/data_contract.py](../livekit_agent/data_contract.py)
+1. [frontend/src/hooks/useRtcAgentSession.ts](../../frontend/src/hooks/useRtcAgentSession.ts)
+2. [frontend/src/lib/realtime-audio/session-runtime.ts](../../frontend/src/lib/realtime-audio/session-runtime.ts)
+3. [backend/src/services/rtc-orchestration.service.ts](../../backend/src/services/rtc-orchestration.service.ts)
+4. [backend/src/services/livekit-session.service.ts](../../backend/src/services/livekit-session.service.ts)
+5. [livekit_agent/session_userdata.py](../../livekit_agent/session_userdata.py)
+6. [livekit_agent/data_contract.py](../../livekit_agent/data_contract.py)
 
 这几处合起来，就是 VoxFlame 当前“需求如何变成应用”的真实骨架。

@@ -1,0 +1,11 @@
+/home/ubuntu/VoxFlame-Agent/logs/*.log {
+    daily
+    rotate 14
+    size 50M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    su ubuntu ubuntu
+}

@@ -6,7 +6,7 @@ VoxFlame 的 Expo / React Native 移动端，Android 与 iOS 共用一套产品�
 
 `0.1.0` 第一版包含四个可测试页面：
 
-1. `沟通`：先进入固定场景选择 screen，再进入实时沟通 screen；通过 backend 创建、保活和结束 RTC session，再连接 LiveKit 麦克风。
+1. `沟通`：先进入固定场景选择 screen，再进入实时沟通 screen；通过 backend 创建 RTC session；连接和结束由 LiveKit room 管理，再连接 LiveKit 麦克风。
 2. `练习`：只区分独立筛查与数据录入；自定义材料是数据录入页的一种内容来源。执行面支持原生录音、本机队列、逐条回放、确认删除、上传和 receipt。
 3. `准备`：读取与 Web 相同的 workspace snapshot、准备材料和常用短句。
 4. `我的`：账户、麦克风权限、资料同步和待上传状态。
@@ -54,7 +54,12 @@ The communication surface now includes the first backend-orchestrated RTC slice:
 2. The app receives room metadata, readiness, and participant token from backend.
 3. The UI displays room/readiness state but never renders the participant token.
 4. `src/realtime/use-livekit-room-connection.ts` starts the LiveKit React Native `AudioSession`, connects the room, and publishes microphone audio.
-5. Real-device room smoke is still required before declaring communication complete.
+5. Disconnect the SDK room before clearing the bootstrap credential state; there are no HTTP ping/stop calls. `ready` in `use-mobile-rtc-session` means credentials acquired, not that audio/Agent are ready.
+6. Real-device room smoke is still required before declaring communication complete.
+
+RTC response/intent types and parser are generated from `backend/src/contracts/rtc-session.ts` into `src/contracts/generated/rtc-session.ts`; never hand-edit the generated file. Run `npm run test:rtc-contract` at the repo root. Mobile only accepts `mobile_workbench` responses; `appState` is client-local context, not a Backend device field. `joinTokenTtlSeconds` is a JWT TTL, not session duration.
+
+This is an undeployed breaking contract change. New clients require the matching Backend; old installed apps require an upgrade/blocking plan before backend rollout. See [release and rollback boundaries](../../research/product-engineering/RTC_CONTRACT_CLEANUP_2026-09-11.md).
 
 ## Commands
 
@@ -124,7 +129,7 @@ npm run smoke:device-env
 
 For a physical phone, `EXPO_PUBLIC_API_BASE_URL` should usually point at your computer's LAN address, for example `http://<lan-ip>:3001/api`, not `http://127.0.0.1:3001/api`.
 
-See [Mobile Workbench Device Verification Runbook](../../docs/VOXFLAME_MOBILE_WORKBENCH_DEVICE_VERIFICATION_RUNBOOK_2026-05-05.md).
+See [Mobile Workbench Device Verification Runbook](../../research/product-engineering/VOXFLAME_MOBILE_WORKBENCH_DEVICE_VERIFICATION_RUNBOOK_2026-05-05.md).
 
 ## Real Account Smoke
 
@@ -234,6 +239,26 @@ The app environment is public-client only. Before building for a real phone, set
 
 Remote EAS builds do not automatically receive your uncommitted local `.env`, so configure the `EXPO_PUBLIC_*` values in EAS before cloud builds. These values are public client configuration; never add service role keys, LiveKit API secrets, DashScope keys, or OSS secrets.
 
+### 独立品牌构建
+
+第二品牌与主 App 共用业务代码和 Backend/Auth/OSS 契约，但必须作为独立安装包发布。构建前设置以下公开品牌值和发布标识：
+
+```bash
+VOXFLAME_APP_FLAVOR=collection \
+EXPO_PUBLIC_APP_BRAND_NAME=<第二品牌名称> \
+EXPO_PUBLIC_APP_BRAND_ACCENT=<#RRGGBB> \
+VOXFLAME_COLLECTION_APP_ICON=<图标路径> \
+VOXFLAME_COLLECTION_ANDROID_ADAPTIVE_ICON=<Android 前景图路径> \
+VOXFLAME_COLLECTION_APP_SLUG=<独立 Expo slug> \
+VOXFLAME_COLLECTION_APP_SCHEME=<独立 URL scheme> \
+VOXFLAME_COLLECTION_ANDROID_PACKAGE=<独立 Android package> \
+VOXFLAME_COLLECTION_IOS_BUNDLE_IDENTIFIER=<独立 iOS Bundle ID> \
+VOXFLAME_COLLECTION_EAS_PROJECT_ID=<独立 EAS project ID> \
+npx expo config --type public
+```
+
+`app.config.js` 会在缺少任一独立标识时直接失败，防止误用 VoxFlame 名称、图标、包名、签名项目或发布渠道。第二品牌网站未配置自己的 App 下载地址时只显示“准备中”，不会分发现有 VoxFlame APK。
+
 This server currently has stale `HTTP_PROXY / HTTPS_PROXY` values and an unsafe `NODE_TLS_REJECT_UNAUTHORIZED` override. The repository's `eas:*` and `build:*` scripts unset them automatically. If you run EAS manually, prefix the command with `env -u HTTP_PROXY -u HTTPS_PROXY -u NODE_TLS_REJECT_UNAUTHORIZED`.
 
 `npm run eas:login` also uses `--no-browser` because this app is developed over VS Code / SSH. Browser login would send the callback to the developer computer's `localhost`, while EAS CLI is listening on the remote server.
@@ -259,3 +284,13 @@ Huawei / HarmonyOS has two tracks:
 2. HarmonyOS NEXT native app: this React Native Android APK is not enough; a separate HarmonyOS-native implementation or port is required.
 
 Before store submission, prepare privacy policy, user agreement, account deletion/data deletion instructions, microphone permission explanation, screenshots, app icon, app description, ICP/website information if required, and medical wording that says communication/training assistance only.
+
+### RTC 第二切片（本地未部署）
+
+Pending start HTTP is aborted on clear; stale responses cannot restore credentials. Reconnect fetches fresh credentials instead of reusing an old session. Native lifecycle logic now has isolated regression coverage; OS AudioSession and real-device cancellation remain acceptance gates. Bundle exports do not prove audio behavior.
+
+
+### RTC P0 验证与治理
+
+在仓库根运行 `npm run test:mobile-rtc`：执行生产hook代码的权限/audio/join/mic取消、旧事件/控制消息、账号切换、卸载和共享AudioSession租约回归；hook host/SDK/native均为替身，不是React或设备验收。App切换沟通/训练会取消另一路，HTTP到Room交接检查当前凭证归属。
+真机模板新增四项RTC P0场景；`npm run validate:device-acceptance -- <result.json>` 对缺项、缺证据、pending/fail/conditional 返回非零。只有真实证据才能填写pass。完整指标继续使用既有语音Benchmark协议，不将租约回归换算为延迟/AEC效果。

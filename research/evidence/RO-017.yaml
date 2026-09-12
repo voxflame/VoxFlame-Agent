@@ -1,0 +1,176 @@
+research_id: RO-017
+status: evidence_review
+evidence_class: engineering
+claim: 官方网页足以修订原稿若干日期与通用门槛，但不足以确认公司和拟设子公司可获补贴。
+sources:
+- source_id: S01
+  url: https://www.yuhang.gov.cn/col/col1229175234/art/2026/art_8451eb8324864752a8d121df2a8007d4.html
+  evidence_level: primary
+  accessed_at: '2026-09-07T13:34:30+08:00'
+  published_or_version: '2026-08-06'
+  supports: 关于拟认定余杭区算力伙伴（第二批）的公示
+  limitations: 只核验网页正文；未读取附件、申报后台或独立确认公司资格。
+  sha256: 3fd3d0c280debc7acd27b50c31f3fa81e696f1e2c825850d6f533001ea1b9d38
+  snapshot: research/product-engineering/evidence/RO-017/sources/S01.html
+- source_id: S02
+  url: https://www.yuhang.gov.cn/col/col1229175234/art/2026/art_ad985269803045dfb380a0ff5288b304.html
+  evidence_level: primary
+  accessed_at: '2026-09-07T13:34:30+08:00'
+  published_or_version: '2026-04-23'
+  supports: 关于拟认定余杭区算力伙伴、模型伙伴（第一批）的公示
+  limitations: 只核验网页正文；未读取附件、申报后台或独立确认公司资格。
+  sha256: c008b77f61ddb1240dbde56e175a87760b60bf183b79132eff045e6429e6f4be
+  snapshot: research/product-engineering/evidence/RO-017/sources/S02.html
+- source_id: S03
+  url: https://www.yuhang.gov.cn/art/2025/2/21/art_1532133_59131954.html
+  evidence_level: official_news
+  accessed_at: '2026-09-07T13:34:30+08:00'
+  published_or_version: '2025-02-21'
+  supports: 每年发放“算力券”“模型券”各5000万元 真金白银支持补贴智算产业
+  limitations: 只核验网页正文；未读取附件、申报后台或独立确认公司资格。
+  sha256: be62b7c1cca642cb2a242ea9c14447d4718efda3f236b99c6fde582b3e4a5769
+  snapshot: research/product-engineering/evidence/RO-017/sources/S03.html
+- source_id: S04
+  url: https://jxj.hangzhou.gov.cn/col/col1229252271/art/2026/art_87786d11012e4295b52fdf3bce943872.html
+  evidence_level: primary
+  accessed_at: '2026-09-07T13:34:30+08:00'
+  published_or_version: '2026-06-01'
+  supports: 关于组织开展2026年算力券兑付申报的通知
+  limitations: 只核验网页正文；未读取附件、申报后台或独立确认公司资格。
+  sha256: 60c05f66ce7ee078bae6dea19771f93074b943e7d3a8e6fed27e8083582d11de
+  snapshot: research/product-engineering/evidence/RO-017/sources/S04.html
+- source_id: S05
+  url: https://www.hhtz.gov.cn/col/col1229225928/art/2026/art_5a167e13c395414abfc95de936cd5813.html
+  evidence_level: primary
+  accessed_at: '2026-09-07T13:34:31+08:00'
+  published_or_version: '2026-08-12'
+  supports: 进一步加快新一代人工智能产业应用发展若干措施（杭高新〔2026〕6号）
+  limitations: 只核验网页正文；未读取附件、申报后台或独立确认公司资格。
+  sha256: e27b4e025dd63aa9e6e15dc78ee0a44a958f4243df3a544ada63265ff2f63287
+  snapshot: research/product-engineering/evidence/RO-017/sources/S05.html
+- source_id: S06
+  url: https://www.hhtz.gov.cn/col/col1485818/art/2026/art_a11db934caff4451b3644dfc733e9168.html
+  evidence_level: primary
+  accessed_at: '2026-09-07T13:34:31+08:00'
+  published_or_version: '2026-08-13'
+  supports: 关于填报首批“AI+OPC”入库申请的通知
+  limitations: 只核验网页正文；未读取附件、申报后台或独立确认公司资格。
+  sha256: b969e16615d98a452f9f7c5330247317ca8e9e95cf46178e9156b43fbd094674
+  snapshot: research/product-engineering/evidence/RO-017/sources/S06.html
+- source_id: S07
+  url: https://sheitc.sh.gov.cn/cyfz/20260507/cd1dcb1e5cb4449cbc36c69befafcc0a.html
+  evidence_level: primary
+  accessed_at: '2026-09-07T13:34:31+08:00'
+  published_or_version: '2026-05-07'
+  supports: 关于组织2026年度上海市“模塑申城”工程相关补贴申报工作的通知（沪经信智〔2026〕248号）
+  limitations: 只核验网页正文；未读取附件、申报后台或独立确认公司资格。
+  sha256: 0764d86b0ce2adaf7a189c0b051101cc8f6961cec41d651e65e01bc78812b45a
+  snapshot: research/product-engineering/evidence/RO-017/sources/S07.html
+- source_id: S08
+  url: https://www.shanghai.gov.cn/zjfcsj/20251024/28bb5b0d563b468b95cc0defa2a6bc60.html
+  evidence_level: primary
+  accessed_at: '2026-09-07T13:34:31+08:00'
+  published_or_version: '2025-07-28'
+  supports: 上海市进一步扩大人工智能应用的若干措施（沪经信智〔2025〕489号）
+  limitations: 只核验网页正文；未读取附件、申报后台或独立确认公司资格。
+  sha256: 6285015a4b58bed8cf25312382ea1b5d190a9742e3f292b520f34b7b4f45dc9e
+  snapshot: research/product-engineering/evidence/RO-017/sources/S08.html
+- source_id: S09
+  url: https://www.pudong.gov.cn/zwgk/zwgk_tsfl_zwgk/2026/91/353871.html
+  evidence_level: primary
+  accessed_at: '2026-09-07T13:34:31+08:00'
+  published_or_version: '2026-03-31'
+  supports: 关于2026年第1季度张江AI创新小镇“算力券”“模型券”“语料券”专项政策受理工作的通知
+  limitations: 只核验网页正文；未读取附件、申报后台或独立确认公司资格。
+  sha256: e90b38e8d9ee03eef53ec9dd76af0ca4f4f851e5c1cd62606ee062bdd330c330
+  snapshot: research/product-engineering/evidence/RO-017/sources/S09.html
+- source_id: S10
+  url: https://www.hangzhou.gov.cn/art/2025/3/18/art_812264_59110433.html
+  evidence_level: official_news
+  accessed_at: '2026-09-07T13:34:31+08:00'
+  published_or_version: '2025-03-18'
+  supports: 西湖区发行“算力券”“模型券”
+  limitations: 只核验网页正文；未读取附件、申报后台或独立确认公司资格。
+  sha256: ab45453861de0326c4ccf41f4306833371bc5c386c644eb3988344cbd64b8a84
+  snapshot: research/product-engineering/evidence/RO-017/sources/S10.html
+- source_id: S11
+  url: https://www.hzxh.gov.cn/col/col1229312578/art/2026/art_ec7916df277247e0ad75c6034b8374f7.html
+  evidence_level: primary
+  accessed_at: '2026-09-07T13:34:31+08:00'
+  published_or_version: '2026-06-16'
+  supports: 关于开展2026年杭州市第一批人工智能产业项目申报工作的通知
+  limitations: 只核验网页正文；未读取附件、申报后台或独立确认公司资格。
+  sha256: e318bf3b57b86b63dd002b7124b82817f1482419c17be39903140561c4440eda
+  snapshot: research/product-engineering/evidence/RO-017/sources/S11.html
+- source_id: S12
+  url: https://drc.hangzhou.gov.cn/col/col1229787897/art/2026/art_f7c1ee891fc142fdaeafd39850f735fb.html
+  evidence_level: primary
+  accessed_at: '2026-09-07T13:34:31+08:00'
+  published_or_version: '2026-07-28'
+  supports: 关于延期出台《杭州市加快建设人工智能创新高地的若干政策举措（2026年版）》的情况说明
+  limitations: 只核验网页正文；未读取附件、申报后台或独立确认公司资格。
+  sha256: a9c563130bf6fe70d8eb13388d6b154e21e4483632a4228f77f69eac6670a2a4
+  snapshot: research/product-engineering/evidence/RO-017/sources/S12.html
+independent_review:
+  required: true
+  reviewer: pending company finance and competent authority
+  relationship_to_author: independent professional verification required
+  completed_at: pending
+  result: pending
+authority_gate:
+  status: pending
+  release_or_expansion: internal_only
+  claim_scope: internal policy briefing as of 2026-09-07, no approved subsidy or company qualification
+  authority_sources:
+  - source_id: S01
+    url: https://www.yuhang.gov.cn/col/col1229175234/art/2026/art_8451eb8324864752a8d121df2a8007d4.html
+    tier: primary
+    independence_basis: 余杭区经信局、区财政局
+    supports: 关于拟认定余杭区算力伙伴（第二批）的公示
+    limitations: Public text only, not company approval
+  - source_id: S04
+    url: https://jxj.hangzhou.gov.cn/col/col1229252271/art/2026/art_87786d11012e4295b52fdf3bce943872.html
+    tier: primary
+    independence_basis: 杭州市经信局
+    supports: 关于组织开展2026年算力券兑付申报的通知
+    limitations: Public text only, not company approval
+  - source_id: S05
+    url: https://www.hhtz.gov.cn/col/col1229225928/art/2026/art_5a167e13c395414abfc95de936cd5813.html
+    tier: primary
+    independence_basis: 杭州高新区（滨江）管委会、政府
+    supports: 进一步加快新一代人工智能产业应用发展若干措施（杭高新〔2026〕6号）
+    limitations: Public text only, not company approval
+  - source_id: S07
+    url: https://sheitc.sh.gov.cn/cyfz/20260507/cd1dcb1e5cb4449cbc36c69befafcc0a.html
+    tier: primary
+    independence_basis: 上海市经信委
+    supports: 关于组织2026年度上海市“模塑申城”工程相关补贴申报工作的通知（沪经信智〔2026〕248号）
+    limitations: Public text only, not company approval
+  independent_review:
+    reviewer: pending
+    institution_or_scope: company finance/legal and competent authority
+    conflict_of_interest: preparer is not subsidy approver
+    result: pending
+    reviewed_at: pending
+  counterevidence_recorded: true
+  population_device_scenario_bounds_recorded: true
+  failure_conditions: Unsupported benefit values; publication confused with effective date; subsidiaries treated as approved;
+    document clipping
+  rollback_or_withdrawal: Withdraw supplemental report; retain unchanged original HTML and faithful PDF
+  recheck_date: '2026-09-11'
+reproducibility:
+  code_or_protocol: scripts/research/export-ro017-policy-pdf.py
+  data_version_and_license: user supplied HTML and 12 official public HTML pages
+  commit_or_release: working tree 2026-09-07
+  run_command: python3 scripts/research/export-ro017-policy-pdf.py --edition business
+  seed_or_determinism: Fixed HTML and print CSS; browser PDF metadata varies
+  raw_artifacts: output/playwright/policy-pdf/; research/product-engineering/evidence/RO-017/source-manifest.json
+uncertainty_and_counterevidence:
+  uncertainty: Yuhang revised full rules, Hangzhou 2025 full plan, attachments, future rounds and company facts not verified
+  counterevidence: Original OPC URL expired; Binjiang effective date in future; current Shanghai notice differs from original
+  out_of_scope: Legal/tax advice, company formation, funding applications, purchases, runtime and voice effectiveness
+outcome_gates:
+  scholarly: not_applicable
+  patent: not_applicable
+  software_copyright: not_applicable
+  product: pending

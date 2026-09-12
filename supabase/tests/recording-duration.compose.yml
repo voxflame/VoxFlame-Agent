@@ -1,0 +1,15 @@
+# Isolated disposable test database; no production env, network, ports, or volumes.
+services:
+  db:
+    image: docker.m.daocloud.io/library/postgres:16-alpine
+    network_mode: none
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_DB: recording_duration_test
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d recording_duration_test']
+      interval: 1s
+      timeout: 3s
+      retries: 30
