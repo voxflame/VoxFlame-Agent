@@ -62,7 +62,14 @@ jobs:
       - name: Install Maestro CLI
         run: curl -Ls https://get.maestro.mobile.dev | bash
 
+      - name: Install Android emulator system image
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-33" "system-images;android-33;google_apis;x86_64"
+
       - name: Start Android emulator
+        env:
+          MAESTRO_CLI_NO_ANALYTICS: "1"
         run: |
           "$HOME/.maestro/bin/maestro" start-device --platform android --os-version 33
 

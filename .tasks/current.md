@@ -164,3 +164,10 @@
 - GitHub run `34676636576` 启动EAS `3bc0d383-f4f9-494e-bfc4-2f95fa7fe403`，候选 `0.1.11 (12)` / main `7611104`，但原生prebuild失败：main未跟踪Android配置引用的512图标，缺文件ENOENT。前两次分别缺Expo Secret、GraphQL失败；没有成功候选产物。
 - 本地7项流水线守卫、Mobile check/typecheck/training及文档/Research Harness通过；CI同样通过Mobile检查但EAS失败。停止重复云构建，保留现网 `0.1.10 (11)`。详见 `research/product-engineering/ANDROID_CANDIDATE_PIPELINE_2026-09-12.md`。
 - 下一步owner：发布负责人修复图标资源与原生预构建、检查已有CodeQL Go失败，审查合并后重建候选；管理员/测试者做真机验收再批准发布。Web230账号保存/统计问题仍未闭环；APK自动化不能代替该问题修复。
+
+
+## PR #21 CI修复（2026-09-12）
+
+- CodeQL Go失败根因：仓库没有任何受跟踪Go源码/模块，已从矩阵移除Go，仅保留JavaScript/TypeScript与Python扫描。
+- Android Maestro失败根因：GitHub runner未安装Android 33 system image，已在工作流中显式安装 `platform-tools`、`platforms;android-33` 与 `system-images;android-33;google_apis;x86_64` 后再启动模拟器。Supabase公共URL/anon key已写入GitHub Actions Variables（非Secret）。
+- 修复已推送，等待新的PR检查；未合并、未发布APK。
