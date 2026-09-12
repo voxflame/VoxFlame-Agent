@@ -3,11 +3,16 @@ name: Android Preview Release
 on:
   workflow_dispatch:
     inputs:
-      publish:
-        description: Publish the validated APK to the public download URL
+      action:
+        description: Candidate action
         required: true
-        default: false
-        type: boolean
+        default: build
+        type: choice
+        options: [build, publish]
+      candidate_run_id:
+        description: Successful candidate workflow run ID to promote (publish only)
+        required: false
+        type: string
   schedule:
     # 18:30 Asia/Shanghai = 10:30 UTC; build a candidate, do not publish.
     - cron: '30 10 * * 1-5'
@@ -33,11 +38,12 @@ env:
 
 jobs:
   build-candidate:
-    # Scheduled and push builds are candidates only. Manual runs may opt into
-    # publishing the exact artifact produced by this run.
-    if: github.event_name != 'push' || vars.ANDROID_AUTO_RELEASE_ENABLED == 'true'
+    # Scheduled and push builds are candidates only. Manual publish promotes an
+    # immutable artifact from a prior successful candidate run.
+    if: github.event_name != 'workflow_dispatch' || inputs.action == 'build'
     runs-on: ubuntu-latest
     timeout-minutes: 75
+    environment: android-build
 
     steps:
       - name: Check out main
@@ -72,8 +78,7 @@ jobs:
           retention-days: 30
 
   publish-candidate:
-    needs: build-candidate
-    if: github.event_name == 'workflow_dispatch' && inputs.publish == true
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'publish' && inputs.candidate_run_id != ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
@@ -82,8 +87,11 @@ jobs:
       - name: Download exact candidate artifact
         uses: actions/download-artifact@v4
         with:
-          name: android-preview-${{ github.run_id }}
+          name: android-preview-${{ inputs.candidate_run_id }}
           path: ${{ runner.temp }}/android-release
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
 
       - name: Validate deployment configuration
         env:
@@ -97,7 +105,7 @@ jobs:
           test -n "$DEPLOY_USER"
           test -n "$DEPLOY_SSH_KEY"
           test -n "$DEPLOY_KNOWN_HOSTS"
-          echo "Deploying exact candidate from run $GITHUB_RUN_ID"
+          echo "Deploying exact candidate from run ${{ inputs.candidate_run_id }}"
 
       - name: Configure production SSH identity
         env:
