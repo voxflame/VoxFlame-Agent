@@ -1,6 +1,6 @@
 # 当前任务状态
 
-> 最后更新：2026-09-11。只记录仍需执行或验收的事项；完成历史由 Git 和 `research/` 专项事实源保存。
+> 最后更新：2026-09-12。只记录仍需执行或验收的事项；完成历史由 Git 和 `research/` 专项事实源保存。
 
 ## P0：采集四项需求
 
@@ -123,3 +123,44 @@
 
 - [x] 按管理员授权签发308模型受限调试Token及中文接入说明，仓库外交付包 `/home/ubuntu/livekit-308-debug-20260911.zip`；JWT与运行中Agent离线路由验证通过，无真实账户资料加载，不部署。入房有效期至北京时间2026-09-12 01:16:19。
 - [ ] 研发人员导入地址/Token，单设备完成真实RTC音轨与Data联调，核对原始用户转写的source/model_version/personalized/fallback；回声与麦克风单独验收。当前注册表为308的EXP-39，尚未真实推理验证。仅非敏感短句，结束主动断开，过期需重新签发；凭证不得进Git或公开渠道。
+
+## 分支清理（2026-09-12）
+
+- [x] 用户指定的三个旧分支、现存的两个远端分支及干净的临时worktree已定向删除并回读确认；保留main和release，详情见会话摘要。
+- [ ] 核对GitHub仓库迁移后的origin地址和默认分支依赖安全告警；此次不自动改remote或升级依赖。
+
+## 运维与研发管理目录（2026-09-12）
+
+- [x] 新增 `research/operations/README.md` 及五份精简手册：应用服务维护、分支管理、版本管理、App 发布、开发管理；已加入 `research/README.md` 导航。
+- [ ] 后续由管理员将分支保护、必需 CI 检查、发布审批和 Secret 权限按手册落到 GitHub/基础设施；本次未改变线上配置。
+
+## 主干开发与部署待办（2026-09-12）
+
+- [x] 同步本地 main 至远端 `7611104`，确认与 release 文件树相同；从 main 新开 `ops/operations-playbooks` 并保留全部未提交文档。今后使用最新 main → 短分支 → 验证/提交 → PR合并，不在 main 或旧 release 持续开发。
+- [ ] 发布负责人核验前端 `20840b8a57f2` 与目标源码/测试，再经批准最小影响部署；运行中仍为 `9db6636afff6`。Backend/Agent 的源码溯源与录音真实链路尚需验收。
+- [ ] 发布负责人核查 Android CI/EAS 状态，完成最新 main 候选包构建、真机和受控分发；当前站点APK仅 `0.1.10 (11)` / `fbd683f`。本轮未操作发布。
+
+## Tag 管理（2026-09-12）
+
+- [x] 核对本地/远端唯一历史附注 Tag `v0.1.0` → `d293f60`，补齐版本手册的 Tag 流程与导航；保留历史标签，不为当前未验收发布补打标签。
+- [ ] 管理员核验套餐与实际 Tag Rulesets，配置受限创建/更新/删除并验证；发布负责人在下一次获批发布时关联源码 Tag、真实产物、验收和部署记录。本轮仅文档，未实施远端保护或发布。
+
+
+## 2307294809 录音时长只读核验（2026-09-12 13:15 +08:00）
+
+- 账号匹配 Auth UUID `64758dee-5026-4b53-a063-1d02d0834f67`。数据库计时账本总计 `2763s/605`，最后更新时间 `2026-09-11 14:55:44 +08:00`；按北京时间 2026-09-12 查询今日为 `0s`，最近3小时专项查询未成功，不作无新记录结论。
+- `get_recording_progress` 返回 `durationAccounting=durable_v1`、`todayDurationSeconds=0`、`totalDurationSeconds=2763`。历史 backend.log 含 expired JWT，当前容器日志仅见启动记录，未关联账号/recording ID，不能仅凭日志认定这几句已上传到 OSS。
+- 只读 OSS 前缀扫描本轮未得到该账号新对象；由于现行目录层级/列举结果不完整，不能据此证明手机本地队列或 OSS 没有音频。未执行补写、重试、迁移或删除；下一步需用户保留设备待上传队列并提供录音大致时间/页面渠道，管理员再按 recording ID 做受限 artifact 对账。
+
+## Docker 清理（2026-09-12）
+
+- [x] 执行 `bash scripts/docker_disk_maintenance.sh prune-safe`；清理全部构建缓存，根盘 74%→68%，约释放 3GB。
+- [x] 检查过期容器：无停止/退出容器；5 个运行容器均保留。`latest`、`pre-*` 镜像和命名卷均保留。
+
+## APK 自动化改造（2026-09-12，未完成发布）
+
+- 已推送流水线改造：固定main SHA、工作日18:30候选构建、同SHA成功产物跳过、管理员审批原包晋级、来源/哈希/大小校验与完整下载对比。尚未合并main，定时任务未启用；无新版APK对外发布。
+- GitHub已设置独立android-build凭证、production仅main且管理员审批/禁管理员绕过。CI Token换行已规范化；不能将此Expo构建凭证问题解释为用户登录JWT问题。
+- GitHub run `34676636576` 启动EAS `3bc0d383-f4f9-494e-bfc4-2f95fa7fe403`，候选 `0.1.11 (12)` / main `7611104`，但原生prebuild失败：main未跟踪Android配置引用的512图标，缺文件ENOENT。前两次分别缺Expo Secret、GraphQL失败；没有成功候选产物。
+- 本地7项流水线守卫、Mobile check/typecheck/training及文档/Research Harness通过；CI同样通过Mobile检查但EAS失败。停止重复云构建，保留现网 `0.1.10 (11)`。详见 `research/product-engineering/ANDROID_CANDIDATE_PIPELINE_2026-09-12.md`。
+- 下一步owner：发布负责人修复图标资源与原生预构建、检查已有CodeQL Go失败，审查合并后重建候选；管理员/测试者做真机验收再批准发布。Web230账号保存/统计问题仍未闭环；APK自动化不能代替该问题修复。
