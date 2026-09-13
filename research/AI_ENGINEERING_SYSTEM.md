@@ -635,3 +635,12 @@ bash scripts/check_ai_docs.sh
 - `npm run test:mobile-rtc`：Node 24+ 执行原生 hook 逻辑替身回归与真机证据门负例，不依赖 Next.js 运行时，不证明 React 调度、OS/WebRTC 或 AEC。
 - `npm run check:voice-evidence`：沿已有语音协议检查已登记证据，不发起 provider/真实账号调用，不新增平行评测体系。
 - Native AudioSession 是进程级资源，由共享租约串行启停；Room/HTTP 取消与账号 owner 分离。释放旧 lease 不得停新 lease；原生调用挂起时不以超时假装已回收，保留真实设备验收。
+
+
+### Android 官网单一发布 owner
+
+- 官网 Android preview 由 `.github/workflows/android-preview-release.yml` 唯一调度：审核后的 main → 检查/EAS → 同一 artifact → 受限 SSH receiver/publisher → 完整公网下载校验。push、工作日定时与手动重试均进入这一工作流，不是独立发布链路。
+- 管理员已授权官网构建后自动发布；`android-build` 只持构建凭证，`production` 只用部署凭证且限制 main，不再逐包人工晋级。该授权不包含商店提交、账号/录音写入或研究成果自动部署。
+- 服务器旧构建timer必须停用并mask，CLI直发入口失败关闭，通用安装器不得复活旧owner。底层publisher只接收产物，不决定构建/发布时间。
+- 同SHA成功构建且artifact有效时原样复用；发布失败可重试原包。main推进、来源/字节不符、版本倒退或同版本异包必须拒绝。保留当前/previous/切换前备份；可处理的公网校验失败恢复旧实物，不承诺断电或SIGKILL的双文件事务。
+- 构建、分发、用户安装和真机验收分开记账；真机录音/登录/积压补传缺测不能用官网发布通过替代。操作、恢复与实际切换证据见 [App发布](operations/APP_RELEASE.md) 与 [单链路记录](operations/ANDROID_SINGLE_RELEASE_2026-09-13.md)。

@@ -46,6 +46,10 @@ const androidReleaseScript = readFileSync(
   path.join(repoRoot, 'scripts/release-android-preview.sh'),
   'utf8',
 )
+const androidPublisherScript = readFileSync(
+  path.join(repoRoot, 'scripts/publish-android-artifact.sh'),
+  'utf8',
+)
 const downloadPageSource = readFileSync(
   path.join(repoRoot, 'frontend/src/app/download/page.tsx'),
   'utf8',
@@ -102,7 +106,9 @@ assert(packageJson.scripts?.['release:android:preview'] === 'bash ../../scripts/
 assert(packageJson.scripts?.['sync:android:latest'] === 'bash ../../scripts/release-android-preview.sh publish-latest', 'android website artifact recovery script is missing')
 assert(androidReleaseScript.includes('eas-cli@latest build'), 'android website release must run EAS Build')
 assert(androidReleaseScript.includes('VoxFlame-Android.apk'), 'android website release must publish the stable APK name')
-assert(androidReleaseScript.includes('VoxFlame-Android.previous.apk'), 'android website release must retain a rollback APK')
+assert(androidPublisherScript.includes('VoxFlame-Android.previous.apk'), 'android website publisher must retain a rollback APK')
+assert(androidReleaseScript.includes('Direct Android publication retired'), 'artifact builder must not own website publication')
+assert(!androidReleaseScript.includes('docker compose'), 'artifact builder must not deploy infrastructure')
 assert(downloadPageSource.includes("siteBrand.isCollectionSite ? '' : '/download/android'"), 'main website Android download must keep the permanent first-party URL')
 assert(composeSource.includes('NEXT_PUBLIC_VOXFLAME_COLLECTION_ANDROID_APP_DOWNLOAD_URL'), 'collection site must use its own Android package URL')
 assert(!caddySource.slice(caddySource.indexOf('# 第二品牌站')).includes('VoxFlame-Android.apk'), 'collection site must not serve the VoxFlame APK')

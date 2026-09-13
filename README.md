@@ -186,6 +186,7 @@ Backend `POST /api/rtc/session/start` 签发凭证；`transport` 是连接信息
 - 当前任务：[.tasks/current.md](.tasks/current.md)
 - 项目摘要：[.claude-summary.md](.claude-summary.md)
 - 工程规范：[AGENTS.md](AGENTS.md)
+- Android官网发布：[单一GitHub构建/原包自动发布链路](research/operations/APP_RELEASE.md)；真机验收与商店提交独立。
 - 产品主文档：[research/product-engineering/VOXFLAME_PRODUCT_PRD_2026-03-24.md](research/product-engineering/VOXFLAME_PRODUCT_PRD_2026-03-24.md)
 - 研究入口：[research/README.md](research/README.md)
 - 应用回流登记：[research/APPLICATION_FEEDBACK_REGISTRY.md](research/APPLICATION_FEEDBACK_REGISTRY.md)

@@ -3,22 +3,12 @@ name: Android Preview Release
 on:
   workflow_dispatch:
     inputs:
-      action:
-        description: Candidate action
-        required: true
-        default: build
-        type: choice
-        options: [build, publish]
-      candidate_run_id:
-        description: Successful candidate workflow run ID to promote (publish only)
-        required: false
-        type: string
-      acceptance:
-        description: Device acceptance evidence reference (publish only)
-        required: false
-        type: string
+      force_rebuild:
+        description: Build again instead of reusing this main SHA's verified artifact
+        default: false
+        type: boolean
   schedule:
-    # 18:30 Asia/Shanghai = 10:30 UTC; build a candidate, do not publish.
+    # 18:30 Asia/Shanghai. Reuse or build current main, then publish.
     - cron: '30 10 * * 1-5'
   push:
     branches: [main]
@@ -28,6 +18,12 @@ on:
       - 'scripts/release-android-preview.sh'
       - 'scripts/publish-android-artifact.sh'
       - 'scripts/test-android-release-pipeline.py'
+      - 'scripts/test-android-release-workflow.cjs'
+      - 'scripts/test-android-artifact-publication.py'
+      - 'scripts/test-android-retire.py'
+      - 'scripts/android-release-workflow.cjs'
+      - 'scripts/verify-android-artifact.py'
+      - 'scripts/ops/receive-android-ci-artifact.sh'
       - '.github/workflows/android-preview-release.yml'
 
 permissions:
@@ -43,38 +39,22 @@ env:
 
 jobs:
   select-source:
-    if: github.event_name != 'workflow_dispatch' || inputs.action == 'build'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.select.outputs.sha }}
       build: ${{ steps.select.outputs.build }}
+      artifact_run_id: ${{ steps.select.outputs.artifact_run_id }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: actions/github-script@v7
         id: select
         with:
           script: |
-            const repo = context.repo;
-            // Main events build their immutable event commit. Bootstrap runs
-            // on a reviewed release branch still build current main, never branch app code.
-            const sha = context.ref === 'refs/heads/main' ? context.sha :
-              (await github.rest.repos.getCommit({...repo, ref: 'main'})).data.sha;
-            core.setOutput('sha', sha);
-            if (context.eventName !== 'workflow_dispatch') {
-              const runs = await github.rest.actions.listWorkflowRuns({
-                ...repo, workflow_id: 'android-preview-release.yml',
-                branch: 'main', status: 'success', head_sha: sha, per_page: 100
-              });
-              for (const run of runs.data.workflow_runs) {
-                const artifacts = await github.rest.actions.listWorkflowRunArtifacts({...repo, run_id: run.id});
-                if (artifacts.data.artifacts.some(a => !a.expired && a.name === `android-preview-${run.id}`)) {
-                  core.setOutput('build', 'false');
-                  await core.summary.addRaw(`Unchanged main ${sha}; reuse candidate run ${run.id}.`).write();
-                  return;
-                }
-              }
-            }
-            core.setOutput('build', 'true');
-            await core.summary.addRaw(`Candidate source: ${sha}. Build only, no public release.`).write();
+            await require('./scripts/android-release-workflow.cjs').selectSource({github, context, core});
 
   build-candidate:
     needs: select-source
@@ -111,7 +91,7 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           VOXFLAME_SOURCE_ROOT: ${{ github.workspace }}/source
         run: |
-          # Existing main wrapper needs a normalized secret until this PR lands.
+          # Normalize copied secret line endings without logging credentials.
           export EXPO_TOKEN="$(printf '%s' "$EXPO_TOKEN" | tr -d '\r\n')"
           bash tooling/scripts/release-android-preview.sh build-artifact "$RUNNER_TEMP/android-release"
       - name: Record candidate provenance
@@ -132,7 +112,7 @@ jobs:
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
               summary.write(f"Candidate {metadata['appVersion']} ({metadata['appBuildVersion']}); "
                             f"EAS {metadata['buildId']}; SHA256 {metadata['sha256']}. "
-                            "Not published; device acceptance required.\n")
+                            "Build verified; automatic website publication follows. Device acceptance is tracked separately.\n")
           PYCODE
       - name: Upload immutable Android candidate
         uses: actions/upload-artifact@v4
@@ -143,59 +123,39 @@ jobs:
           retention-days: 30
 
   publish-candidate:
-    if: github.event_name == 'workflow_dispatch' && inputs.action == 'publish' && github.ref == 'refs/heads/main'
+    needs: [select-source, build-candidate]
+    if: >-
+      ${{ !cancelled() && github.ref == 'refs/heads/main' &&
+          needs.select-source.result == 'success' &&
+          (needs.build-candidate.result == 'success' ||
+           (needs.select-source.outputs.build == 'false' && needs.build-candidate.result == 'skipped')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
-
+    env:
+      ARTIFACT_RUN_ID: ${{ needs.select-source.outputs.artifact_run_id }}
+      SOURCE_SHA: ${{ needs.select-source.outputs.sha }}
     steps:
-      - name: Validate trusted candidate run and acceptance reference
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Validate trusted build and latest main
         uses: actions/github-script@v7
-        env:
-          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
-          ACCEPTANCE: ${{ inputs.acceptance }}
         with:
           script: |
-            const id = process.env.CANDIDATE_RUN_ID;
-            if (!/^[1-9][0-9]{0,15}$/.test(id)) throw new Error('Numeric candidate run ID required');
-            if ((process.env.ACCEPTANCE || '').trim().length < 20) throw new Error('Device acceptance evidence reference required');
-            const run = (await github.rest.actions.getWorkflowRun({...context.repo, run_id: Number(id)})).data;
-            const workflow = (await github.rest.actions.getWorkflow({...context.repo, workflow_id: 'android-preview-release.yml'})).data;
-            if (run.workflow_id !== workflow.id || run.head_branch !== 'main' || run.conclusion !== 'success' ||
-                run.head_repository?.full_name !== `${context.repo.owner}/${context.repo.repo}` ||
-                !['push', 'schedule', 'workflow_dispatch'].includes(run.event)) {
-              throw new Error('Only successful trusted main candidate runs can be promoted');
-            }
-            core.exportVariable('CANDIDATE_SOURCE_SHA', run.head_sha);
-            core.exportVariable('CANDIDATE_RUN_ID', id);
-            await core.summary.addRaw(`Promoting run ${id}, main ${run.head_sha}. Acceptance reference: `)
-              .addCodeBlock(process.env.ACCEPTANCE).write();
-      - name: Download exact candidate artifact
+            await require('./scripts/android-release-workflow.cjs').validatePublication(
+              {github, context, core}, process.env.ARTIFACT_RUN_ID, process.env.SOURCE_SHA);
+      - name: Download exact build artifact
         uses: actions/download-artifact@v4
         with:
-          name: android-preview-${{ inputs.candidate_run_id }}
+          name: android-preview-${{ needs.select-source.outputs.artifact_run_id }}
           path: ${{ runner.temp }}/android-release
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
-          run-id: ${{ inputs.candidate_run_id }}
-
-      - name: Verify candidate bytes and provenance before deployment secrets
-        run: |
-          python3 - <<'PYCODE'
-          import hashlib, json, os, zipfile
-          from pathlib import Path
-          root = Path(os.environ['RUNNER_TEMP']) / 'android-release'
-          apk = root / 'VoxFlame-Android.apk'
-          m = json.loads((root / 'VoxFlame-Android.json').read_text())
-          assert m['sourceSha'] == m['gitCommitHash'] == os.environ['CANDIDATE_SOURCE_SHA']
-          assert str(m['candidateRunId']) == os.environ['CANDIDATE_RUN_ID']
-          assert hashlib.sha256(apk.read_bytes()).hexdigest() == m['sha256']
-          assert apk.stat().st_size == m['sizeBytes']
-          assert hashlib.sha256((root / 'version.patch').read_bytes()).hexdigest() == m['versionPatchSha256']
-          with zipfile.ZipFile(apk) as archive:
-              assert archive.testzip() is None
-              assert 'AndroidManifest.xml' in archive.namelist()
-          PYCODE
+          run-id: ${{ needs.select-source.outputs.artifact_run_id }}
+      - name: Verify artifact bytes and provenance before deployment secrets
+        run: python3 scripts/verify-android-artifact.py "$RUNNER_TEMP/android-release" "$SOURCE_SHA" "$ARTIFACT_RUN_ID"
 
       - name: Validate deployment configuration
         env:
@@ -222,6 +182,12 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
 
+      - name: Reject main changed during artifact download
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const latest = (await github.rest.repos.getCommit({...context.repo, ref: 'main'})).data.sha;
+            if (latest !== process.env.SOURCE_SHA) throw new Error('Main advanced; refusing stale release');
       - name: Upload and atomically publish APK
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}

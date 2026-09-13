@@ -12,24 +12,20 @@ RELEASE = (ROOT / 'scripts/release-android-preview.sh').read_text()
 
 
 class AndroidReleaseGuards(unittest.TestCase):
-    def test_candidate_and_promotion_are_independent(self):
+    def test_build_then_automatic_same_artifact_publication(self):
         publish = WORKFLOW.split('  publish-candidate:')[1]
-        self.assertNotIn('needs: build-candidate', publish)
-        self.assertIn("inputs.action == 'publish'", publish)
+        self.assertIn('needs: [select-source, build-candidate]', publish)
+        self.assertIn("needs.build-candidate.result == 'success'", publish)
+        self.assertIn("needs.build-candidate.result == 'skipped'", publish)
+        self.assertIn('!cancelled()', publish)
         self.assertIn("github.ref == 'refs/heads/main'", publish)
         self.assertIn('environment: production', publish)
+        self.assertNotIn('inputs.action', publish)
         self.assertNotIn('eas-cli', publish)
-        self.assertIn('run-id: ${{ inputs.candidate_run_id }}', publish)
-
-    def test_promotion_checks_trust_and_integrity(self):
-        for guard in ["run.head_branch !== 'main'", "run.conclusion !== 'success'",
-                      'run.workflow_id !== workflow.id', 'run.head_repository?.full_name',
-                      'Device acceptance evidence reference required',
-                      "m['sourceSha'] == m['gitCommitHash']", "m['candidateRunId']",
-                      "m['versionPatchSha256']", "m['sha256']", "m['sizeBytes']"]:
-            self.assertIn(guard, WORKFLOW)
-        self.assertIn('cmp "$RUNNER_TEMP/published.apk"', WORKFLOW)
-        self.assertNotIn('echo "Deploying exact candidate from run ${{', WORKFLOW)
+        self.assertIn('run-id: ${{ needs.select-source.outputs.artifact_run_id }}', publish)
+        self.assertIn('cmp "$RUNNER_TEMP/published.apk"', publish)
+        self.assertIn('verify-android-artifact.py', publish)
+        self.assertIn('validatePublication', publish)
 
     def test_pinned_source_and_build_only(self):
         candidate = WORKFLOW.split('  build-candidate:')[1].split('  publish-candidate:')[0]
@@ -40,14 +36,24 @@ class AndroidReleaseGuards(unittest.TestCase):
         self.assertIn('build-artifact "$RUNNER_TEMP/android-release"', candidate)
         self.assertIn("metadata['gitCommitHash'] != os.environ['SOURCE_SHA']", candidate)
         self.assertIn('--json --non-interactive', RELEASE)
-
-    def test_unchanged_only_skips_successful_available_artifacts(self):
-        select = WORKFLOW.split('  select-source:')[1].split('  build-candidate:')[0]
-        self.assertIn("status: 'success', head_sha: sha", select)
-        self.assertIn('!a.expired', select)
-        self.assertIn('a.name === `android-preview-${run.id}`', select)
-        self.assertIn("context.eventName !== 'workflow_dispatch'", select)
         self.assertIn("cron: '30 10 * * 1-5'", WORKFLOW)
+
+    def test_legacy_entries_fail_before_side_effects(self):
+        commands = [
+            ['scripts/release-android-preview.sh', 'build'],
+            ['scripts/release-android-preview.sh', 'publish-latest'],
+            ['scripts/start-android-preview-release-background.sh'],
+            ['scripts/ops/sync-android-main-release.sh'],
+            ['scripts/ops/configure-android-release-github.sh'],
+        ]
+        for args in commands:
+            result = subprocess.run(['bash', str(ROOT / args[0]), *args[1:]], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertIn('retired', result.stderr.lower())
+        installer = (ROOT / 'scripts/ops/install-cpu1-reliability-hardening.sh').read_text()
+        self.assertIn('retire-android-main-sync.sh', installer)
+        self.assertNotIn('enable --now voxflame-android-main-sync', installer)
+        self.assertFalse((ROOT / 'infra/systemd/voxflame-android-main-sync.timer').exists())
 
     def test_token_normalizes_ci_and_file_without_printing(self):
         wrapper = ROOT / 'apps/mobile-workbench/scripts/with-expo-token.sh'
@@ -81,4 +87,8 @@ class AndroidReleaseGuards(unittest.TestCase):
 
 
 if __name__ == '__main__':
+    subprocess.run(['node', str(ROOT / 'apps/mobile-workbench/scripts/check-mobile-workbench.mjs')], check=True)
+    subprocess.run(['node', '--test', str(ROOT / 'scripts/test-android-release-workflow.cjs')], check=True)
+    subprocess.run(['python3', str(ROOT / 'scripts/test-android-artifact-publication.py')], check=True)
+    subprocess.run(['python3', str(ROOT / 'scripts/test-android-retire.py')], check=True)
     unittest.main()

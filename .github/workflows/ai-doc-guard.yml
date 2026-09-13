@@ -33,3 +33,10 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts/tests -p 'test_ai_governance.py' -v
           python3 scripts/research/validate-research-loop.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Verify Android single release pipeline (isolated, no deploy)
+        run: python3 scripts/test-android-release-pipeline.py

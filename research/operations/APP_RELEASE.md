@@ -1,42 +1,55 @@
 # App 发布
 
-**开发构建不必先到 main；对外发布默认使用审核后的 main。推送 ≠ 构建 ≠ 发布 ≠ 用户安装 ≠ 真机验收。**
+**官网 Android preview：审核后的 main 构建成功后自动发布。推送 ≠ 构建 ≠ 发布 ≠ 用户安装 ≠ 真机验收。**
 
-## 1. 选轨道
+## 1. 轨道与授权
 
-| 用途 | 当前 EAS profile | 谁使用 |
+| 用途 | EAS profile | 分发方式 |
 | --- | --- | --- |
-| 原生开发 | `development` | 开发者真机，不对外分发 |
-| 内部验收 | `preview`（Android APK） | 指定测试者；不要把 internal profile 当访问控制 |
-| 国内商店 / 正式商店 | `chinaStore`（APK）/ `production` | 管理员批准，按目标商店验收；构建不等于提交审核 |
+| 原生开发 | `development` | 开发者，不对外分发 |
+| 官网 Android | `preview`（APK） | 本次管理员授权的 GitHub 单链路自动发布；internal profile 不是访问控制 |
+| 国内/正式商店 | `chinaStore` / `production` | 真机与合规验收、管理员批准后提交，不在官网自动发布授权内 |
 
-详情复用[Mobile README](../../apps/mobile-workbench/README.md)与[eas.json](../../apps/mobile-workbench/eas.json)，不另造发布命令。
+配置复用[Mobile README](../../apps/mobile-workbench/README.md)与[eas.json](../../apps/mobile-workbench/eas.json)。独立开发构建仍可用 `npm run build:android:preview`，不接官网。
 
-## 2. 标准步骤
+## 2. 唯一官网链路
 
-1. 开发分支测试，PR 审核回 main；冻结候选 SHA、Backend/DB 兼容状态，按[版本手册](VERSION_MANAGEMENT.md)准备版本与构建号。
-2. 至少跑 Mobile `check`、`typecheck`、`test:training`；RTC 改动加仓库 `npm run test:rtc-contract` / `npm run test:mobile-rtc`。不得用 export 替代原生构建/真机。
-3. **先只构建**：可在 Mobile 目录运行 `npm run build:android:preview`，下载对应 EAS build ID 给授权测试者；不要用会直接对外发布的 `release:android:preview` 充当内部构建。
-4. 同一个候选包完成下面真机清单，管理员批准后再对外分发；核对包名/签名/版本/哈希和下载实物。没有“原样晋级”工具时另行安排受控发布，重新构建的包必须重新验证。
-5. 保存上一稳定包与[发布记录](VERSION_MANAGEMENT.md#发布记录模板)，观察首轮 10–15 分钟及实际使用高峰。失败停止分发，按版本手册回退，不清用户本地队列。
+```text
+main 相关 push / 工作日18:30 / main手动重试
+  → Android Preview Release / select-source
+  → 同SHA成功且未过期artifact复用；否则检查 + EAS preview构建
+  → 校验来源、run、version.patch、APK SHA256/大小/ZIP
+  → production（仅main，无逐包review）
+  → 受限SSH receiver → publisher（无构建能力）
+  → 完整公网下载逐字节校验
+```
 
-## 3. 真机验收（Web 共用链路同步测）
+- 唯一 owner：`.github/workflows/android-preview-release.yml`；三个触发方式不是三套发布链。
+- 构建前执行 Mobile `check`、`typecheck`、`test:training`，固定main源码SHA并记录版本生成diff。构建失败/取消不得发布；已有成功构建但发布失败可复用原artifact，不为重试分发重新构建。
+- 手动只从main运行该工作流；默认复用有效artifact，`force_rebuild=true` 才强制构建。同SHA复用不会覆盖previous。
+- 发布前再次读取main，旧SHA拒绝；并发发布互斥。新main在发布最后检查之后推进仍可能短暂出现前一版本，后续main构建接管；不宣称原子锁住Git分支。
+- artifact保留30天；记录EAS ID、源码SHA、构建号、run ID及哈希。实际目录 `/srv/voxflame/android`，Caddy无需重建。版本分配仍参考最近成功preview，不代表所有商店profile构建号治理已完成。
 
-- [ ] 登录与麦克风权限；至少连续录十句，不等点击确认才上传。
-- [ ] 停止 → 本地保存 → OSS 对象 → Backend receipt → 计时账本 → 页面刷新，按 recording ID 对上；本地待传不混入云端时长。
-- [ ] token 过期、断网、退出重开后可继续补传；同 ID 重试不重复计时。
-- [ ] 切换账号不把上个账号待传录音记给新账号；本地跨日/凌晨录音统计边界正确。
-- [ ] Android/iOS 分别留设备型号、OS、build ID、证据与审核人；未测平台不标通过。App 尚无统计卡时用 Web/Backend 验证，不假称 App 已显示。
+## 3. 环境与旧入口收口
 
-## 4. 定时构建与原包晋级
+- `android-build` 使用 EXPO_TOKEN；`production` 使用 DEPLOY_HOST/USER/PORT/SSH_KEY/KNOWN_HOSTS，仅main允许部署，无required reviewer。不要把构建凭证和部署凭证互换。
+- SSH使用事先核验的known_hosts与forced-command receiver；不盲信临时ssh-keyscan结果，不把secret写日志。
+- `scripts/ops/retire-android-main-sync.sh` 备份并停止/disable/mask旧timer与service，保留旧构建缓存和发布资产；通用主机安装器调用它，不能再启用旧timer。
+- `release-android-preview.sh` 只接受 `build-artifact <目录>`；旧release/npm、后台构建、服务器同步和旧GitHub bootstrap入口返回2，不再发布。这些失败关闭compat只用于提示迁移；待所有运维调用者完成迁移后删除，不增加业务逻辑。
+- 修改工作流不等于线上配置已生效；实际切换结果见[执行记录](ANDROID_SINGLE_RELEASE_2026-09-13.md)。
 
-工作流改造与当前阻塞见 [Android 流水线交付记录](../product-engineering/ANDROID_CANDIDATE_PIPELINE_2026-09-12.md)。**改造仍在分支，尚未在 main 启用。**
+## 4. 校验与恢复
 
-- main 合并后：工作日北京时间18:30检查；相关源码push也触发。已有同一main SHA的成功且未过期候选则跳过；手动build强制构建。不同SHA即使仅文档改变仍可能重建。
-- 手动 `action=build` 只构建，冻结main SHA；产物保留30天，记录EAS ID、源码SHA、版本生成diff、APK SHA256，不替换官网。
-- 真机验收后在main手动 `action=publish`，填写 `candidate_run_id` 与 `acceptance` 证据引用；管理员审批production环境后，下载同一候选，校验来源/哈希/大小，原包晋级，公网完整下载逐字节核对。
-- 仅接受main上的成功候选；临时分支启动的验证包不能晋级。验收引用是审计入口，不是自动判断真机通过；批准人必须核对实物。
-- 回退由管理员用已保存的上一稳定实物受控恢复；不使用 `publish-latest` 猜包，不清用户本地录音。旧直发脚本保留为人工应急路径，未被本轮环境保护覆盖，不运行它绕过审批。
-- 版本号目前仍参考最近成功preview；跨profile/失败构建号分配尚未收口，不能宣称全渠道版本治理完成。
+- publisher校验已暂存实物，拒绝版本倒退、同版本异包与不完整当前实物；每次切换前保存当前及previous到受限`.history`，不删除历史缓存。
+- 切换后用完整公网下载核对字节、APK类型及no-store；可处理的失败/中断恢复本轮前的当前与previous。APK rename对下载原子；APK/JSON不是跨文件事务，断电/SIGKILL需要管理员按备份核对恢复。
+- 紧急恢复：管理员先暂停唯一GitHub工作流并等待/停止在途发布，在发布锁下检查previous或`.history`哈希/大小，保全现物后按原owner/权限原子恢复APK及JSON并完整公网核验。旧包恢复是受控事故操作，不启用旧构建timer，不使用`publish-latest`猜包。正常publisher刻意拒绝降级，不能用正常重试掩盖回滚。
+- 回退下载包不等于用户已安装App降级；不卸载App、不清缓存或本地队列，修复用户设备优先发布递增构建号。
 
-依据：仓库工作流与GitHub官方artifact/environment/schedule文档（见交付记录）；构建、发布和真机验收分别记录。
+## 5. 独立真机验收（发布成功不能代替）
+
+- [ ] 登录/麦克风、连续录十句；核对停止后本地保存及何时触发上传。
+- [ ] 按recording ID对齐OSS → Backend receipt → 计时账本 → 页面刷新；本地待传不计入云端累计。
+- [ ] token过期、断网、退出重开后补传；同ID不重复计时，切换账号不串数据。
+- [ ] Android/iOS分别记录设备、OS、build ID、证据和审核人；未测不标通过。当前Maestro历史失败和真机登录/积压恢复仍独立待办。
+
+自动化回归：`python3 scripts/test-android-release-pipeline.py`（包含Node调度行为、产物及隔离publisher测试），不访问生产。真机流程见[设备手册](../product-engineering/VOXFLAME_MOBILE_WORKBENCH_DEVICE_VERIFICATION_RUNBOOK_2026-05-05.md)。
