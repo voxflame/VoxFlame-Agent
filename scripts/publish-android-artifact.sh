@@ -26,7 +26,7 @@ cleanup() {
   status=$?
   trap - EXIT
   if [[ "$status" != 0 && "$switched" == 1 ]]; then
-    echo 'Public verification failed; restoring pre-release files' >&2
+    echo 'Public verification failed; restoring pre-release files' >&2 || true
     for name in "${files[@]}"; do
       if [[ -f "$backup_dir/$name" ]]; then
         cp -p "$backup_dir/$name" "$work_dir/restore"
@@ -85,7 +85,7 @@ if current.exists():
 PY
 
 verify_public() {
-  curl --fail --silent --show-error --location --retry 2 --connect-timeout 20 --max-time 180 \
+  curl --fail --silent --show-error --location --retry 2 --connect-timeout 20 --max-time 600 \
     --dump-header "$work_dir/headers.txt" --output "$work_dir/public.apk" "$PUBLIC_URL"
   grep -iq '^content-type: application/vnd.android.package-archive' "$work_dir/headers.txt"
   grep -iq '^cache-control: no-store' "$work_dir/headers.txt"

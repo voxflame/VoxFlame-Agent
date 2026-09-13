@@ -182,3 +182,13 @@
 - 管理员已授权官网构建成功自动发布，GitHub workflow为唯一owner；不包括商店、用户录音写入或真机通过声明。
 - 独立分支实现构建/复用接发布、来源与完整字节校验、版本防倒退、失败恢复；旧timer/CLI/安装器封口。37项隔离回归通过，生产切换/PR/实际官网新包仍待完成。
 - 详细计划、恢复及真实上线状态见 `research/operations/ANDROID_SINGLE_RELEASE_2026-09-13.md`；历史手动晋级记录不再作为新流程目标。Android Maestro历史失败、真机登录/积压补传保持未验收。
+
+
+## 官网Android已发布（2026-09-13 17:30 +08:00）
+
+- 官网已更新为0.1.12(13)，main `389c8d9`，EAS `5a10bba7-4ded-4574-be07-5eeac748d2d2`，复用原构建run `34745051725`；发布调度run `34749003316` 通过原包来源/哈希检查、受限SSH实际切换文件。
+- 独立公网完整GET退出0：114466893字节，SHA256 `98d328e9db3d24a8ebed1a0099256c3231e695816fa39298b0a85233aabd0607`，与服务器APK逐字节cmp一致；HTTP200、APK类型、no-store通过。previous已在发布锁下恢复为切换前0.1.10(11)，hash `8923a674555f0d53a754b8d46e878f320e79597faf4f4aa4e15be92a24f073bd`；0.1.9和其他切换前资产仍在受限备份，未删除。
+- production无required reviewers，仍仅main，管理员绕过关闭；旧服务器timer/service均masked，无定时触发。仅GitHub调度构建/发布，不恢复CLI旁路。三个部署坐标Secret尾换行已清除，密钥/known_hosts不变。
+- **CI状态仍非通过**：跨境上传约7分半，服务器公网回读每180秒超时重试，GitHub发布job超过15分钟被取消。SSH断开后旧清理路径未完成，残留stage/history保留。不能把网站实物已核验当作该run成功。
+- 最小超时修正已在独立分支 `ops/android-publish-network-timeout`：publisher完整回读单次600秒、清理错误输出不阻断恢复；服务器安装该publisher，37项隔离回归和Mobile守卫通过。workflow上限30分钟仍待PR合并，GitHub当前main仍15分钟，后续慢网络有超时风险。没有绕过公网字节检查。
+- 真机登录/麦克风/录音/积压补传未验收；不宣称张大宝录音已上传。未改用户数据、数据库或应用容器。

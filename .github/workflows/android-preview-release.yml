@@ -130,7 +130,7 @@ jobs:
           (needs.build-candidate.result == 'success' ||
            (needs.select-source.outputs.build == 'false' && needs.build-candidate.result == 'skipped')) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     environment: production
     env:
       ARTIFACT_RUN_ID: ${{ needs.select-source.outputs.artifact_run_id }}
