@@ -33,7 +33,7 @@ test('recording task is derived from the actual topic instead of a free metadata
 test('targeted gap copy assigns the gap to the system instead of the speaker', () => {
   const plan = COLLECTION_PLANS.find((item) => item.id === 'targeted_gap')
 
-  assert.equal(plan?.label, '让沟通更顺')
+  assert.equal(plan?.label, '沟通更顺')
   assert.match(plan?.description ?? '', /按平时方式说/)
   assert.doesNotMatch(`${plan?.label}${plan?.userLabel}${plan?.description}`, /补齐声音|补音/)
 })

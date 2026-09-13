@@ -14,7 +14,7 @@ export const MOBILE_COLLECTION_PLANS: readonly {
   description: string
 }[] = [
   { id: 'mandarin_articulation_baseline', label: '普通话构音表现基线', description: '逐字完成 50 个单音节，建立可复测的系统听懂基线。' },
-  { id: 'targeted_gap', label: '让沟通更顺', description: '从单字、多音字到短句，按平时方式说，让系统逐步适应你的声音。' },
+  { id: 'targeted_gap', label: '沟通更顺', description: '从单字、多音字到短句，按平时方式说，让系统逐步适应你的声音。' },
   { id: 'functional_speech', label: '常用表达', description: '录日常、出行、求助、工作等真实会用到的话。' },
   { id: 'connected_reading', label: '连续朗读', description: '按自己的节奏朗读，保留真实停顿和回读。' },
   { id: 'natural_speech', label: '自然说话', description: '围绕熟悉任务自由表达，不要求逐字一致。' },

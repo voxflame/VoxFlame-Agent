@@ -28,7 +28,7 @@ export const COLLECTION_PLANS: readonly CollectionPlan[] = [
   },
   {
     id: 'targeted_gap',
-    label: '让沟通更顺',
+    label: '沟通更顺',
     userLabel: '让系统逐步适应你的声音',
     description: '练系统还不熟悉的自然字词和短句；按平时方式说，不需要刻意纠正发音。',
     durationLabel: '5–10 条',
