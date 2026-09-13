@@ -9,13 +9,13 @@ test('material library exposes the verified full-text reading collection', () =>
     TRAINING_MATERIAL_AREAS.map((area) => area.title),
     [
       '日常与出行',
-      '看病与求助',
-      '人群与角色',
+      '就医与求助',
+      '和谁说',
       '设备与数字',
       '短句朗读',
       '会议与协作',
       '车载与导航',
-      '系统易漏听',
+      '沟通更顺',
       '完整文章',
     ],
   )

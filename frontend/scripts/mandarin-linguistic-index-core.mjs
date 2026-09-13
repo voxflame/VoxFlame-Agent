@@ -1,7 +1,7 @@
 import { annotateMandarinText } from './mandarin-coverage-core.mjs'
 
 export const TASK_IDS = [
-  'baseline_words',
+  'mandarin_articulation_baseline',
   'targeted_gap',
   'functional_speech',
   'connected_reading',
@@ -10,7 +10,7 @@ export const TASK_IDS = [
 ]
 
 const CATEGORY_TASKS = {
-  '评估筛查': 'baseline_words',
+  '普通话构音基线': 'mandarin_articulation_baseline',
   '日常与出行': 'functional_speech',
   '看病与求助': 'functional_speech',
   '人群与角色': 'functional_speech',

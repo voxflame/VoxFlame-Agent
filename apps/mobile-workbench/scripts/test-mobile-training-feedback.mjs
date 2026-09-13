@@ -17,7 +17,7 @@ const transpiled = ts.transpileModule(source, {
 const outputDirectory = await mkdtemp(path.join(tmpdir(), 'voxflame-mobile-training-'))
 const outputPath = path.join(outputDirectory, 'mobile-training-feedback.mjs')
 await import('node:fs/promises').then(({ writeFile }) => writeFile(outputPath, transpiled))
-const { analyzeMobileTrainingAttempt, summarizeMobileAssessment } = await import(
+const { analyzeMobileTrainingAttempt, summarizeMobileArticulationBaseline } = await import(
   `${pathToFileURL(outputPath).href}?v=${Date.now()}`
 )
 
@@ -27,7 +27,7 @@ const feedback = analyzeMobileTrainingAttempt(
 )
 assert.equal(feedback.status, 'excellent')
 
-const summary = summarizeMobileAssessment([
+const summary = summarizeMobileArticulationBaseline([
   {
     exerciseId: 'substitution',
     targetText: '医生',
@@ -51,8 +51,8 @@ const summary = summarizeMobileAssessment([
 ], 2)
 
 assert.equal(summary.accuracyPercent, 50)
-assert.equal(summary.label, '低支持需求')
-assert.match(summary.summary, /不是医学严重程度/)
+assert.equal(summary.label, '基线已完成')
+assert.match(summary.summary, /不判断构音障碍类型或医学严重程度/)
 assert.equal(summary.personalizationSeconds, 4)
 assert.ok(summary.patterns.some((pattern) => pattern.label === '“医”'))
 

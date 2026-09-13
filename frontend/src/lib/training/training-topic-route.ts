@@ -2,21 +2,14 @@ import {
   MANDARIN_TRAINING_CATEGORY_META,
   type MandarinTrainingCategory,
 } from '@/lib/corpus/mandarin-training'
+import {
+  type TrainingTopicId,
+} from '@/lib/training/training-topic-id'
 
-export type TrainingTopicId =
-  | 'custom-material'
-  | 'assessment-screening'
-  | 'daily-mobility'
-  | 'medical-help'
-  | 'roles'
-  | 'devices-numbers'
-  | 'pronunciation-reading'
-  | 'meeting-collaboration'
-  | 'in-car-navigation'
-  | 'phonology-training'
+export { isTrainingTopicId, type TrainingTopicId } from '@/lib/training/training-topic-id'
 
 const CATEGORY_TO_TOPIC_ID: Record<MandarinTrainingCategory, TrainingTopicId> = {
-  '评估筛查': 'assessment-screening',
+  '普通话构音基线': 'articulation-baseline',
   '日常与出行': 'daily-mobility',
   '看病与求助': 'medical-help',
   '人群与角色': 'roles',
@@ -34,24 +27,9 @@ const TOPIC_ID_TO_CATEGORY: Partial<Record<TrainingTopicId, MandarinTrainingCate
   return accumulator
 }, {} as Partial<Record<TrainingTopicId, MandarinTrainingCategory>>)
 
-export function isTrainingTopicId(value: string): value is TrainingTopicId {
-  return [
-    'custom-material',
-    'assessment-screening',
-    'daily-mobility',
-    'medical-help',
-    'roles',
-    'devices-numbers',
-    'pronunciation-reading',
-    'meeting-collaboration',
-    'in-car-navigation',
-    'phonology-training',
-  ].includes(value)
-}
-
 export function getTrainingTopicHref(topicId: TrainingTopicId): string {
-  if (topicId === 'assessment-screening') {
-    return '/assessment'
+  if (topicId === 'articulation-baseline') {
+    return '/articulation-baseline/record'
   }
 
   return `/contribute/topic/${topicId}`

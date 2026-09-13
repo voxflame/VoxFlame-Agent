@@ -29,20 +29,20 @@ export default function PracticeGatewayPage() {
 
       <main className="mx-auto max-w-5xl px-5 py-8 sm:px-8 sm:py-12">
         <p className="text-sm font-semibold text-orange-700">练习</p>
-        <h1 className="mt-3 text-balance text-3xl font-semibold sm:text-5xl">今天想做能力筛查，还是录入训练数据？</h1>
+        <h1 className="mt-3 text-balance text-3xl font-semibold sm:text-5xl">今天想建立普通话基线，还是录入训练数据？</h1>
         <p className="mt-4 max-w-2xl text-pretty text-base leading-8 text-stone-600">
-          筛查和数据录入目的不同、结果不同。选定后，下一页只保留这一个任务。
+          构音表现基线和数据录入目的不同、结果不同。选定后，下一页只保留这一个任务。
         </p>
 
         <section aria-label="练习任务" className="mt-8 grid gap-5 lg:grid-cols-2">
-          <Link className="group flex min-h-80 flex-col rounded-3xl bg-stone-950 p-7 text-white shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2" href="/assessment">
+          <Link className="group flex min-h-80 flex-col rounded-3xl bg-stone-950 p-7 text-white shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2" href="/articulation-baseline">
             <span className="flex size-12 items-center justify-center rounded-2xl bg-white text-stone-950">
               <ClipboardCheck className="size-6" aria-hidden="true" />
             </span>
-            <p className="mt-7 text-sm font-semibold text-orange-200">20 词能力筛查</p>
-            <h2 className="mt-2 text-balance text-2xl font-semibold">了解当前表达基线</h2>
-            <p className="mt-3 text-pretty text-sm leading-7 text-stone-300">固定 20 个词，完成后生成系统听清、易混淆音、节奏和收音建议，不作为医学诊断。</p>
-            <span className="mt-auto inline-flex items-center gap-2 pt-6 text-sm font-semibold">进入筛查 <ArrowRight className="size-4" aria-hidden="true" /></span>
+            <p className="mt-7 text-sm font-semibold text-orange-200">50 字普通话构音基线</p>
+            <h2 className="mt-2 text-balance text-2xl font-semibold">了解系统如何听懂你的普通话</h2>
+            <p className="mt-3 text-pretty text-sm leading-7 text-stone-300">逐字完成 50 个单音节，查看系统听懂、易混淆音组和收音建议；结果不是临床诊断。</p>
+            <span className="mt-auto inline-flex items-center gap-2 pt-6 text-sm font-semibold">开始基线 <ArrowRight className="size-4" aria-hidden="true" /></span>
           </Link>
 
           <Link className="group flex min-h-80 flex-col rounded-3xl border border-stone-200 bg-white p-7 shadow-sm transition-colors hover:border-orange-300 hover:bg-orange-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2" href="/contribute">

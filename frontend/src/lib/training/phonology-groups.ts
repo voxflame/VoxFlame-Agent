@@ -12,6 +12,8 @@ export const PHONOLOGY_GROUP_IDS = [
   'coverage-core',
   'coverage-open-research',
   'coverage-reinforcement',
+  'character-foundation',
+  'polyphonic',
   'labial',
   'tongue-tip-mid',
   'velar',
@@ -23,7 +25,7 @@ export const PHONOLOGY_GROUP_IDS = [
 ] as const
 
 export type PhonologyGroupId = (typeof PHONOLOGY_GROUP_IDS)[number]
-export type PhonologyTargetGroupId = Exclude<PhonologyGroupId, 'all' | 'coverage-core' | 'coverage-open-research' | 'coverage-reinforcement'>
+export type PhonologyTargetGroupId = Exclude<PhonologyGroupId, 'all' | 'coverage-core' | 'coverage-open-research' | 'coverage-reinforcement' | 'character-foundation' | 'polyphonic'>
 
 /** The targeted-gap recorder opens on machine-checked core prompts so new coverage is immediately discoverable. */
 export const DEFAULT_PHONOLOGY_GROUP_ID: PhonologyGroupId = 'coverage-core'
@@ -75,9 +77,9 @@ function reinforcementPriority(exerciseId: string): number {
 export const PHONOLOGY_GROUPS: PhonologyGroupMeta[] = [
   {
     id: 'coverage-core',
-    label: '系统易漏听',
-    shortLabel: '优先让系统认识',
-    description: '优先练系统当前较少见、容易听错的字词和短句；按平时方式说即可，不把方言或个人发音当成缺陷。',
+    label: '系统缺口',
+    shortLabel: '优先补充系统不熟悉的表达',
+    description: '优先录系统当前还不熟悉的字词和短句；按平时方式说即可，不把方言或个人发音当成缺陷。',
   },
   {
     id: 'coverage-open-research',
@@ -92,10 +94,22 @@ export const PHONOLOGY_GROUPS: PhonologyGroupMeta[] = [
     description: '从现役安全题库中优先选择低于最低题面门槛的音节—声调；计划槽位不等于已经获得的真实录音。',
   },
   {
+    id: 'character-foundation',
+    label: '一字一音',
+    shortLabel: '从单字打底',
+    description: '逐个字朗读，结合拼音或词语提示，把声母、韵母和声调说稳。',
+  },
+  {
+    id: 'polyphonic',
+    label: '多音字定音',
+    shortLabel: '按词语读准',
+    description: '同一个字在不同词语里可能有不同读音，先看提示，再按当前词语自然朗读。',
+  },
+  {
     id: 'all',
-    label: '全部音系句',
-    shortLabel: '综合覆盖',
-    description: '不限定专项，按当前音系强化句池连续练习。',
+    label: '完整练习',
+    shortLabel: '从单字到短句',
+    description: '不限定专项，从单字、声调到连续短句，按自己的节奏逐步练习。',
   },
   ...INDEX.groups.map(({ id, label, shortLabel, description }) => ({
     id,
@@ -140,6 +154,14 @@ export function filterExercisesByPhonologyGroup(
 
   if (groupId === 'coverage-open-research') {
     return exercises.filter((exercise) => RECORDING_OPEN_RESEARCH_IDS.has(exercise.id))
+  }
+
+  if (groupId === 'character-foundation') {
+    return exercises.filter((exercise) => exercise.prompt_type === 'single_character')
+  }
+
+  if (groupId === 'polyphonic') {
+    return exercises.filter((exercise) => exercise.prompt_type === 'single_character' && Boolean(exercise.pronunciation_hint?.includes('不读')))
   }
 
   return exercises.filter((exercise) => (

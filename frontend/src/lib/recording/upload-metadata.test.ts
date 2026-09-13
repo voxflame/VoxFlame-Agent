@@ -23,6 +23,8 @@ test('training upload metadata keeps useful labels and drops device/user details
       audio_quality_reasons: ['kept for transport only'],
       pronunciation_targets: ['zang4'],
       reading_assistance_used: true,
+      baseline_protocol: 'mandarin_articulation_baseline',
+      baseline_protocol_version: '2026-09-13.v1',
     }),
     {
       target_text: '你好',
@@ -38,6 +40,8 @@ test('training upload metadata keeps useful labels and drops device/user details
       sex: 'female',
       pronunciation_targets: ['zang4'],
       reading_assistance_used: true,
+      baseline_protocol: 'mandarin_articulation_baseline',
+      baseline_protocol_version: '2026-09-13.v1',
     },
   )
 })

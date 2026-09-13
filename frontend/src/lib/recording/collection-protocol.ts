@@ -1,5 +1,5 @@
 export type CollectionPlanId =
-  | 'baseline_words'
+  | 'mandarin_articulation_baseline'
   | 'targeted_gap'
   | 'functional_speech'
   | 'connected_reading'
@@ -18,19 +18,19 @@ export interface CollectionPlan {
 
 export const COLLECTION_PLANS: readonly CollectionPlan[] = [
   {
-    id: 'baseline_words',
-    label: '基础字词',
-    userLabel: '建立声音起点',
-    description: '用固定高频字词建立声、韵、调和短词的可比较起点。',
-    durationLabel: '8–12 条，可随时结束',
-    materialPrefix: 'M1/M2',
+    id: 'mandarin_articulation_baseline',
+    label: '普通话构音表现基线',
+    userLabel: '建立可复测的普通话基线',
+    description: '逐字完成 50 个单音节，观察系统更容易听错的声母、韵母和声调组合。',
+    durationLabel: '固定 50 字',
+    materialPrefix: 'mandarin-articulation-baseline',
     availability: 'available',
   },
   {
     id: 'targeted_gap',
-    label: '系统易漏听字词',
-    userLabel: '让系统多认识一些说法',
-    description: '练系统过去较少见、容易听错的自然字词和短句；按平时方式说，不需要刻意纠正发音。',
+    label: '沟通更顺',
+    userLabel: '让系统逐步适应你的声音',
+    description: '练系统还不熟悉的自然字词和短句；按平时方式说，不需要刻意纠正发音。',
     durationLabel: '5–10 条',
     materialPrefix: 'coverage-gap',
     availability: 'available',
@@ -74,7 +74,7 @@ export const COLLECTION_PLANS: readonly CollectionPlan[] = [
 ] as const
 
 const TOPIC_COLLECTION_PLAN: Record<string, CollectionPlanId> = {
-  'assessment-screening': 'baseline_words',
+  'articulation-baseline': 'mandarin_articulation_baseline',
   'custom-material': 'connected_reading',
   'daily-mobility': 'functional_speech',
   'medical-help': 'functional_speech',

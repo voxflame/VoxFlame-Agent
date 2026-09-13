@@ -139,6 +139,8 @@ const TRAINING_METADATA_KEYS = new Set([
   'recognized_text',
   'consent_version',
   'collection_plan_id',
+  'baseline_protocol',
+  'baseline_protocol_version',
   'reading_assistance_used',
   'etiology',
   'speech_variant',

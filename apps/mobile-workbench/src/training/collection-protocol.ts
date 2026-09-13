@@ -1,7 +1,7 @@
 export const MOBILE_COLLECTION_PROTOCOL_VERSION = '2026-08-22.v2'
 
 export type MobileCollectionPlanId =
-  | 'baseline_words'
+  | 'mandarin_articulation_baseline'
   | 'targeted_gap'
   | 'functional_speech'
   | 'connected_reading'
@@ -13,8 +13,8 @@ export const MOBILE_COLLECTION_PLANS: readonly {
   label: string
   description: string
 }[] = [
-  { id: 'baseline_words', label: '基础字词', description: '固定高频字词，建立声、韵、调和短词起点。' },
-  { id: 'targeted_gap', label: '系统易漏听字词', description: '练系统较少见、容易听错的自然字词和短句；按平时方式说即可。' },
+  { id: 'mandarin_articulation_baseline', label: '普通话构音表现基线', description: '逐字完成 50 个单音节，建立可复测的系统听懂基线。' },
+  { id: 'targeted_gap', label: '沟通更顺', description: '从单字、多音字到短句，按平时方式说，让系统逐步适应你的声音。' },
   { id: 'functional_speech', label: '常用表达', description: '录日常、出行、求助、工作等真实会用到的话。' },
   { id: 'connected_reading', label: '连续朗读', description: '按自己的节奏朗读，保留真实停顿和回读。' },
   { id: 'natural_speech', label: '自然说话', description: '围绕熟悉任务自由表达，不要求逐字一致。' },
@@ -31,8 +31,8 @@ export function getMobileCollectionPlanId(options: {
   if (options.category === '音系强化') {
     return 'targeted_gap'
   }
-  if (options.category === '评估筛查') {
-    return 'baseline_words'
+  if (options.category === '普通话构音基线') {
+    return 'mandarin_articulation_baseline'
   }
   return 'functional_speech'
 }

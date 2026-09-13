@@ -6,17 +6,17 @@ import { ArrowLeft, ArrowRight, Mic, Sparkles } from 'lucide-react'
 const QUICK_START = [
   {
     step: '01',
-    title: '先选病种',
-    body: '进评估主题区前，先把疾病种类选好。只需要做一次。',
-    href: '/assessment',
-    action: '去评估区',
+    title: '先确认录音条件',
+    body: '尽量使用同一设备、相近距离和安静环境，便于之后复测。',
+    href: '/articulation-baseline',
+    action: '去基线页',
   },
   {
     step: '02',
-    title: '先做评估',
-    body: '按顺序录完筛查词，再看字准率和初步等级。',
-    href: '/assessment',
-    action: '开始筛查',
+    title: '完成 50 字基线',
+    body: '按顺序逐字录完，再看系统听懂、易混淆音组和收音建议。',
+    href: '/articulation-baseline',
+    action: '开始基线',
   },
   {
     step: '03',
@@ -36,9 +36,9 @@ const RECORDING_RULES = [
 
 const PAGE_GUIDE = [
   {
-    title: '评估主题区',
-    body: '用来选病种、看初步严重程度。',
-    href: '/assessment',
+    title: '普通话构音表现基线',
+    body: '用 50 个单音节建立可复测的系统听懂基线，不作临床诊断。',
+    href: '/articulation-baseline',
   },
   {
     title: '训练页',

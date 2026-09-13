@@ -7,8 +7,8 @@ const pageSource = readFileSync(
   'utf8',
 )
 
-const guidedFlowStart = pageSource.indexOf('if (usesGuidedCollectionFlow(isAssessmentTopic))')
-const guidedFlowEnd = pageSource.indexOf('\n  return (\n    <div className="min-h-dvh bg-stone-50">', guidedFlowStart)
+const guidedFlowStart = pageSource.indexOf("const itemUnit = isArticulationBaseline ? '字' : '句'")
+const guidedFlowEnd = pageSource.length
 const guidedFlowSource = pageSource.slice(guidedFlowStart, guidedFlowEnd)
 
 test('guided collection keeps one task hierarchy instead of repeating progress labels', () => {

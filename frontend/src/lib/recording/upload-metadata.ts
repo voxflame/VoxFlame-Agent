@@ -14,6 +14,8 @@ const ALLOWED_METADATA_KEYS = new Set([
   'recording_dedupe_key',
   'consent_version',
   'collection_plan_id',
+  'baseline_protocol',
+  'baseline_protocol_version',
   'reading_assistance_used',
   'disability_category',
   'condition',

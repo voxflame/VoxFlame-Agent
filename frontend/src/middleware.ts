@@ -2,8 +2,19 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { buildLoginPath, isProtectedPath, resolveExternalOrigin } from '@/lib/auth/navigation'
+import { isTrainingTopicId } from '@/lib/training/training-topic-id'
+
+function getContributeTopicId(pathname: string): string | null {
+    const match = pathname.match(/^\/contribute\/topic\/([^/]+)\/?$/)
+    return match?.[1] ?? null
+}
 
 export async function middleware(request: NextRequest) {
+    const contributeTopicId = getContributeTopicId(request.nextUrl.pathname)
+    if (contributeTopicId && !isTrainingTopicId(contributeTopicId)) {
+        return new NextResponse(null, { status: 404 })
+    }
+
     let response = NextResponse.next({
         request: {
             headers: request.headers,

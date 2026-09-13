@@ -16,13 +16,13 @@ test('targeted phonology recording opens on the machine-checked core gap group',
 
 
 test('phonology groups expose approved gaps, open research supplements, low-frequency reinforcement, eight specific subgroups, and the full pool', () => {
-  assert.equal(PHONOLOGY_GROUPS.length, 12)
+  assert.equal(PHONOLOGY_GROUPS.length, 14)
   assert.equal(PHONOLOGY_GROUPS[0].id, 'coverage-core')
   assert.equal(PHONOLOGY_GROUPS[1].id, 'coverage-open-research')
   assert.equal(PHONOLOGY_GROUPS[2].id, 'coverage-reinforcement')
-  assert.equal(PHONOLOGY_GROUPS[3].id, 'all')
+  assert.equal(PHONOLOGY_GROUPS[5].id, 'all')
   assert.deepEqual(
-    PHONOLOGY_GROUPS.slice(4).map((group) => group.id),
+    PHONOLOGY_GROUPS.slice(6).map((group) => group.id),
     [
       'labial',
       'tongue-tip-mid',
@@ -39,7 +39,7 @@ test('phonology groups expose approved gaps, open research supplements, low-freq
 test('each specific phonology group filters exercises by an actual indexed target', () => {
   const exercises = getExercisesByCategory('音系强化')
 
-  for (const group of PHONOLOGY_GROUPS.slice(4)) {
+  for (const group of PHONOLOGY_GROUPS.slice(6)) {
     const filtered = filterExercisesByPhonologyGroup(exercises, group.id)
     assert.ok(filtered.length >= 100, `${group.label} should contain a substantial practice pool`)
     for (const exercise of filtered.slice(0, 100)) {

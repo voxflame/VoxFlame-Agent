@@ -69,8 +69,8 @@ import { toMobileProductMessage } from './src/ui/product-message'
 import { useMobileTrainingCatalog } from './src/training/use-mobile-training-catalog'
 import {
   analyzeMobileTrainingAttempt,
-  summarizeMobileAssessment,
-  type MobileAssessmentAttempt,
+  summarizeMobileArticulationBaseline,
+  type MobileArticulationBaselineAttempt,
   type MobileTrainingFeedback,
 } from './src/training/mobile-training-feedback'
 import { buildMobilePreparedMaterialExercises } from './src/training/prepared-material-practice'
@@ -142,7 +142,7 @@ type MobileTaskRoute =
   | 'practice_materials'
   | 'practice_readings'
   | 'practice_reading_detail'
-  | 'assessment'
+  | 'articulation_baseline'
   | 'collection'
 
 type MobileCollectionSource = 'catalog' | 'prepared_material'
@@ -153,7 +153,7 @@ type MobileExerciseSequenceStatus = 'active' | 'load_failed' | 'complete'
 interface MobilePendingAttempt {
   item: MobileWorkbenchRecorderQueueItem
   feedback: MobileTrainingFeedback
-  assessmentAttempt: MobileAssessmentAttempt | null
+  baselineAttempt: MobileArticulationBaselineAttempt | null
   speechVariant: MobileTrainingSpeechVariant
   utterancePairId?: string
 }
@@ -569,7 +569,7 @@ export default function App() {
                   setCollectionEntrySource(source)
                   setSelectedPreparedExpression(null)
                   if (categoryId) void trainingCatalog.selectCategory(categoryId)
-                  setTaskRoute('collection')
+                  setTaskRoute(categoryId === '普通话构音基线' ? 'articulation_baseline' : 'collection')
                 }}
                 onOpenMaterialAreas={() => setTaskRoute('practice_materials')}
                 onOpenMaterials={() => changeSurface('memory')}
@@ -622,7 +622,7 @@ export default function App() {
               catalog={trainingCatalog}
               ensureTrainingConnection={ensureTrainingConnection}
               trainingConnection={trainingLiveKitRoom}
-              flow={taskRoute as 'assessment' | 'collection'}
+              flow={taskRoute as 'articulation_baseline' | 'collection'}
               initialCollectionSource={collectionEntrySource}
               onBack={() => setTaskRoute('practice_home')}
             />
@@ -1527,6 +1527,17 @@ function PracticeHomeScreen({
       </View>
 
       <Pressable
+        accessibilityHint="逐字完成固定的普通话构音表现基线"
+        accessibilityRole="button"
+        onPress={() => onOpenCollection('普通话构音基线')}
+        style={({ pressed }) => [styles.articulationBaselineEntry, pressed ? styles.pressed : null]}
+      >
+        <Text style={styles.taskCardEyebrow}>50 个单音节</Text>
+        <Text style={styles.taskCardTitle}>普通话构音表现基线</Text>
+        <Text style={styles.taskCardCopy}>观察系统在哪些声母、韵母和声调组合上更容易听错，不作为临床诊断。</Text>
+      </Pressable>
+
+      <Pressable
         accessibilityHint="使用自己上传或粘贴的材料"
         accessibilityRole="button"
         onPress={() => {
@@ -1721,7 +1732,7 @@ function PracticeScreen({
   profileSeverity: string
   queue: ReturnType<typeof useNativeRecorderQueue>
   trainingConnection: ReturnType<typeof useLiveKitRoomConnection>
-  flow: 'assessment' | 'collection'
+  flow: 'articulation_baseline' | 'collection'
   initialCollectionSource: MobileCollectionSource
   onBack(): void
 }) {
@@ -1735,7 +1746,7 @@ function PracticeScreen({
     utterancePairId: string
   } | null>(null)
   const [attemptAction, setAttemptAction] = useState<MobileAttemptAction>('idle')
-  const [assessmentAttempts, setAssessmentAttempts] = useState<MobileAssessmentAttempt[]>([])
+  const [baselineAttempts, setBaselineAttempts] = useState<MobileArticulationBaselineAttempt[]>([])
   const [showRecordings, setShowRecordings] = useState(false)
   const collectionSource = initialCollectionSource
   const [environmentReady, setEnvironmentReady] = useState(false)
@@ -1777,15 +1788,15 @@ function PracticeScreen({
       }
   const activeTargetText = pendingDialectTarget?.exercise.text ?? targetText
   const readingAssistanceKey = `${effectiveExercise.id}:${targetText}`
-  const assessmentSummary = summarizeMobileAssessment(
-    assessmentAttempts,
-    flow === 'assessment' ? visibleTotal : 20,
+  const baselineSummary = summarizeMobileArticulationBaseline(
+    baselineAttempts,
+    flow === 'articulation_baseline' ? visibleTotal : 0,
   )
   const collectionControlState = getMobileCollectionControlState({
     environmentReady,
     distanceReady,
     understandsConsent: consentReady && hasCurrentLegalConsent,
-  }, flow === 'assessment' ? '开始说这个词' : '开始说这句话')
+  }, flow === 'articulation_baseline' ? '开始说这个词' : '开始说这句话')
   const attemptLocked = pendingAttempt !== null || attemptAction !== 'idle'
   const [selectedDialectKey, setSelectedDialectKey] = useState('')
   const selectedDialect = profileDialects.find((entry) => JSON.stringify(entry) === selectedDialectKey)
@@ -1794,7 +1805,7 @@ function PracticeScreen({
   const dialectPairEnabled = shouldOfferMobileDialectPair({
     hasDialect: profileHasDialect,
     dialectName: profileDialects[0]?.name,
-    isAssessment: flow === 'assessment',
+    isAssessment: flow === 'articulation_baseline',
   })
   const activeSpeechVariant: MobileTrainingSpeechVariant = pendingDialectTarget ? 'dialect' : 'mandarin'
   const selectionScopeKey = usesPreparedMaterial
@@ -1907,12 +1918,14 @@ function PracticeScreen({
     const connectionPromise = ensureTrainingConnection()
     const started = await queue.startRecording(captureExercise.text, {
       sentenceId: captureExercise.id,
-      source: flow === 'assessment' ? 'mobile_assessment' : usesPreparedMaterial ? 'mobile_prepared_material' : 'mobile_training_catalog',
+      source: flow === 'articulation_baseline' ? 'mobile_articulation_baseline' : usesPreparedMaterial ? 'mobile_prepared_material' : 'mobile_training_catalog',
       metadata: {
         exercise_category: captureExercise.category,
         training_flow: flow,
         collection_source: usesPreparedMaterial ? 'prepared_material' : 'catalog',
-        collection_plan_id: flow === 'collection' ? collectionPlanId : undefined,
+        collection_plan_id: collectionPlanId,
+        baseline_protocol: flow === 'articulation_baseline' ? 'mandarin_articulation_baseline' : undefined,
+        baseline_protocol_version: flow === 'articulation_baseline' ? '2026-09-13.v1' : undefined,
         reading_material_kind: catalog.selectedReadingArticle ? 'public_domain_classic' : undefined,
         reading_article_id: catalog.selectedReadingArticle?.id,
         reading_article_version: catalog.selectedReadingArticle?.version,
@@ -1939,7 +1952,7 @@ function PracticeScreen({
     }
     void connectionPromise.then(async (connected) => {
       if (!connected || activeCaptureRef.current?.captureId !== captureId) return
-      await trainingConnection.startTrainingCapture(captureId, flow === 'assessment')
+      await trainingConnection.startTrainingCapture(captureId, flow === 'articulation_baseline')
     })
     return true
   }
@@ -1997,7 +2010,7 @@ function PracticeScreen({
         dialectRegion: capture.dialect?.region,
       }),
     })
-    const assessmentAttempt = flow === 'assessment'
+    const baselineAttempt = flow === 'articulation_baseline'
       ? {
           exerciseId: exercise.id,
           targetText: exercise.text,
@@ -2013,7 +2026,7 @@ function PracticeScreen({
     setPendingAttempt({
       item: enrichedItem ?? item,
       feedback: nextFeedback,
-      assessmentAttempt,
+      baselineAttempt,
       speechVariant: capture.speechVariant,
       utterancePairId: capture.utterancePairId,
     })
@@ -2037,9 +2050,9 @@ function PracticeScreen({
       () => queue.uploadRecording(pendingAttempt.item.recordingId, pendingAttempt.item),
     )
     if (result === 'confirmed') {
-      if (pendingAttempt.assessmentAttempt) {
-        const confirmedAttempt = pendingAttempt.assessmentAttempt
-        setAssessmentAttempts((current) => [
+      if (pendingAttempt.baselineAttempt) {
+        const confirmedAttempt = pendingAttempt.baselineAttempt
+        setBaselineAttempts((current) => [
           ...current.filter((entry) => entry.exerciseId !== confirmedAttempt.exerciseId),
           confirmedAttempt,
         ])
@@ -2157,13 +2170,13 @@ function PracticeScreen({
         <Pressable accessibilityRole="button" accessibilityState={{ disabled: attemptLocked }} disabled={attemptLocked} onPress={onBack} style={styles.textAction}>
           <Text style={styles.textActionText}>← 返回练习选择</Text>
         </Pressable>
-        <Text style={styles.eyebrow}>{flow === 'assessment' ? '能力筛查' : '数据录入'}</Text>
+        <Text style={styles.eyebrow}>{flow === 'articulation_baseline' ? '普通话基线' : '数据录入'}</Text>
         <Text style={styles.pageTitle}>
-          {flow === 'assessment' ? '20 词能力筛查' : '训练与数据录入'}
+          {flow === 'articulation_baseline' ? '普通话构音表现基线' : '训练与数据录入'}
         </Text>
         <Text style={styles.pageCopy}>
-          {flow === 'assessment'
-            ? '按顺序完成整组，只给训练支持建议，不作为医学评估。'
+          {flow === 'articulation_baseline'
+            ? '按顺序逐字完成 50 个单音节，查看系统听懂和复测建议；结果不是临床诊断。'
             : `已选择「${usesPreparedMaterial ? '自定义材料' : catalog.selectedReadingArticle?.title ?? selectedCategory?.label ?? '当前材料'}」。确认一次后，可以连续录制这一组。`}
         </Text>
       </View>
@@ -2195,7 +2208,7 @@ function PracticeScreen({
               </Pressable>)}</View>
             </View> : null}
             <View style={styles.preflightPanel}>
-              <Text style={styles.preflightTitle}>{flow === 'assessment' ? '筛查前确认' : '录音前确认'}</Text>
+              <Text style={styles.preflightTitle}>{flow === 'articulation_baseline' ? '基线前确认' : '录音前确认'}</Text>
               <Text style={styles.preflightCopy}>只需确认一次，本组录音期间保持有效。</Text>
               <View style={styles.preflightChecklist}>
                 <View style={styles.preflightShortRow}>
@@ -2219,13 +2232,13 @@ function PracticeScreen({
                   </Pressable>
                 </View>
                 <Pressable
-                    accessibilityLabel={hasCurrentLegalConsent ? (flow === 'assessment' ? '同意本次录音用于筛查支持和系统改进' : '同意本次录音用于训练') : '当前账号需要重新登录并确认数据授权'}
+                    accessibilityLabel={hasCurrentLegalConsent ? (flow === 'articulation_baseline' ? '同意本次录音用于构音表现基线和系统改进' : '同意本次录音用于训练') : '当前账号需要重新登录并确认数据授权'}
                     accessibilityRole="checkbox"
                     accessibilityState={{ checked: consentReady, disabled: queue.isRecording || attemptLocked }}
                     disabled={queue.isRecording || attemptLocked}
                     onPress={() => setConsentReady((value) => !value)} style={[styles.preflightCheck, consentReady ? styles.preflightCheckActive : null, queue.isRecording || attemptLocked ? styles.disabled : null]}>
                   <Text style={styles.checkMark}>{consentReady ? '✓' : '○'}</Text>
-                  <Text style={styles.preflightCheckText}>{hasCurrentLegalConsent ? (flow === 'assessment' ? '我同意本次录音用于筛查支持和系统改进' : '我同意本次录音用于训练') : '当前账号需要重新登录并确认数据授权'}</Text>
+                  <Text style={styles.preflightCheckText}>{hasCurrentLegalConsent ? (flow === 'articulation_baseline' ? '我同意本次录音用于构音表现基线和系统改进' : '我同意本次录音用于训练') : '当前账号需要重新登录并确认数据授权'}</Text>
                 </Pressable>
               </View>
               <Text accessibilityLiveRegion="polite" style={styles.preflightStatus}>
@@ -2301,31 +2314,31 @@ function PracticeScreen({
                 ) : null}
               </View>
             ) : null}
-            {flow === 'assessment' ? (
-              <View style={styles.assessmentProgress}>
-                <Text style={styles.categoryTitle}>{assessmentSummary.label}</Text>
-                <Text style={styles.mutedText}>{assessmentSummary.summary}</Text>
+            {flow === 'articulation_baseline' ? (
+              <View style={styles.articulationBaselineProgress}>
+                <Text style={styles.categoryTitle}>{baselineSummary.label}</Text>
+                <Text style={styles.mutedText}>{baselineSummary.summary}</Text>
                 <View style={styles.reportItem}>
-                  <Text style={styles.cardLabel}>声音与沟通表现 · 体验版</Text>
-                  <Text style={styles.reportText}>系统听清程度 {assessmentSummary.accuracyPercent}%</Text>
+                  <Text style={styles.cardLabel}>普通话构音表现基线</Text>
+                  <Text style={styles.reportText}>系统听懂 {baselineSummary.accuracyPercent}%</Text>
                   <Text style={styles.mutedText}>
-                    个性化数据约 {assessmentSummary.personalizationSeconds} 秒 / 5 分钟参考量
+                    个性化数据约 {baselineSummary.personalizationSeconds} 秒 / 5 分钟参考量
                   </Text>
                   <View style={styles.personalizationTrack}>
                     <View
                       style={[
                         styles.personalizationFill,
-                        { width: `${assessmentSummary.personalizationProgressPercent}%` },
+                        { width: `${baselineSummary.personalizationProgressPercent}%` },
                       ]}
                     />
                   </View>
-                  {assessmentSummary.patterns.length > 0 ? (
+                  {baselineSummary.patterns.length > 0 ? (
                     <Text style={styles.mutedText}>
-                      本轮易混淆：{assessmentSummary.patterns.map((pattern) => `${pattern.label}${pattern.count}次`).join('、')}
+                      本轮易混淆：{baselineSummary.patterns.map((pattern) => `${pattern.label}${pattern.count}次`).join('、')}
                     </Text>
                   ) : null}
-                  <Text style={styles.mutedText}>{assessmentSummary.nextAction}</Text>
-                  <Text style={styles.reportBoundary}>{assessmentSummary.boundary}</Text>
+                  <Text style={styles.mutedText}>{baselineSummary.nextAction}</Text>
+                  <Text style={styles.reportBoundary}>{baselineSummary.boundary}</Text>
                 </View>
               </View>
             ) : null}
@@ -2355,7 +2368,10 @@ function PracticeScreen({
       {flow === 'collection' ? (
         <View style={styles.optionalCollectionCard}>
           <Text style={styles.taskCardEyebrow}>可选：补充采集资料</Text>
-          <Text style={styles.taskCardCopy}>{collectionPlan?.label ?? '常用表达'} · {collectionPlan?.description}</Text>
+        <Text style={styles.taskCardCopy}>{collectionPlan?.label ?? '常用表达'} · {collectionPlan?.description}</Text>
+          {selectedExercise?.prompt_type === 'single_character' && selectedExercise.pronunciation_hint ? (
+            <Text style={styles.mutedText}>读音提示：{selectedExercise.pronunciation_hint}</Text>
+          ) : null}
           <View style={styles.inlineFields}>
             <View style={styles.inlineField}>
               <Text style={styles.fieldLabel}>年龄段</Text>
@@ -3544,7 +3560,7 @@ const styles = StyleSheet.create({
   practiceTopicRowFeatured: { backgroundColor: '#FFF8ED', borderColor: '#EACB98' },
   practiceTopicMeta: { alignItems: 'flex-end', gap: 6 },
   readingBadge: { backgroundColor: '#F3E2C5', borderRadius: 999, color: '#7D4B17', fontSize: 10, fontWeight: '800', paddingHorizontal: 8, paddingVertical: 4 },
-  assessmentEntry: {
+  articulationBaselineEntry: {
     alignItems: 'center',
     backgroundColor: COLORS.surfaceMuted,
     borderColor: COLORS.border,
@@ -3596,7 +3612,7 @@ const styles = StyleSheet.create({
   feedbackSummary: { color: '#E9E2DB', fontSize: 14, lineHeight: 21 },
   confirmationActions: { borderTopColor: '#514840', borderTopWidth: 1, gap: 10, marginTop: 8, paddingTop: 14 },
   confirmationHint: { color: '#CFC7BF', fontSize: 12, lineHeight: 18 },
-  assessmentProgress: { backgroundColor: COLORS.surfaceMuted, borderRadius: 14, gap: 4, padding: 14 },
+  articulationBaselineProgress: { backgroundColor: COLORS.surfaceMuted, borderRadius: 14, gap: 4, padding: 14 },
   stepActions: { flexDirection: 'row', gap: 8 },
   optionalCollectionCard: { backgroundColor: COLORS.surface, borderColor: COLORS.border, borderRadius: 16, borderWidth: 1, gap: 10, padding: 14 },
   customPracticePanel: { borderTopColor: COLORS.border, borderTopWidth: 1, gap: 10, paddingTop: 18 },

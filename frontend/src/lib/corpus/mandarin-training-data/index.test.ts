@@ -51,7 +51,7 @@ function repeatSignature(text: string): string {
 
 test('Mandarin training corpus stays within the guided prompt size', () => {
   const nonAssessmentPrompts = MANDARIN_TRAINING_EXERCISES.filter(
-    (exercise: MandarinTrainingExercise) => exercise.category !== '评估筛查',
+    (exercise: MandarinTrainingExercise) => exercise.category !== '普通话构音基线',
   )
 
   assert.ok(
@@ -61,6 +61,11 @@ test('Mandarin training corpus stays within the guided prompt size', () => {
 
   for (const exercise of nonAssessmentPrompts) {
     const length = visibleChineseLength(exercise.text)
+    if (exercise.prompt_type === 'single_character') {
+      assert.equal(length, 1, `${exercise.id} should be one character: ${exercise.text}`)
+      assert.ok(exercise.target, `${exercise.id} should carry a pinyin target`)
+      continue
+    }
     if (exercise.prompt_type === 'word') {
       assert.ok(
         length >= 2 && length <= 6,
@@ -82,6 +87,26 @@ test('Mandarin training corpus removes the classical Chinese category', () => {
     MANDARIN_TRAINING_EXERCISES.some((exercise) => String(exercise.category) === '文言文节奏'),
     false,
   )
+})
+
+test('character foundation corpus preserves source rows and polyphonic readings inside phonology', () => {
+  const characters = MANDARIN_TRAINING_EXERCISES.filter((exercise) => exercise.id.startsWith('character-foundation-'))
+  assert.equal(characters.length, 1126)
+  assert.equal(characters.every((exercise) => exercise.prompt_type === 'single_character'), true)
+  assert.equal(characters.every((exercise) => exercise.target && exercise.pronunciation_hint !== undefined), true)
+  assert.ok(characters.filter((exercise) => exercise.text === '揣').length >= 2)
+})
+
+test('Mandarin articulation baseline replaces the legacy screening set', () => {
+  const baseline = MANDARIN_TRAINING_EXERCISES.filter(
+    (exercise) => exercise.category === '普通话构音基线',
+  )
+
+  assert.equal(baseline.length, 50)
+  assert.equal(baseline.every((exercise) => exercise.prompt_type === 'single_character'), true)
+  assert.equal(baseline[0]?.id, 'mandarin_articulation_baseline_001')
+  assert.equal(baseline.at(-1)?.id, 'mandarin_articulation_baseline_050')
+  assert.deepEqual(baseline.slice(0, 4).map((exercise) => exercise.text), ['包', '抛', '猫', '飞'])
 })
 
 test('Mandarin training corpus target text is Simplified Chinese only', () => {
@@ -142,6 +167,7 @@ test('Mandarin training corpus has no duplicate target text per category', () =>
   const seen = new Set<string>()
 
   for (const exercise of MANDARIN_TRAINING_EXERCISES) {
+    if (exercise.prompt_type === 'single_character') continue
     const key = exercise.text
     assert.equal(seen.has(key), false, `duplicate target text: ${key}`)
     seen.add(key)
@@ -152,7 +178,7 @@ test('Mandarin training corpus limits near-duplicate sentence structures', () =>
   const counts = new Map<string, number>()
 
   for (const exercise of MANDARIN_TRAINING_EXERCISES) {
-    if (exercise.category === '评估筛查') {
+    if (exercise.category === '普通话构音基线' || exercise.prompt_type === 'single_character') {
       continue
     }
 
