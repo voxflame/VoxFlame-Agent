@@ -4,23 +4,16 @@ set -euo pipefail
 ROOT_DIR="${VOXFLAME_SOURCE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 APP_DIR="$ROOT_DIR/apps/mobile-workbench"
 RELEASE_DIR="$ROOT_DIR/releases/android"
-APK_PATH="$RELEASE_DIR/VoxFlame-Android.apk"
-METADATA_PATH="$RELEASE_DIR/VoxFlame-Android.json"
 DOWNLOAD_CACHE_DIR="$RELEASE_DIR/.downloads"
 PUBLIC_URL="${VOXFLAME_ANDROID_DOWNLOAD_URL:-https://voxember.com/download/android}"
 LOCK_PATH="${TMPDIR:-/tmp}/voxflame-android-preview-release.lock"
 MODE="${1:-build}"
 ARTIFACT_OUTPUT_DIR="${2:-}"
-SERVER_RECEIVER="${VOXFLAME_ANDROID_SERVER_RECEIVER:-/usr/local/libexec/voxflame-receive-android-ci-artifact}"
-SERVER_RECEIVER_USER="${VOXFLAME_ANDROID_SERVER_RECEIVER_USER:-voxflame-release}"
-
-if [[ "$MODE" != "build" && "$MODE" != "publish-latest" && "$MODE" != "build-artifact" ]]; then
-  echo "Usage: $0 [build|publish-latest|build-artifact <output-directory>]" >&2
-  exit 1
-fi
-if [[ "$MODE" == "build-artifact" && -z "$ARTIFACT_OUTPUT_DIR" ]]; then
-  echo "build-artifact requires an output directory" >&2
-  exit 1
+# Only GitHub owns publication. This helper can produce artifacts, never serve them.
+if [[ "$MODE" != "build-artifact" || -z "$ARTIFACT_OUTPUT_DIR" ]]; then
+  echo "Direct Android publication retired; run Android Preview Release on main in GitHub Actions." >&2
+  echo "Artifact-only usage: $0 build-artifact <output-directory>" >&2
+  exit 2
 fi
 
 exec 9>"$LOCK_PATH"
@@ -37,8 +30,7 @@ for command_name in curl node npm sha256sum unzip; do
 done
 
 mkdir -p "$RELEASE_DIR" "$DOWNLOAD_CACHE_DIR"
-# Keep the staging directory on the same filesystem as the public APK so the
-# final rename is atomic for concurrent downloads.
+# Stage build outputs locally; publication belongs exclusively to GitHub Actions.
 work_dir="$(mktemp -d "$RELEASE_DIR/.publish-XXXXXX")"
 cleanup() {
   rm -rf "$work_dir"
@@ -59,25 +51,21 @@ echo "[voxflame] Reading the latest finished Android preview build..."
 
 latest_build_code="$(read_build_field "$work_dir/latest.json" appBuildVersion)"
 latest_app_version="$(read_build_field "$work_dir/latest.json" appVersion)"
-if [[ "$MODE" == "build" || "$MODE" == "build-artifact" ]]; then
-  echo "[voxflame] Validating Mobile Workbench before release..."
-  npm --prefix "$APP_DIR" run check
-  npm --prefix "$APP_DIR" run typecheck
-  npm --prefix "$APP_DIR" run test:training
-  node "$APP_DIR/scripts/prepare-android-preview-release.mjs" \
-    "$latest_build_code" "$latest_app_version"
+echo "[voxflame] Validating Mobile Workbench before release..."
+npm --prefix "$APP_DIR" run check
+npm --prefix "$APP_DIR" run typecheck
+npm --prefix "$APP_DIR" run test:training
+node "$APP_DIR/scripts/prepare-android-preview-release.mjs" \
+  "$latest_build_code" "$latest_app_version"
 
-  git -C "$ROOT_DIR" diff --binary -- apps/mobile-workbench/app.json apps/mobile-workbench/package.json apps/mobile-workbench/package-lock.json > "$work_dir/version.patch"
-  echo "[voxflame] Starting EAS Android preview build..."
-  (
-    cd "$APP_DIR"
-    bash scripts/with-expo-token.sh npx --yes eas-cli@latest build \
-      --platform android --profile preview --wait --json --non-interactive \
-      --message "VoxFlame website Android preview release"
-  ) > "$work_dir/build.json"
-else
-  cp "$work_dir/latest.json" "$work_dir/build.json"
-fi
+git -C "$ROOT_DIR" diff --binary -- apps/mobile-workbench/app.json apps/mobile-workbench/package.json apps/mobile-workbench/package-lock.json > "$work_dir/version.patch"
+echo "[voxflame] Starting EAS Android preview build..."
+(
+  cd "$APP_DIR"
+  bash scripts/with-expo-token.sh npx --yes eas-cli@latest build \
+    --platform android --profile preview --wait --json --non-interactive \
+    --message "VoxFlame website Android preview release"
+) > "$work_dir/build.json"
 
 build_status="$(read_build_field "$work_dir/build.json" status)"
 if [[ "$build_status" != "FINISHED" ]]; then
@@ -149,59 +137,3 @@ if [[ "$MODE" == "build-artifact" ]]; then
   echo "  path:    $ARTIFACT_OUTPUT_DIR"
   exit 0
 fi
-
-if [[ "$MODE" == "build" && -x "$SERVER_RECEIVER" ]] \
-  && id -u "$SERVER_RECEIVER_USER" >/dev/null 2>&1; then
-  echo "[voxflame] Publishing through the production Android receiver..."
-  cp "$work_dir/metadata.json" "$work_dir/VoxFlame-Android.json"
-  tar -C "$work_dir" -cf - VoxFlame-Android.apk VoxFlame-Android.json \
-    | sudo -n -u "$SERVER_RECEIVER_USER" "$SERVER_RECEIVER"
-  exit 0
-fi
-
-current_build_id=""
-if [[ -f "$METADATA_PATH" ]]; then
-  current_build_id="$(node --input-type=module - "$METADATA_PATH" <<'NODE'
-import { readFileSync } from 'node:fs'
-
-const metadata = JSON.parse(readFileSync(process.argv[2], 'utf8'))
-process.stdout.write(typeof metadata.buildId === 'string' ? metadata.buildId : '')
-NODE
-)"
-fi
-
-if [[ -n "$current_build_id" && "$current_build_id" != "$build_id" ]]; then
-  if [[ -f "$APK_PATH" ]]; then
-    cp -f "$APK_PATH" "$RELEASE_DIR/VoxFlame-Android.previous.apk"
-  fi
-  cp -f "$METADATA_PATH" "$RELEASE_DIR/VoxFlame-Android.previous.json"
-fi
-mv -f "$work_dir/VoxFlame-Android.apk" "$APK_PATH"
-mv -f "$work_dir/metadata.json" "$METADATA_PATH"
-
-echo "[voxflame] Recreating Caddy with the release-directory mount..."
-if [[ -n "${VOXFLAME_DOCKER_PREFIX:-}" ]]; then
-  # shellcheck disable=SC2206
-  docker_prefix=( ${VOXFLAME_DOCKER_PREFIX} )
-else
-  docker_prefix=( sudo )
-fi
-"${docker_prefix[@]}" docker compose -f "$ROOT_DIR/docker-compose.yml" \
-  --project-directory "$ROOT_DIR" --profile https up -d --no-deps --force-recreate caddy
-
-echo "[voxflame] Verifying the permanent website download URL..."
-remote_headers="$work_dir/headers.txt"
-curl --fail --silent --show-error --location \
-  --range 0-0 --dump-header "$remote_headers" --output /dev/null "$PUBLIC_URL"
-if ! grep -iq '^content-type: application/vnd.android.package-archive' "$remote_headers"; then
-  echo "Unexpected Android download content type at $PUBLIC_URL" >&2
-  sed -n '1,40p' "$remote_headers" >&2
-  exit 1
-fi
-
-echo "[voxflame] Android preview published"
-echo "  version: $app_version ($app_build_version)"
-echo "  build:   $build_id"
-echo "  sha256:  $apk_sha256"
-echo "  bytes:   $apk_size"
-echo "  url:     $PUBLIC_URL"

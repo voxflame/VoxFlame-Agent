@@ -132,3 +132,8 @@ VoxFlame 面向构音障碍者，第一原则是提升系统对用户意图的�
 ## CLI 治理入口
 
 - 完整检查：`npm run check:harness`；普通 checkout：`npm run check:harness:checkout`（不验证私有上游正文）；负例回归：`npm run test:governance`、`npm run test:mobile-rtc`。边界以 `research/AI_ENGINEERING_SYSTEM.md` 为准，替身或 checkout 检查不得代替真机/发布验收。
+
+
+## Android 官网发布入口
+
+官网 Android preview 只由 `android-preview-release.yml` 从 main 构建/复用原包并自动发布；停用服务器旧timer与CLI直发，不恢复旁路。规则见 `research/AI_ENGINEERING_SYSTEM.md`，操作与真机边界见 `research/operations/APP_RELEASE.md`。
