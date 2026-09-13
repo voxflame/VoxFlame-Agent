@@ -130,7 +130,7 @@ jobs:
           (needs.build-candidate.result == 'success' ||
            (needs.select-source.outputs.build == 'false' && needs.build-candidate.result == 'skipped')) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     environment: production
     env:
       ARTIFACT_RUN_ID: ${{ needs.select-source.outputs.artifact_run_id }}
@@ -203,7 +203,8 @@ jobs:
         run: |
           headers="$RUNNER_TEMP/android-download-headers.txt"
           curl --fail --silent --show-error --location \
-            --retry 3 --dump-header "$headers" --output "$RUNNER_TEMP/published.apk" "$PUBLIC_URL"
+            --retry 3 --retry-all-errors --connect-timeout 20 --max-time 900 \
+            --dump-header "$headers" --output "$RUNNER_TEMP/published.apk" "$PUBLIC_URL"
           grep -iq '^content-type: application/vnd.android.package-archive' "$headers"
           grep -iq '^cache-control: no-store' "$headers"
           cmp "$RUNNER_TEMP/published.apk" "$RUNNER_TEMP/android-release/VoxFlame-Android.apk"
