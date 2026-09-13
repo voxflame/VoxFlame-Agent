@@ -87,6 +87,7 @@ class AndroidReleaseGuards(unittest.TestCase):
 
 
 if __name__ == '__main__':
+    subprocess.run(['node', str(ROOT / 'apps/mobile-workbench/scripts/check-mobile-workbench.mjs')], check=True)
     subprocess.run(['node', '--test', str(ROOT / 'scripts/test-android-release-workflow.cjs')], check=True)
     subprocess.run(['python3', str(ROOT / 'scripts/test-android-artifact-publication.py')], check=True)
     subprocess.run(['python3', str(ROOT / 'scripts/test-android-retire.py')], check=True)

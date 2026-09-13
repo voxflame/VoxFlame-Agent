@@ -13,7 +13,7 @@
 
 **现有坑**：[预览准备脚本](../../apps/mobile-workbench/scripts/prepare-android-preview-release.mjs)会按最近成功的 preview 包改写本地版本；CI 可能构建未提交的版本改动。production/chinaStore 又启用了 autoIncrement，故“来自 SHA”不一定等于“该 SHA 的原样内容”。
 
-规定：发布负责人统一分配构建号，跨 profile 核对同包名已用最大值；正式发布前提交版本准备 PR。若构建仍产生变更，保留生成 diff 与 build ID 并补归档，未对齐前不认定可复现；本轮未改造自动化。Expo 本地自动递增不会替团队完成 Git 持久化。
+规定：发布负责人统一分配构建号，跨 profile 核对同包名已用最大值；正式发布前提交版本准备 PR。若构建仍产生变更，保留生成 diff 与 build ID 并补归档，未对齐前不认定可复现；官网preview已把版本生成diff归档到artifact并校验；跨profile版本分配仍未改造。Expo 本地自动递增不会替团队完成 Git 持久化。
 
 ## 2. 编号与兼容
 

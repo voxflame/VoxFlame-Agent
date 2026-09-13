@@ -194,46 +194,15 @@ npm run smoke:device-env
 npm run build:android:preview
 ```
 
-For a website release, run the complete build-and-publish workflow from the repository root:
+官网 Android preview 只有一条发布链：审核后的 main → GitHub Actions 检查/EAS构建（或同SHA有效artifact复用）→ 受限SSH receiver/publisher → 公网完整下载校验。构建后自动发布，不再逐包手动晋级；商店提交与真机验收仍独立。
 
-```bash
-npm run release:android:preview
-```
+- 唯一入口：GitHub Actions 的 `Android Preview Release`，main相关push、工作日18:30或main手动触发。失败重试默认复用原包；`force_rebuild` 才重新构建。
+- `android-build` 只用Expo构建凭证，`production` 仅main使用部署凭证；预先核验SSH主机身份。Caddy直接读取 `/srv/voxflame/android`，无需重建应用/代理。
+- 旧 `release:android:preview` / `sync:android:latest` 及后台形式已失败关闭，不再直发；旧服务器timer必须停用/mask，不能在GitHub失败时另起构建发布旁路。旧GitHub bootstrap也已退役。
+- 构建辅助脚本仅支持 `bash scripts/release-android-preview.sh build-artifact <目录>`，不会更新官网。EAS下载缓存仍可续传。
+- publisher保留previous及切换前历史备份，拒绝版本倒退/同版本异包；可处理的公网校验失败恢复旧实物。真机登录/录音/积压补传缺测不得记作通过。
 
-It validates the Mobile Workbench, advances the installable version when needed, waits for EAS, downloads the APK, atomically replaces `releases/android/VoxFlame-Android.apk`, recreates Caddy with the release mount, and verifies the permanent website URL. Do not paste an Expo build-detail URL into the website environment.
-
-On the production host, the same command detects the installed restricted receiver and publishes into `/srv/voxflame/android`, which is Caddy's live read-only mount. On development hosts without that receiver, it keeps the repository-local release behavior.
-
-On an unstable SSH/network session, start the same transaction as a detached server process:
-
-```bash
-npm run release:android:preview:background
-```
-
-Its PID and append-only log are stored under `${XDG_STATE_HOME:-$HOME/.local/state}/voxflame/android-release/`. EAS artifact downloads retry transient failures and resume from `releases/android/.downloads/<build-id>.apk.part`; a completed cached APK is ZIP-validated before publication.
-
-If EAS finished but the local publish step was interrupted, resume without creating another cloud build:
-
-```bash
-npm run sync:android:latest
-```
-
-The recovery command also has a detached form: `npm run sync:android:latest:background`. Re-publishing the same EAS build does not overwrite the previous-version rollback slot.
-
-Production automation uses `.github/workflows/android-preview-release.yml`. Mobile changes merged into `main` are checked and built on GitHub Actions; the validated APK and metadata are then streamed through a dedicated SSH key whose server-side forced command accepts only those two files and can update only `/srv/voxflame/android`. Caddy reads that directory directly, so CI cannot run arbitrary server commands and does not need repository, Docker, or application-secret access. Configure the `production` GitHub environment with `EXPO_TOKEN`, `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, and `DEPLOY_KNOWN_HOSTS`; `DEPLOY_PORT` is optional and defaults to `22`.
-
-On the production server, authenticate GitHub CLI once and load those environment secrets without printing them. The setup script also enables the repository-level `ANDROID_AUTO_RELEASE_ENABLED` gate; until then, push-triggered release jobs stay skipped instead of failing for missing secrets:
-
-```bash
-gh auth login
-bash scripts/ops/configure-android-release-github.sh
-```
-
-After the workflow commit reaches `main`, run `Android Preview Release` once with `workflow_dispatch`. Later Mobile changes under `apps/mobile-workbench/**` publish automatically after they are pushed to `main`.
-
-If GitHub-hosted Actions cannot start because the account is billing-locked, production uses the equivalent `voxflame-android-main-sync.timer` fallback. It checks public `origin/main` every five minutes from an isolated, disposable checkout, builds only when Mobile or Android release files changed, caches the artifact by commit, and publishes through the same restricted SSH receiver. The timer never reads or modifies the developer working tree.
-
-The permanent URL is sent with `Cache-Control: no-store`, and each successful release keeps `VoxFlame-Android.previous.apk` plus its metadata for rollback. Trigger the complete release after Mobile changes pass review and land on `main`; do not rebuild on every editor save.
+操作、配置与恢复统一见[App发布手册](../../research/operations/APP_RELEASE.md)；线上是否已完成切换以[单链路记录](../../research/operations/ANDROID_SINGLE_RELEASE_2026-09-13.md)为准。
 
 The app environment is public-client only. Before building for a real phone, set `EXPO_PUBLIC_API_BASE_URL` to the computer or server address the phone can reach, such as `http://192.168.1.23:3001/api`. Do not use `127.0.0.1` for a physical phone.
 

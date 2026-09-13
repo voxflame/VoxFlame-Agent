@@ -39,3 +39,10 @@
 - shell语法、workflow YAML解析、文档/Research checkout-only（含22项Harness测试）、9项治理负例、静态治理及研究闭环、diff检查通过。checkout-only不验证private upstream正文。
 - 自审覆盖来源边界、互斥/回滚、两种needs分支、权限隔离、旧入口和安装器：修正通用安装器调用退役脚本缺sudo；补receiver恶意tar/并发锁/退役幂等回归。未发现剩余必须阻断的本地实现问题；没有伪造独立agent/人工review。
 - 不新增VERSION/CHANGELOG平行版本源；版本仍由现有EAS构建准备脚本分配并记录version.patch。未改App/Backend业务，未关闭Maestro；生产环境/旧timer/APK暂未切换。
+
+
+## PR #22 首轮检查与修正
+
+- PR `#22` / `4293a30`：AI Governance及CodeQL通过；RTC Guard在Mobile check失败，原因是旧静态守卫仍向构建脚本查找previous文件名（`android website release must retain a rollback APK`），而发布/回滚已移到publisher。本地前轮只测隔离流水线，漏跑这一跨目录consumer；不是App类型或Backend测试失败。
+- 修正守卫检查实际publisher，并要求artifact builder不得部署；将整个Mobile守卫加入pipeline回归入口，避免以后只测新脚本漏掉旧consumer。补Mobile README清理旧直发、fallback timer和旧Secret配置说明，版本手册及根导航同步。未添加假字符串满足旧检查，未跳过原检查。
+- 这会正常触发Mobile Android Maestro；历史模拟器问题不绕过，远端结果仍待核验。
