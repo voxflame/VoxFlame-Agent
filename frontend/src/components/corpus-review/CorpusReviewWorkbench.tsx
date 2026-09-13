@@ -49,7 +49,7 @@ const FIELD_CONTENT: Record<CoreGapReviewField, { label: string; prompt: string 
   user_burden: { label: '用户负担', prompt: '长度、词义和发音负担适合默认录音任务。' },
   safety: { label: '安全性', prompt: '不含污名、惊吓、成人或其他不适内容。' },
   license: { label: '许可', prompt: '来源与授权足以支持当前产品用途。' },
-  product: { label: '产品价值', prompt: '适合进入默认的系统易漏听字词任务，而非仅有词典价值。' },
+  product: { label: '产品价值', prompt: '适合进入默认的“让沟通更顺”任务，而非仅有词典价值。' },
 }
 
 const STATUS_CONTENT: Record<CoreGapReviewStatus, { label: string; active: string }> = {
@@ -647,7 +647,7 @@ export function CorpusReviewWorkbench({ reviewer, workspaces }: CorpusReviewWork
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-xl border border-stone-200 bg-white p-3">
                       <dt className="text-xs text-stone-500">互斥用户任务</dt>
-                      <dd className="mt-1 font-medium text-stone-800">系统易漏听覆盖</dd>
+                      <dd className="mt-1 font-medium text-stone-800">沟通更顺覆盖</dd>
                     </div>
                     <div className="rounded-xl border border-stone-200 bg-white p-3">
                       <dt className="text-xs text-stone-500">语篇风格</dt>

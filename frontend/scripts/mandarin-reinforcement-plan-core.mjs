@@ -3,7 +3,7 @@ import { containsBlockedDefaultCorpusContent } from './mandarin-corpus-content-p
 const TASK_PRIORITY = {
   functional_speech: 4,
   targeted_gap: 3,
-  baseline_words: 2,
+  mandarin_articulation_baseline: 2,
   connected_reading: 1,
   natural_speech: 1,
   anchor_retest: 1,

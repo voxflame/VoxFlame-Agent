@@ -6,13 +6,16 @@ export interface MobileTrainingCategory {
   shortLabel: string
   description: string
   count: number
-  kind: 'assessment' | 'collection'
+  kind: 'articulation_baseline' | 'collection'
 }
 
 export interface MobileTrainingExercise {
   id: string
   text: string
   category: string
+  prompt_type?: 'single_character' | 'word' | 'short_sentence'
+  target?: string
+  pronunciation_hint?: string
 }
 
 export interface MobileReadingArticleSummary {

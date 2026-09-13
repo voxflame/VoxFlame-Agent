@@ -14,6 +14,7 @@ const UPLOAD_METADATA_KEYS = new Set([
   'speech_variant', 'dialect_name', 'dialect_region', 'dialect_name_user_reported', 'dialect_code',
   'language_tag', 'prompt_language', 'spoken_language', 'label_source', 'utterance_pair_id',
   'consent_scope', 'consent_version', 'consent_accepted_at', 'collection_plan_id',
+  'baseline_protocol', 'baseline_protocol_version',
   'admission_status', 'admission_version', 'admission_verified_at', 'object_etag',
   'quality_status', 'quality_reasons', 'quality_assessment_version', 'quality_assessed_at',
   'training_import_allowed',

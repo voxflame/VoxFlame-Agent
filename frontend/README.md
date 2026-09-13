@@ -34,9 +34,13 @@ Frontend
 - `/communicate`
   唯一沟通 surface。匿名默认可直接用通用短语和手动输入做本机朗读；用户明确选择日常沟通后，才要求登录并在同页启动 LiveKit agent。记忆资料自动带入，不在沟通页重复编辑。
 - `/practice`
-  练习任务入口，只负责区分 `20 词能力筛查 / 训练与数据录入`。
-- `/assessment`
-  独立的 20 词能力筛查执行页。
+  练习任务入口，只负责区分 `50 字普通话构音表现基线 / 训练与数据录入`。
+- `/articulation-baseline`
+  50 字普通话构音表现基线入口；录音与结果边界分别进入子页面。
+- `/articulation-baseline/record`
+  只保留准备、当前字、录音、确认和折叠进度的专注执行页。
+- `/articulation-baseline/about`
+  解释结果能做什么、不能做什么以及同设备复测原则。
 - `/contribute`
   数据录入主题选择页。
 - `/contribute/topic/[topicId]`

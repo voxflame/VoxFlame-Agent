@@ -55,7 +55,7 @@ export function GET(request: NextRequest) {
       shortLabel: MANDARIN_TRAINING_CATEGORY_META[item].shortLabel,
       description: MANDARIN_TRAINING_CATEGORY_META[item].description,
       count: MANDARIN_TRAINING_CATEGORY_META[item].corpusCount,
-      kind: item === '评估筛查' ? 'assessment' : 'collection',
+      kind: item === '普通话构音基线' ? 'articulation_baseline' : 'collection',
     })),
     selectedCategory: category,
     selectedReadingArticle: readingArticle ? {

@@ -3,7 +3,8 @@ import APPROVED_CORE_GAP_CORPUS from '../generated/mandarin-approved-core-gap-co
 import RECORDING_CORE_GAP_CORPUS from '../generated/mandarin-recording-core-gap-corpus.json'
 import RECORDING_REINFORCEMENT_CORPUS from '../generated/mandarin-recording-reinforcement-corpus.json'
 import RECORDING_OPEN_RESEARCH_CORPUS from '../generated/mandarin-recording-open-research-corpus.json'
-import { ASSESSMENT_SCREENING_EXERCISES } from './assessment-screening'
+import CHARACTER_FOUNDATION_CORPUS from '../generated/mandarin-character-foundation-corpus.json'
+import { MANDARIN_ARTICULATION_BASELINE_EXERCISES } from './articulation-baseline'
 import { CURATED_TOPIC_EXERCISES } from './curated-topics'
 import {
   MANDARIN_TRAINING_CATEGORY_ORDER,
@@ -39,6 +40,9 @@ const RECORDING_REINFORCEMENT_EXERCISES = (RECORDING_REINFORCEMENT_CORPUS as {
 const RECORDING_OPEN_RESEARCH_EXERCISES = (RECORDING_OPEN_RESEARCH_CORPUS as {
   items: MandarinTrainingExercise[]
 }).items
+const CHARACTER_FOUNDATION_EXERCISES = (CHARACTER_FOUNDATION_CORPUS as {
+  items: MandarinTrainingExercise[]
+}).items
 
 export type {
   MandarinTrainingCategory,
@@ -58,11 +62,14 @@ function mergeExercises(
 
   for (const exercise of [...primary, ...generated]) {
     const text = exercise.text.trim()
-    if (!text || seen.has(text)) {
+    const identity = exercise.prompt_type === 'single_character'
+      ? `${text}:${exercise.target ?? ''}`
+      : text
+    if (!text || seen.has(identity)) {
       continue
     }
 
-    seen.add(text)
+    seen.add(identity)
     merged.push({
       ...exercise,
       text,
@@ -76,19 +83,20 @@ function mergeExercises(
 const CATEGORY_EXERCISE_MAP = MANDARIN_TRAINING_CATEGORIES.reduce(
   (accumulator, category) => {
     const generated = REAL_CORPUS.categories[category]?.items ?? []
-    if (category === '评估筛查') {
-      accumulator[category] = ASSESSMENT_SCREENING_EXERCISES
+    if (category === '普通话构音基线') {
+      accumulator[category] = MANDARIN_ARTICULATION_BASELINE_EXERCISES
       return accumulator
     }
 
     const approvedGapExercises = category === '音系强化'
-      ? [...RECORDING_CORE_GAP_EXERCISES, ...RECORDING_REINFORCEMENT_EXERCISES, ...RECORDING_OPEN_RESEARCH_EXERCISES, ...APPROVED_CORE_GAP_EXERCISES]
+      ? [...CHARACTER_FOUNDATION_EXERCISES, ...RECORDING_CORE_GAP_EXERCISES, ...RECORDING_REINFORCEMENT_EXERCISES, ...RECORDING_OPEN_RESEARCH_EXERCISES, ...APPROVED_CORE_GAP_EXERCISES]
       : []
     accumulator[category] = mergeExercises(
       category,
       approvedGapExercises,
       [...(CURATED_TOPIC_EXERCISES[category] ?? []), ...generated],
     ).filter((exercise) => {
+      if (exercise.prompt_type === 'single_character') return true
       if (accumulator.__seenTexts.has(exercise.text)) {
         return false
       }
@@ -111,14 +119,14 @@ export const MANDARIN_TRAINING_CATEGORY_META: Record<
   MandarinTrainingCategory,
   MandarinTrainingCategoryMeta
 > = {
-  '评估筛查': {
-    label: '评估主题区',
-    shortLabel: '20 词筛查',
-    description: '用 20 条高频双字词做一次轻量普通话筛查，先看正确字数 / 总字数和系统听懂分。',
-    examples: ['爸爸', '刷牙', '蓝牙'],
-    helper: '这组不是普通训练句，而是筛查词表。先完整录完，再看字符准确率和系统听懂分。',
-    trainingTips: ['先把每个字说完整，不用刻意求快。', '这一组先看字准率，结果只作为训练筛查，不替代医学评估。'],
-    corpusCount: CATEGORY_EXERCISE_MAP['评估筛查'].length,
+  '普通话构音基线': {
+    label: '普通话构音表现基线',
+    shortLabel: '50 字基线',
+    description: '用 50 个单音节观察普通话声母、韵母和声调组合，建立可复测的系统听懂基线。',
+    examples: ['包', '猪', '船'],
+    helper: '这组不是自然训练句，也不是临床量表。请在同一设备、相近距离下逐字录完，用于观察系统听懂表现。',
+    trainingTips: ['每次只读一个字，保持自然音量和速度。', '尽量使用同一设备复测；结果只描述系统表现，不代表医学诊断。'],
+    corpusCount: CATEGORY_EXERCISE_MAP['普通话构音基线'].length,
   },
   '日常与出行': {
     label: '日常与出行',
@@ -130,7 +138,7 @@ export const MANDARIN_TRAINING_CATEGORY_META: Record<
     corpusCount: CATEGORY_EXERCISE_MAP['日常与出行'].length,
   },
   '看病与求助': {
-    label: '看病与求助',
+    label: '就医与求助',
     shortLabel: '求助就医',
     description: '把症状描述、急救求助、挂号分诊、检查缴费这些关键节点短句放在一起，优先覆盖高风险场景里最需要说清的话。',
     examples: ['我有点喘不过气', '请帮我挂个急诊', '请帮我拨打一二零'],
@@ -139,7 +147,7 @@ export const MANDARIN_TRAINING_CATEGORY_META: Record<
     corpusCount: CATEGORY_EXERCISE_MAP['看病与求助'].length,
   },
   '人群与角色': {
-    label: '人群与角色',
+    label: '和谁说',
     shortLabel: '学生老人',
     description: '把家人、照护者、老师、同学、前台、客服这些角色沟通常用短句放在一起，补真实人际互动里的称呼、礼貌和请求。',
     examples: ['老师请再讲一次', '请别替我回答', '客服请转人工'],
@@ -184,12 +192,12 @@ export const MANDARIN_TRAINING_CATEGORY_META: Record<
     corpusCount: CATEGORY_EXERCISE_MAP['车载与导航'].length,
   },
   '音系强化': {
-    label: '音系强化',
-    shortLabel: '声韵声调',
-    description: '从真实现代中文转写和朗读材料中挑选声母、韵母、声调覆盖更密的短句，专门练连续音系稳定性。',
-    examples: ['清晨的空气很新鲜', '群众生活更加便利', '声音变化比较明显'],
-    helper: '这组不是古文进阶，也不是绕口令；它用真实来源句补声韵调覆盖，适合做专项稳定练习。',
-    trainingTips: ['先慢读，确保每个音节都站稳。', '遇到声调变化密集的句子，先分两拍读，再连起来。'],
+    label: '沟通更顺',
+    shortLabel: '从单字到短句',
+    description: '从单字、多音字到连续短句，按自己的节奏熟悉不同表达，让系统逐步适应你的声音。',
+    examples: ['一字一音', '多音字定音', '清晨的空气很新鲜'],
+    helper: '这里不是纠正你的声音，而是从字音到连续表达逐步积累样本，让日常沟通更省力。',
+    trainingTips: ['先按平时的声音自然读，不用刻意改变发音。', '遇到多音字先看词语提示，再按当前意思读出来。'],
     corpusCount: CATEGORY_EXERCISE_MAP['音系强化'].length,
   },
 }

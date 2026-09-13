@@ -1,6 +1,6 @@
 import { pinyin } from 'pinyin-pro'
 
-import { calculateCharacterEditDistance } from './training-assessment'
+import { calculateCharacterEditDistance } from './articulation-baseline-report'
 
 export interface SpeechPerformanceAttemptInput {
   exerciseId: string

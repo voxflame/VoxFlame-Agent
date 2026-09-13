@@ -12,7 +12,7 @@ export interface MobileTrainingFeedback {
   suggestion: string
 }
 
-export interface MobileAssessmentAttempt {
+export interface MobileArticulationBaselineAttempt {
   exerciseId: string
   targetText: string
   heardText: string
@@ -24,7 +24,7 @@ export interface MobileAssessmentAttempt {
   qualityDisposition?: 'high_confidence' | 'review' | 'low_confidence'
 }
 
-export interface MobileAssessmentSummary {
+export interface MobileArticulationBaselineSummary {
   completedCount: number
   totalCount: number
   remainingCount: number
@@ -158,10 +158,10 @@ export function analyzeMobileTrainingAttempt(
   }
 }
 
-export function summarizeMobileAssessment(
-  attempts: MobileAssessmentAttempt[],
+export function summarizeMobileArticulationBaseline(
+  attempts: MobileArticulationBaselineAttempt[],
   totalCount: number,
-): MobileAssessmentSummary {
+): MobileArticulationBaselineSummary {
   const completedCount = attempts.length
   const remainingCount = Math.max(0, totalCount - completedCount)
   const totalChars = attempts.reduce(
@@ -218,27 +218,22 @@ export function summarizeMobileAssessment(
       totalCount,
       remainingCount,
       accuracyPercent,
-      label: completedCount > 0 ? '筛查进行中' : '还未开始',
+      label: completedCount > 0 ? '基线进行中' : '待开始',
       summary: completedCount > 0
-        ? `已经完成 ${completedCount}/${totalCount} 个词。整组完成前不生成训练支持级别。`
-        : '完成整组后再看字符准确率和训练支持级别。',
+        ? `已经完成 ${completedCount}/${totalCount} 个单音节，还剩 ${remainingCount} 个。`
+        : '逐字完成 50 个单音节后，可查看系统听懂表现和建议复测项。',
       isComplete: false,
       ...reportFields,
     }
   }
 
-  const label = accuracyPercent < 30
-    ? '高支持需求'
-    : accuracyPercent < 50
-      ? '中支持需求'
-      : accuracyPercent < 80 ? '低支持需求' : '继续观察'
   return {
     completedCount,
     totalCount,
     remainingCount,
     accuracyPercent,
-    label,
-    summary: `系统转写字符准确率约 ${accuracyPercent}%，建议按“${label}”安排训练辅助。这反映当前系统听清程度，不是医学严重程度。`,
+    label: '基线已完成',
+    summary: `本轮系统听懂率约 ${accuracyPercent}%。请在相同设备和距离下复测；结果不判断构音障碍类型或医学严重程度。`,
     isComplete: true,
     ...reportFields,
   }

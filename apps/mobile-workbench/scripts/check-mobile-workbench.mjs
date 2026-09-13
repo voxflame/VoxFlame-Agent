@@ -267,7 +267,8 @@ for (const requiredToken of [
   'understandsConsent: consentReady',
   '我同意本次录音用于训练',
   'MOBILE_COLLECTION_PLANS',
-  'collection_plan_id: flow === \'collection\' ? collectionPlanId : undefined',
+  'collection_plan_id: collectionPlanId',
+  "baseline_protocol: flow === 'articulation_baseline' ? 'mandarin_articulation_baseline' : undefined",
   'reading_assistance_used: readingAssistanceKeysRef.current.has(readingAssistanceKey)',
   'speechVariant: capture.speechVariant',
   'utterancePairId: capture.utterancePairId',
@@ -298,7 +299,7 @@ for (const taskRoute of [
   'practice_home',
   'practice_materials',
   'practice_readings',
-  'assessment',
+  'articulation_baseline',
   'collection',
 ]) {
   assert(appSource.includes(`'${taskRoute}'`), `missing mobile task route: ${taskRoute}`)

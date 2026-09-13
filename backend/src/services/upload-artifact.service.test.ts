@@ -201,6 +201,8 @@ test('server upload metadata allow-list drops device, browser, and arbitrary fie
       recording_id: 'rec-1',
       pronunciation_targets: ['zang4', 'zha2'],
       reading_assistance_used: true,
+      baseline_protocol: 'mandarin_articulation_baseline',
+      baseline_protocol_version: '2026-09-13.v1',
       sample_rate: 16_000,
       user_agent: 'private-browser-details',
       microphone_label: 'USB microphone',
@@ -217,6 +219,8 @@ test('server upload metadata allow-list drops device, browser, and arbitrary fie
       recording_id: 'rec-1',
       pronunciation_targets: ['zang4', 'zha2'],
       reading_assistance_used: true,
+      baseline_protocol: 'mandarin_articulation_baseline',
+      baseline_protocol_version: '2026-09-13.v1',
       sample_rate: 16_000,
     },
   )

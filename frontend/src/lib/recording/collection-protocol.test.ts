@@ -11,7 +11,7 @@ test('collection tasks cover linguistic baseline, gaps, real use, connected spee
   assert.deepEqual(
     COLLECTION_PLANS.map((plan) => plan.id),
     [
-      'baseline_words',
+      'mandarin_articulation_baseline',
       'targeted_gap',
       'functional_speech',
       'connected_reading',
@@ -27,13 +27,13 @@ test('recording task is derived from the actual topic instead of a free metadata
   assert.equal(getCollectionPlanIdForTopic('pronunciation-reading'), 'connected_reading')
   assert.equal(getCollectionPlanIdForTopic('custom-material'), 'connected_reading')
   assert.equal(getCollectionPlanIdForTopic('phonology-training'), 'targeted_gap')
-  assert.equal(getCollectionPlanIdForTopic('assessment-screening'), 'baseline_words')
+  assert.equal(getCollectionPlanIdForTopic('articulation-baseline'), 'mandarin_articulation_baseline')
 })
 
 test('targeted gap copy assigns the gap to the system instead of the speaker', () => {
   const plan = COLLECTION_PLANS.find((item) => item.id === 'targeted_gap')
 
-  assert.equal(plan?.label, '系统易漏听字词')
+  assert.equal(plan?.label, '让沟通更顺')
   assert.match(plan?.description ?? '', /按平时方式说/)
   assert.doesNotMatch(`${plan?.label}${plan?.userLabel}${plan?.description}`, /补齐声音|补音/)
 })

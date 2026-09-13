@@ -46,8 +46,10 @@ test('isProtectedPath does not revive removed communication child routes', () =>
 })
 
 test('isProtectedPath keeps active nested route trees behind authentication', () => {
+  assert.equal(isProtectedPath('/articulation-baseline'), true)
+  assert.equal(isProtectedPath('/articulation-baseline/record'), true)
+  assert.equal(isProtectedPath('/articulation-baseline/about'), true)
   assert.equal(isProtectedPath('/contribute'), true)
-  assert.equal(isProtectedPath('/contribute/topic/assessment-screening'), true)
   assert.equal(isProtectedPath('/communicate/assistant'), true)
   assert.equal(isProtectedPath('/corpus-review'), true)
   assert.equal(isProtectedPath('/corpus-review/core-gap'), true)
