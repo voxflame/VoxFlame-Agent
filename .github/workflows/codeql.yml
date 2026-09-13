@@ -42,9 +42,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Tracked application source is JS/TS + Python; no Go files/modules.
+        # Restore a Go target when first-party Go source is introduced.
         include:
-        - language: go
-          build-mode: autobuild
         - language: javascript-typescript
           build-mode: none
         - language: python
