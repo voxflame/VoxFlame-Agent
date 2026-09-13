@@ -38,6 +38,13 @@ class MobileCI(unittest.TestCase):
         self.assertNotIn('start-device', workflow)
         self.assertNotIn('yes | sdkmanager', workflow)
 
+    def test_boot_smoke_scrolls_to_the_current_email_login_action(self):
+        flow = (ROOT / 'apps/mobile-workbench/.maestro/release-boot-smoke.yml').read_text()
+        self.assertIn('scrollUntilVisible:', flow)
+        self.assertIn("text: '邮箱登录'", flow)
+        self.assertIn("assertVisible: '邮箱登录'", flow)
+        self.assertNotIn("assertVisible: '登录'", flow)
+
     def run_smoke(self, failure='', credentials=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

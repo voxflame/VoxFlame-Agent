@@ -5,6 +5,11 @@ appId: org.voxflame.mobileworkbench
 - extendedWaitUntil:
     visible: '把想说的话，稳稳传达。'
     timeout: 20000
-- assertVisible: '登录'
+- scrollUntilVisible:
+    element:
+      text: '邮箱登录'
+    direction: DOWN
+    timeout: 10000
+- assertVisible: '邮箱登录'
 - assertNotVisible: '这个测试包尚未配置服务地址，请重新构建。'
 - takeScreenshot: release-boot-configured
