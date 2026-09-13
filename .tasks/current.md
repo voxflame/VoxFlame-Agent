@@ -200,3 +200,9 @@
 - **CI状态仍非通过**：跨境上传约7分半，服务器公网回读每180秒超时重试，GitHub发布job超过15分钟被取消。SSH断开后旧清理路径未完成，残留stage/history保留。不能把网站实物已核验当作该run成功。
 - 最小超时修正已在独立分支 `ops/android-publish-network-timeout`：publisher完整回读单次600秒、清理错误输出不阻断恢复；服务器安装该publisher，37项隔离回归和Mobile守卫通过。workflow上限30分钟仍待PR合并，GitHub当前main仍15分钟，后续慢网络有超时风险。没有绕过公网字节检查。
 - 真机登录/麦克风/录音/积压补传未验收；不宣称张大宝录音已上传。未改用户数据、数据库或应用容器。
+
+## 最新 Android 官网发布（2026-09-14）
+
+- [x] Run `34770351664` 从最新 main `18024d307db05e9c7eaa27f31c00948fdc810ddb` 完成构建与发布；候选构建、受限 SSH publisher、完整公网下载及逐字节 `cmp` 全部通过。
+- [x] 官网当前为 `0.1.17 (18)`，EAS `c98f92fa-dc38-4d93-b7c2-afe197e62d9d`，APK `114467517` bytes，SHA256 `31ae153357ceea8ad2be7d61ff9663ffdb8fb395cf200d1849318a6372a723c3`。
+- [ ] Android Maestro/真机登录、麦克风、RTC、录音上传/重试/撤回、断网恢复与积压补传仍需独立验收；发布成功不等于设备验收。
