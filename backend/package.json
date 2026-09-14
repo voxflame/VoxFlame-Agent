@@ -30,8 +30,8 @@
     "livekit-server-sdk": "^2.15.0",
     "standardwebhooks": "1.0.0",
     "tencentcloud-sdk-nodejs-sms": "4.1.240",
-    "uuid": "^9.0.1",
-    "ws": "^8.14.2"
+    "uuid": "^14.0.2",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

@@ -44,7 +44,7 @@
     "@livekit/react-native-webrtc": "^144.0.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@supabase/supabase-js": "^2.105.1",
-    "expo": "~55.0.19",
+    "expo": "~55.0.31",
     "expo-audio": "~55.0.14",
     "expo-clipboard": "~55.0.15",
     "expo-constants": "~55.0.15",
