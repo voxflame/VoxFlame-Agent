@@ -16,6 +16,7 @@ import {
 
 import {
   discardMobileRecorderQueueItem,
+  finalizeMobileRecorderReferenceText,
   uploadMobileRecorderQueueItem,
 } from '../api/mobile-upload-client'
 import type { MobileAuthTokenProvider } from '../api/mobile-workbench-client'
@@ -373,8 +374,19 @@ export function useNativeRecorderQueue(params: {
       metadata,
     )
     commitQueueItems(nextItems, params.contributorId)
-    return nextItems.find((item) => item.recordingId === recordingId) ?? null
-  }, [commitQueueItems, params.contributorId])
+    const updated = nextItems.find((item) => item.recordingId === recordingId) ?? null
+    if (
+      updated
+      && (updated.syncStatus === 'uploaded' || updated.syncStatus === 'indexed')
+      && params.apiBaseUrl
+    ) {
+      void finalizeMobileRecorderReferenceText(updated, {
+        apiBaseUrl: params.apiBaseUrl,
+        tokenProvider: params.tokenProvider,
+      }).catch(() => undefined)
+    }
+    return updated
+  }, [commitQueueItems, params.apiBaseUrl, params.contributorId, params.tokenProvider])
 
   const markUploadPending = useCallback(async (
     recordingId: string,
@@ -427,15 +439,24 @@ export function useNativeRecorderQueue(params: {
         apiBaseUrl: params.apiBaseUrl,
         tokenProvider: params.tokenProvider,
       })
-      commitQueueItems(
-        await updateNativeRecorderQueueItemStatus(
+      const uploadedItems = await updateNativeRecorderQueueItemStatus(
           recordingId,
           'uploaded',
           undefined,
           receipt,
-        ),
-        params.contributorId,
       )
+      commitQueueItems(uploadedItems, params.contributorId)
+      const latestItem = uploadedItems.find((entry) => entry.recordingId === recordingId)
+      const referenceTextStatus = latestItem?.metadata.reference_text_status
+      if (
+        latestItem
+        && (referenceTextStatus === 'available' || referenceTextStatus === 'unavailable')
+      ) {
+        void finalizeMobileRecorderReferenceText(latestItem, {
+          apiBaseUrl: params.apiBaseUrl,
+          tokenProvider: params.tokenProvider,
+        }).catch(() => undefined)
+      }
       setLastUploadReceipt(receipt)
       return receipt
     } catch (error) {

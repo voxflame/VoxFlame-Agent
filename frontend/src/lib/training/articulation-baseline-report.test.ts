@@ -3,7 +3,7 @@ import test from 'node:test'
 
 import { summarizeArticulationBaseline } from './articulation-baseline-report'
 
-test('summarizeArticulationBaseline reports system understanding without severity bands', () => {
+test('summarizeArticulationBaseline reports reference-text agreement without severity bands', () => {
   const summary = summarizeArticulationBaseline([
     {
       exerciseId: 'mandarin_articulation_baseline_001',
@@ -22,13 +22,14 @@ test('summarizeArticulationBaseline reports system understanding without severit
   ], 2)
 
   assert.equal(summary.completedCount, 2)
-  assert.equal(summary.systemUnderstandingRatio, 0.5)
+  assert.equal(summary.referenceTextAgreementRatio, 0.5)
   assert.equal(summary.status, 'complete')
   assert.equal(summary.statusLabel, '基线已完成')
   assert.equal(summary.reviewItems[0]?.targetText, '抛')
   assert.equal('severityBand' in summary, false)
   assert.equal('severityLabel' in summary, false)
   assert.doesNotMatch(JSON.stringify(summary), /支持需求/)
+  assert.doesNotMatch(summary.statusSummary, /系统听懂|听清率/)
 })
 
 test('summarizeArticulationBaseline keeps an incomplete run descriptive', () => {

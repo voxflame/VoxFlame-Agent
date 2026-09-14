@@ -170,6 +170,41 @@ router.post('/complete', uploadCapacityMiddleware('complete'), async (req, res) 
     }
 });
 
+/** Persist the final automatic reference text without rewriting the saved audio or target label. */
+router.post('/reference-text', uploadCapacityMiddleware('complete'), async (req, res) => {
+    try {
+        const contributorId = req.user?.id;
+        const recordingId = typeof req.body?.recordingId === 'string' ? req.body.recordingId.trim() : '';
+        const clientCaptureId = typeof req.body?.clientCaptureId === 'string' ? req.body.clientCaptureId.trim() : '';
+        const recognizedText = typeof req.body?.recognizedText === 'string' ? req.body.recognizedText : '';
+        const metadata = req.body?.metadata;
+
+        if (!contributorId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        if (!recordingId || !clientCaptureId || recognizedText.length > 10_000) {
+            return res.status(400).json({ error: 'Invalid reference text payload' });
+        }
+
+        const result = await uploadArtifactService.finalizeReferenceText({
+            contributorId,
+            recordingId,
+            clientCaptureId,
+            recognizedText,
+            metadata: metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+                ? metadata as Record<string, unknown>
+                : undefined,
+        });
+
+        res.status(result.updated ? 200 : 404).json({ success: result.updated, ...result });
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Internal Server Error';
+        const status = message === 'reference_text_capture_ambiguous' ? 409 : 500;
+        console.error('[Upload] Reference text error:', message);
+        res.status(status).json({ error: message });
+    }
+});
+
 /**
  * DELETE /api/upload/contribution
  * Remove one training recording from DB/OSS training material.

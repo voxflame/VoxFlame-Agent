@@ -28,6 +28,7 @@ export interface TrainingMemoryMetadata {
   exercise_id?: string;
   exercise_category?: string;
   recognized_text?: string;
+  reference_text_status?: 'pending' | 'available' | 'unavailable';
   feedback_status?: FeedbackStatus;
   clarity_score?: number;
   keywords?: string[];
@@ -277,6 +278,12 @@ function toTrainingMetadata(memory: GrowthMemoryRecord): TrainingMemoryMetadata 
   return isRecord(memory.metadata) ? (memory.metadata as TrainingMemoryMetadata) : {};
 }
 
+function hasFinalReferenceFeedback(metadata: TrainingMemoryMetadata): metadata is TrainingMemoryMetadata & {
+  feedback_status: FeedbackStatus;
+} {
+  return metadata.reference_text_status !== 'pending' && Boolean(metadata.feedback_status);
+}
+
 function toTrainingSummaryMetadata(memory: GrowthMemoryRecord): TrainingProfileSummaryMetadata {
   return isRecord(memory.metadata) ? (memory.metadata as TrainingProfileSummaryMetadata) : {};
 }
@@ -423,14 +430,14 @@ function buildNextStep(
   }
 
   if (articulationTips[0]) {
-    return `下一步先抓住这条动作提醒：${articulationTips[0].label}`;
+    return `如果这条提示对你有帮助，可以参考：${articulationTips[0].label}`;
   }
 
   if (improvementDirection === 'declining') {
-    return '最近有一点回落，先缩回到最熟的一条句子，把节奏和清晰度重新拉稳。';
+    return '最近的自动文字波动较大，可以先回听最熟的一条句子，再决定是否继续练习。';
   }
 
-  return '先从一条最常用的句子开始，重复练到系统稳定听清，再慢慢加长。';
+  return '可以先从一条最常用的句子开始；每次先回听录音，再按自己的需要决定是否继续。';
 }
 
 function buildSessionSummaries(
@@ -471,12 +478,12 @@ function buildSessionSummaries(
       readNumber(metadata, 'sessionTurnCount') ??
       (session.transcript ? session.transcript.split('\n').filter(Boolean).length : 0) ??
       0;
-    const clarityScores = trainingInSession.map((memory) => {
+    const clarityScores = trainingInSession.flatMap((memory) => {
       const trainingMetadata = toTrainingMetadata(memory);
-      return statusToClarityScore(
-        trainingMetadata.feedback_status ?? 'unclear',
+      return hasFinalReferenceFeedback(trainingMetadata) ? [statusToClarityScore(
+        trainingMetadata.feedback_status,
         trainingMetadata.clarity_score ?? null,
-      );
+      )] : [];
     });
 
     summaries.set(sessionId, {
@@ -523,12 +530,12 @@ function buildSessionSummaries(
     const trainingInSession = memoriesInSession.filter(
       (memory) => toTrainingMetadata(memory).kind === 'training_result',
     );
-    const clarityScores = trainingInSession.map((memory) => {
+    const clarityScores = trainingInSession.flatMap((memory) => {
       const trainingMetadata = toTrainingMetadata(memory);
-      return statusToClarityScore(
-        trainingMetadata.feedback_status ?? 'unclear',
+      return hasFinalReferenceFeedback(trainingMetadata) ? [statusToClarityScore(
+        trainingMetadata.feedback_status,
         trainingMetadata.clarity_score ?? null,
-      );
+      )] : [];
     });
 
     summaries.set(sessionId, {
@@ -614,11 +621,15 @@ function buildTrendPoints(
 
     const metadata = toTrainingMetadata(memory);
     if (metadata.kind === 'training_result') {
-      const status = metadata.feedback_status ?? 'unclear';
       point.trainingAttempts += 1;
-      point[status] += 1;
-      point.clarityTotal += statusToClarityScore(status, metadata.clarity_score ?? null);
-      point.claritySamples += 1;
+      if (hasFinalReferenceFeedback(metadata)) {
+        point[metadata.feedback_status] += 1;
+        point.clarityTotal += statusToClarityScore(
+          metadata.feedback_status,
+          metadata.clarity_score ?? null,
+        );
+        point.claritySamples += 1;
+      }
     }
 
     points.set(key, point);
@@ -741,27 +752,39 @@ export function buildMemoryGrowthProfileSnapshot(params: {
     : undefined;
   const statusCounts: Record<FeedbackStatus, number> = {
     excellent: readNumber(summaryStatusCounts, 'excellent') ?? granularTrainingMemories.filter(
-      (memory) => toTrainingMetadata(memory).feedback_status === 'excellent',
+      (memory) => {
+        const metadata = toTrainingMetadata(memory);
+        return hasFinalReferenceFeedback(metadata) && metadata.feedback_status === 'excellent';
+      },
     ).length,
     close: readNumber(summaryStatusCounts, 'close') ?? granularTrainingMemories.filter(
-      (memory) => toTrainingMetadata(memory).feedback_status === 'close',
+      (memory) => {
+        const metadata = toTrainingMetadata(memory);
+        return hasFinalReferenceFeedback(metadata) && metadata.feedback_status === 'close';
+      },
     ).length,
     retry: readNumber(summaryStatusCounts, 'retry') ?? granularTrainingMemories.filter(
-      (memory) => toTrainingMetadata(memory).feedback_status === 'retry',
+      (memory) => {
+        const metadata = toTrainingMetadata(memory);
+        return hasFinalReferenceFeedback(metadata) && metadata.feedback_status === 'retry';
+      },
     ).length,
     unclear: readNumber(summaryStatusCounts, 'unclear') ?? granularTrainingMemories.filter(
-      (memory) => toTrainingMetadata(memory).feedback_status === 'unclear',
+      (memory) => {
+        const metadata = toTrainingMetadata(memory);
+        return hasFinalReferenceFeedback(metadata) && metadata.feedback_status === 'unclear';
+      },
     ).length,
   };
 
   const trainingScores = [...granularTrainingMemories]
     .sort((left, right) => left.createdAt - right.createdAt)
-    .map((memory) => {
+    .flatMap((memory) => {
       const metadata = toTrainingMetadata(memory);
-      return statusToClarityScore(
-        metadata.feedback_status ?? 'unclear',
+      return hasFinalReferenceFeedback(metadata) ? [statusToClarityScore(
+        metadata.feedback_status,
         metadata.clarity_score ?? null,
-      );
+      )] : [];
     });
   const recentScores = trainingScores.slice(-7);
   const rollingClarityAverage = latestTrainingSummary

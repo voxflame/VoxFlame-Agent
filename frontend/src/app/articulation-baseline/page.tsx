@@ -32,7 +32,7 @@ export default function ArticulationBaselinePage() {
         <p className="text-sm font-semibold text-amber-700">普通话基线</p>
         <h1 className="mt-3 text-balance text-3xl font-semibold sm:text-5xl">一次只读一个字</h1>
         <p className="mt-5 max-w-2xl text-pretty text-base leading-8 text-stone-600">
-          完成 50 个单音节，观察系统在哪些声母、韵母和声调组合上更容易听错。结果用于沟通支持和同设备复测，不是临床诊断。
+          完成 50 个单音节，看看自动参考文字在哪些声母、韵母和声调组合上容易出错。这用于改进识别和同设备复测，不是对你的评分，也不是临床诊断。
         </p>
 
         <section className="mt-8 rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">

@@ -26,6 +26,15 @@ const feedback = analyzeMobileTrainingAttempt(
   '请帮我开门',
 )
 assert.equal(feedback.status, 'excellent')
+assert.equal(feedback.summary, '参考文字和题目一致。')
+
+const feedbackWithoutTranscript = analyzeMobileTrainingAttempt(
+  { id: 'custom-empty', text: '请帮我开门', category: '自定义练习' },
+  '',
+)
+assert.equal(feedbackWithoutTranscript.status, 'unclear')
+assert.match(feedbackWithoutTranscript.summary, /录音已经保留/)
+assert.doesNotMatch(feedbackWithoutTranscript.summary, /系统.*听清/)
 
 const summary = summarizeMobileArticulationBaseline([
   {
@@ -50,9 +59,11 @@ const summary = summarizeMobileArticulationBaseline([
   },
 ], 2)
 
-assert.equal(summary.accuracyPercent, 50)
+assert.equal(summary.referenceTextAgreementPercent, 50)
 assert.equal(summary.label, '基线已完成')
-assert.match(summary.summary, /不判断构音障碍类型或医学严重程度/)
+assert.match(summary.summary, /参考文字与题面一致/)
+assert.match(summary.summary, /不评价你的声音/)
+assert.doesNotMatch(JSON.stringify(summary), /系统听懂|系统听清率/)
 assert.equal(summary.personalizationSeconds, 4)
 assert.ok(summary.patterns.some((pattern) => pattern.label === '“医”'))
 

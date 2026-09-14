@@ -320,14 +320,14 @@ function buildNextStep(
   }
 
   if (articulationTips[0]) {
-    return `下一步先抓住这条动作提醒：${articulationTips[0].label}`
+    return `如果这条提示对你有帮助，可以参考：${articulationTips[0].label}`
   }
 
   if (improvementDirection === 'declining') {
-    return '最近有一点回落，先缩回到最熟的一条句子，把节奏和清晰度重新拉稳。'
+    return '最近的自动文字波动较大，可以先回听最熟的一条句子，再决定是否继续练习。'
   }
 
-  return '先选一条最常用的句子，重复练到系统稳定听清，再慢慢加长。'
+  return '可以先选一条最常用的句子；每次先回听录音，再按自己的需要决定是否继续。'
 }
 
 function normalizeClarityScore(status: TrainingFeedbackStatus, clarityScore: number): number {

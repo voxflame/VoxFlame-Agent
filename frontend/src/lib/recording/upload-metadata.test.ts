@@ -8,6 +8,8 @@ test('training upload metadata keeps useful labels and drops device/user details
     sanitizeTrainingUploadMetadata({
       target_text: '你好',
       spoken_text: '泥好',
+      client_capture_id: 'capture-1',
+      reference_text_status: 'pending',
       severity: 'mild',
       disability_category: '言语残疾',
       condition: '言语残疾',
@@ -29,6 +31,8 @@ test('training upload metadata keeps useful labels and drops device/user details
     {
       target_text: '你好',
       spoken_text: '泥好',
+      client_capture_id: 'capture-1',
+      reference_text_status: 'pending',
       severity: 'mild',
       disability_category: '言语残疾',
       condition: '言语残疾',

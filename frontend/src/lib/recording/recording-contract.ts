@@ -80,6 +80,11 @@ export interface VoxFlameRecorderQueueItem {
   sentenceId?: string
   source?: string
   metadata: Record<string, unknown>
+  referenceTextCompletion?: {
+    clientCaptureId: string
+    recognizedText: string
+    metadata?: Record<string, unknown>
+  }
   consentScope: VoxFlameConsentScope
   syncStatus: VoxFlameSyncStatus
   syncAttempts: number

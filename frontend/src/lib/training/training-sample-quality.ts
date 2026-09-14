@@ -19,6 +19,7 @@ interface AssessTrainingSampleQualityOptions {
   feedback: MandarinTrainingFeedback
   recording: VoxFlameRecordingEnvelope | null
   transcriptLatencyMs: number
+  referenceTextStatus?: 'pending' | 'available' | 'unavailable'
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -38,7 +39,7 @@ function deriveTier(score: number): {
     return {
       tier: 'ready',
       action: 'keep',
-      summary: '这条样本已经适合继续进入训练语料，可以把精力放回下一句。',
+      summary: '这条录音已保存；当前收音指标可供后续检查。',
     }
   }
 
@@ -46,7 +47,7 @@ function deriveTier(score: number): {
     return {
       tier: 'usable',
       action: 'keep',
-      summary: '这条样本可以保留进训练链路，但后面最好再补一条更稳的版本。',
+      summary: '这条录音已保存；如果你想对比，以后可以再录一次。',
     }
   }
 
@@ -54,21 +55,26 @@ function deriveTier(score: number): {
     return {
       tier: 'review',
       action: 'review',
-      summary: '这条样本已经留下来了，但建议先结合目标句和反馈再判断要不要补录。',
+      summary: '这条录音已保存；请先回听，再由你决定是否补录。',
     }
   }
 
   return {
     tier: 'retry',
     action: 'retry',
-    summary: '这条样本已被记录为一次尝试，但更建议马上重录一遍更稳的版本。',
+    summary: '这条录音已保存；当前指标需要回看，但不会要求你自动重录。',
   }
 }
 
 export function assessTrainingSampleQuality(
   options: AssessTrainingSampleQualityOptions,
 ): TrainingSampleQuality {
-  const { feedback, recording, transcriptLatencyMs } = options
+  const {
+    feedback,
+    recording,
+    transcriptLatencyMs,
+    referenceTextStatus = feedback.normalizedHeard ? 'available' : 'unavailable',
+  } = options
   const targetLength = feedback.normalizedTarget.length
   const heardLength = feedback.normalizedHeard.length
   const coverageRatio = targetLength > 0
@@ -79,7 +85,7 @@ export function assessTrainingSampleQuality(
     excellent: 92,
     close: 76,
     retry: 54,
-    unclear: 18,
+    unclear: 62,
   }
 
   let score = statusBaseScore[feedback.status]
@@ -91,15 +97,15 @@ export function assessTrainingSampleQuality(
       reasons.push('这次收音质量偏低，已保留为一次尝试，不建议当作高置信训练样本。')
     } else if (recording.audio.quality?.disposition === 'review') {
       score -= 8
-      reasons.push('这次收音需要回看，后面可以补一条更稳的版本。')
+      reasons.push('这次收音需要回看；可以先回听，再决定是否补录。')
     }
 
     if (recording.audio.durationMs < 900) {
       score -= 18
-      reasons.push('录音过短，建议把整句完整说完再停。')
+      reasons.push('录音时长较短；请先回听是否包含你想保留的内容。')
     } else if (recording.audio.durationMs < 1_500) {
       score -= 8
-      reasons.push('录音略短，下一条可以把尾音留完整一点。')
+      reasons.push('录音略短；如果回听内容完整，可以直接保留。')
     } else {
       reasons.push('录音时长基本够支撑这一句继续进入训练链路。')
     }
@@ -108,17 +114,21 @@ export function assessTrainingSampleQuality(
     reasons.push('当前没有完整录音 envelope，只能先当作一次反馈尝试。')
   }
 
-  if (coverageRatio >= 0.95) {
+  if (referenceTextStatus === 'pending') {
+    reasons.push('参考文字仍在生成；当前不用文字覆盖度评价录音。')
+  } else if (referenceTextStatus === 'unavailable') {
+    reasons.push('暂时没有可用的参考文字；当前不用文字覆盖度评价录音。')
+  } else if (coverageRatio >= 0.95) {
     score += 4
-    reasons.push('系统听到的内容和目标句覆盖度很高。')
+    reasons.push('参考文字和题目的覆盖度很高。')
   } else if (coverageRatio >= 0.75) {
-    reasons.push('系统已经听到了大部分关键词。')
+    reasons.push('参考文字包含了大部分关键词。')
   } else if (coverageRatio >= 0.45) {
     score -= 8
-    reasons.push('系统只听到了部分关键词，后面最好补一条更完整的录音。')
+    reasons.push('参考文字只包含部分关键词；请以回听录音为准。')
   } else {
     score -= 18
-    reasons.push('系统听到的关键词偏少，这条样本更像一次需要回看的尝试。')
+    reasons.push('参考文字里的关键词偏少；这可能是文字尚未完整，不代表录音里没有声音。')
   }
 
   if (feedback.missingChars.length === 0 && feedback.extraChars.length === 0 && feedback.status === 'excellent') {
@@ -126,21 +136,23 @@ export function assessTrainingSampleQuality(
   }
 
   if (feedback.status === 'unclear') {
-    reasons.push('这次识别结果不稳定，适合保留为一次尝试，但不适合作为高质量样本。')
+    reasons.push('这次暂时没有可用的参考文字；录音保存与文字结果分开判断。')
   } else if (feedback.status === 'retry') {
-    reasons.push('这次和目标句还有明显差异，建议继续以目标句为准补录。')
+    reasons.push('参考文字和题目有一些差异；请以回听为准，是否补录由你决定。')
   } else if (feedback.status === 'close') {
-    reasons.push('这次已经接近目标句，可保留，也值得后续补一条更稳的版本。')
+    reasons.push('参考文字和题目基本一致；你可以直接保留或回听后再决定。')
   }
 
-  if (transcriptLatencyMs > 4_500) {
+  if (referenceTextStatus === 'pending') {
+    reasons.push('文字结果尚未返回，不影响录音保存。')
+  } else if (transcriptLatencyMs > 4_500) {
     score -= 8
-    reasons.push('最终 transcript 返回偏慢，这条样本的收尾稳定性一般。')
+    reasons.push('参考文字返回较慢；这是处理延迟，不是对声音的评价。')
   } else if (transcriptLatencyMs > 2_500) {
     score -= 4
-    reasons.push('最终 transcript 返回稍慢，但仍可继续保留。')
+    reasons.push('参考文字返回稍慢，不影响录音保存。')
   } else {
-    reasons.push('最终 transcript 返回速度正常。')
+    reasons.push('参考文字返回速度正常。')
   }
 
   const normalizedScore = clamp(Math.round(score), 0, 100)

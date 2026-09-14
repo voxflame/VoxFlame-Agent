@@ -3,17 +3,58 @@ import test from 'node:test'
 
 import {
   buildRecordingManifestEntry,
+  buildReferenceTextMetadataUpdate,
   normalizeRecordingProgressSnapshot,
   classifyManifestRecordingState,
   executeRecoverableDiscard,
   removeManifestRecordingLines,
   removeTranscriptRecordingLines,
   resolveDiscardContributionMatches,
+  resolveReferenceTextContribution,
   resolveActiveManifestRows,
   runSerializedArtifactOperation,
   sanitizeUploadMetadata,
   summarizeRecordingProgress,
 } from './upload-artifact.service'
+
+test('final reference text stays separate from target and human spoken-text fields', () => {
+  assert.deepEqual(buildReferenceTextMetadataUpdate('林军请帮我拿下', {
+    target_text: '邻居请帮我拿下',
+    spoken_text: '不得由 ASR 填写',
+    feedback_status: 'retry',
+    clarity_score: 0.48,
+    missing_chars: ['邻'],
+    user_agent: 'private',
+  }), {
+    feedback_status: 'retry',
+    clarity_score: 0.48,
+    missing_chars: ['邻'],
+    reference_text_status: 'available',
+    recognized_text: '林军请帮我拿下',
+  })
+
+  assert.deepEqual(buildReferenceTextMetadataUpdate('   ', {
+    feedback_status: 'unclear',
+  }), {
+    reference_text_status: 'unavailable',
+  })
+})
+
+test('final reference text requires the recording id and capture id on the same row', () => {
+  assert.deepEqual(resolveReferenceTextContribution([
+    { id: 'row-1', metadata: { recording_id: 'recording-1', client_capture_id: 'capture-1' } },
+  ], 'capture-1'), {
+    id: 'row-1',
+    metadata: { recording_id: 'recording-1', client_capture_id: 'capture-1' },
+  })
+  assert.equal(resolveReferenceTextContribution([
+    { id: 'row-1', metadata: { recording_id: 'recording-1', client_capture_id: 'capture-other' } },
+  ], 'capture-1'), null)
+  assert.throws(() => resolveReferenceTextContribution([
+    { id: 'row-1', metadata: { client_capture_id: 'capture-1' } },
+    { id: 'row-2', metadata: { client_capture_id: 'capture-1' } },
+  ], 'capture-1'), /reference_text_capture_ambiguous/)
+})
 
 test('append-only discard events hide matching manifest recordings without deleting siblings', () => {
   const active = resolveActiveManifestRows([
@@ -199,6 +240,8 @@ test('server upload metadata allow-list drops device, browser, and arbitrary fie
       severity: 'mild',
       etiology: 'stroke',
       recording_id: 'rec-1',
+      client_capture_id: 'capture-1',
+      reference_text_status: 'pending',
       pronunciation_targets: ['zang4', 'zha2'],
       reading_assistance_used: true,
       baseline_protocol: 'mandarin_articulation_baseline',
@@ -206,7 +249,6 @@ test('server upload metadata allow-list drops device, browser, and arbitrary fie
       sample_rate: 16_000,
       user_agent: 'private-browser-details',
       microphone_label: 'USB microphone',
-      client_capture_id: 'internal-capture-id',
       raw_audio: 'should-not-be-a-metadata-value',
       empty: '   ',
       unsupported_object: { secret: true },
@@ -217,6 +259,8 @@ test('server upload metadata allow-list drops device, browser, and arbitrary fie
       severity: 'mild',
       etiology: 'stroke',
       recording_id: 'rec-1',
+      client_capture_id: 'capture-1',
+      reference_text_status: 'pending',
       pronunciation_targets: ['zang4', 'zha2'],
       reading_assistance_used: true,
       baseline_protocol: 'mandarin_articulation_baseline',

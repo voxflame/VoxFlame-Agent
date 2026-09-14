@@ -7,7 +7,7 @@
     "dev": "ts-node src/index.ts",
     "build": "tsc",
     "test": "ts-node src/services/livekit-config.service.test.ts && ts-node src/controllers/rtc.controller.test.ts",
-    "test:upload-metadata": "ts-node src/services/quality-review.service.test.ts && ts-node src/services/upload-admission.service.test.ts && ts-node src/services/upload-path-policy.test.ts && ts-node src/services/oss.service.test.ts && ts-node src/services/recording-quality.service.test.ts && ts-node src/services/upload-capacity.service.test.ts && ts-node src/middlewares/quality-reviewer.middleware.test.ts && ts-node src/services/upload-artifact.service.test.ts && ts-node src/services/upload-duration-persistence.test.ts && ts-node src/services/training-dataset-export.service.test.ts",
+    "test:upload-metadata": "ts-node src/services/quality-review.service.test.ts && ts-node src/services/upload-admission.service.test.ts && ts-node src/services/upload-path-policy.test.ts && ts-node src/services/oss.service.test.ts && ts-node src/services/recording-quality.service.test.ts && ts-node src/services/upload-capacity.service.test.ts && ts-node src/middlewares/quality-reviewer.middleware.test.ts && ts-node src/services/upload-artifact.service.test.ts && ts-node src/services/supabase-training-sample.test.ts && ts-node src/services/memory-growth.service.test.ts && ts-node src/services/upload-duration-persistence.test.ts && ts-node src/services/training-dataset-export.service.test.ts",
     "test:oss-identity": "ts-node src/services/oss-account-identity.test.ts && ts-node src/services/oss-account-document.test.ts",
     "test:sms-auth": "ts-node src/services/sms-auth.service.test.ts",
     "start": "node dist/index.js",

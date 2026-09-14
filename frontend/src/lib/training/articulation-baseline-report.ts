@@ -14,7 +14,7 @@ export interface ArticulationBaselineItemResult {
   heardText: string
   matchedCharacters: number
   totalCharacters: number
-  systemUnderstandingRatio: number
+  referenceTextAgreementRatio: number
 }
 
 export interface ArticulationBaselineSummary {
@@ -23,7 +23,7 @@ export interface ArticulationBaselineSummary {
   remainingCount: number
   matchedCharacters: number
   totalCharacters: number
-  systemUnderstandingRatio: number
+  referenceTextAgreementRatio: number
   status: ArticulationBaselineStatus
   statusLabel: string
   statusSummary: string
@@ -68,7 +68,7 @@ function buildItemResult(
     heardText: attempt.heardText,
     matchedCharacters,
     totalCharacters,
-    systemUnderstandingRatio: totalCharacters > 0
+    referenceTextAgreementRatio: totalCharacters > 0
       ? matchedCharacters / totalCharacters
       : 0,
   }
@@ -91,7 +91,7 @@ export function summarizeArticulationBaseline(
     (sum, result) => sum + result.matchedCharacters,
     0,
   )
-  const systemUnderstandingRatio = totalCharacters > 0
+  const referenceTextAgreementRatio = totalCharacters > 0
     ? matchedCharacters / totalCharacters
     : 0
   const isComplete = totalItemCount > 0 && completedCount >= totalItemCount
@@ -102,7 +102,7 @@ export function summarizeArticulationBaseline(
     ? '待开始'
     : status === 'complete' ? '基线已完成' : '基线进行中'
   const statusSummary = status === 'not_started'
-    ? '逐字完成 50 个单音节后，可查看本轮系统听懂表现和建议复测项。'
+    ? '逐字完成 50 个单音节后，可查看参考文字与题面的对照和建议复测项。'
     : status === 'complete'
       ? `本轮已完成 ${completedCount} 个单音节。结果用于同设备复测和沟通支持，不判断构音障碍类型或医学严重程度。`
       : `当前已完成 ${completedCount}/${totalItemCount} 个单音节，还剩 ${remainingCount} 个。`
@@ -113,14 +113,14 @@ export function summarizeArticulationBaseline(
     remainingCount,
     matchedCharacters,
     totalCharacters,
-    systemUnderstandingRatio,
+    referenceTextAgreementRatio,
     status,
     statusLabel,
     statusSummary,
     isComplete,
     reviewItems: itemResults
-      .filter((result) => result.systemUnderstandingRatio < 1)
-      .sort((left, right) => left.systemUnderstandingRatio - right.systemUnderstandingRatio)
+      .filter((result) => result.referenceTextAgreementRatio < 1)
+      .sort((left, right) => left.referenceTextAgreementRatio - right.referenceTextAgreementRatio)
       .slice(0, 3),
   }
 }

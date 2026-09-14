@@ -37,9 +37,11 @@ test('buildSpeechPerformanceReport combines recognition, acoustic and personaliz
     },
   ])
 
-  assert.equal(report.systemUnderstandingPercent, 50)
+  assert.equal(report.referenceTextAgreementPercent, 50)
   assert.equal(report.personalizationSeconds, 4)
   assert.equal(report.captureLabel, '收音可优化')
   assert.ok(report.patterns.some((pattern) => pattern.label === '双唇与唇齿音'))
   assert.match(report.boundary, /不诊断疾病/)
+  assert.match(report.boundary, /参考文字可能有误/)
+  assert.doesNotMatch(JSON.stringify(report), /系统听清率|系统本轮如何听到/)
 })

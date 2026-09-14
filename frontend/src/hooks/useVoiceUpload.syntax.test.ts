@@ -29,5 +29,11 @@ test('upload hook compiles and passes retry options outside the JSON body', () =
     ts.forEachChild(node, visit)
   }
   visit(file)
-  assert.equal(uploadCalls, 2, 'both sign and complete must receive retry options')
+  assert.equal(uploadCalls, 3, 'sign, complete, and reference-text enrichment must receive retry options')
+  assert.match(source, /pendingReferenceTextPromisesRef\.current\.set\(/)
+  assert.match(
+    source,
+    /pendingReferenceTextPromisesRef\.current\.get\(record\.recordingId\)[\s\S]*?referenceTextCompletion/,
+    'a local queue sync must keep a still-pending reference-text promise attached',
+  )
 })

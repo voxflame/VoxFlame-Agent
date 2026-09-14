@@ -1,5 +1,14 @@
 # 当前任务状态
 
+## 2026-09-14：张大宝录音核验与用户视角反馈
+
+- [x] 只读核验张大宝账号：截至北京时间 10:10，数据库独立计时账本累计 `644s / 174` 条，进度 RPC 为 `durable_v1`；抽查的 `voice_contributions` 均有上传 receipt 和 OSS `object_etag`，确认已有云端录音，不再以页面提示推测是否录到。
+- [x] 定位“没听清”含义混乱：部分录音确实接近静音/静音占比过高，但另有收音指标正常且 Agent 日志返回转写的录音，上传时仍因最终转写尚未回到前端而被写成 `feedback_status=unclear`；同时数据库顶层 `transcript` 保存的是题目文本，容易把题目误当成识别结果。该状态不是“用户没说清楚”的可靠结论。
+- [x] Web/App 用户可见反馈改为“参考文字”和“录音已保存/保留”，明确文字只是自动参考、以回听为准；无文字时不再说“系统没听清”或默认要求用户放慢、重录，是否重录由用户决定。
+- [x] 本地完成数据语义修复：音频上传不等待 ASR；最终参考文字按 `recording_id + client_capture_id` 幂等回填；ASR 只写 `recognized_text`，不写人工 `spoken_text`；后台训练总结不再将 contribution 顶层题目 transcript 当识别结果；`reference_text_status=pending` 不再计入 unclear 或低清晰度。Mobile 补齐“转写先到/上传先到”两种竞态。
+- [x] 验证：Web 173 项测试、TypeScript 与 production build，Backend `test:upload-metadata` 与 build，Mobile `test:training`/typecheck/check，AI docs Harness 与 `git diff --check` 通过。本机 production Playwright 验证 `/data-collection` 用户边界文案，console 0 error；`/practice` 正确跳到登录页。
+- [ ] 当前改动未部署、未重新发布 APK，也未用真实账号完成 Web/Android 录音、回听、上传与最终参考文字回填验收；本轮没有可用的浏览器测试登录凭据，故受保护训练反馈状态尚未做真实页面 smoke。不自动改写历史 `unclear` 数据。
+
 ## 2026-09-13：单字题库与音系强化分组
 
 - [x] 评估语言学同事提供的《普通话单字采录字表 V0.1.1》：1126 条来源行，覆盖 22 声母、36 韵母、四声；多音字按“词定音”保留重复字行；轻声、儿化不在本版范围。

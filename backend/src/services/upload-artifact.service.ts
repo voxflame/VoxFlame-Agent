@@ -10,6 +10,7 @@ const MANIFEST_EVENT_SCHEMA_VERSION = '1.0'
 const UPLOAD_METADATA_KEYS = new Set([
   // Training labels and target/transcript separation.
   'kind', 'sentence_id', 'target_text', 'spoken_text', 'recognized_text',
+  'client_capture_id', 'reference_text_status',
   'prompt_aligned_transcript', 'disability_category', 'condition', 'etiology', 'severity', 'age_band', 'sex',
   'speech_variant', 'dialect_name', 'dialect_region', 'dialect_name_user_reported', 'dialect_code',
   'language_tag', 'prompt_language', 'spoken_language', 'label_source', 'utterance_pair_id',
@@ -61,6 +62,21 @@ export interface UploadArtifactResult {
   reusedContribution: boolean
   manifestAlreadySynced: boolean
   transcriptAlreadySynced: boolean | null
+}
+
+export interface FinalizeReferenceTextPayload {
+  contributorId: string
+  recordingId: string
+  clientCaptureId: string
+  recognizedText: string
+  metadata?: Record<string, unknown>
+}
+
+export interface FinalizeReferenceTextResult {
+  contributionId: string | null
+  recordingId: string
+  referenceTextStatus: 'available' | 'unavailable'
+  updated: boolean
 }
 
 export interface DiscardUploadPayload {
@@ -244,6 +260,40 @@ function firstNonEmptyString(...values: unknown[]): string {
   }
 
   return ''
+}
+
+const REFERENCE_TEXT_METADATA_KEYS = new Set([
+  'feedback_status',
+  'clarity_score',
+  'alignment_score',
+  'missing_chars',
+  'extra_chars',
+  'speech_patterns',
+  'articulation_tips',
+  'pronunciation_summary',
+])
+
+/** Keep final ASR enrichment separate from target text and human spoken-text review. */
+export function buildReferenceTextMetadataUpdate(
+  recognizedText: string,
+  metadata: Record<string, unknown> | undefined,
+): JsonRecord {
+  const normalizedText = recognizedText.trim()
+  if (!normalizedText) {
+    return { reference_text_status: 'unavailable' }
+  }
+
+  const safeFeedback = sanitizeUploadMetadata(
+    Object.fromEntries(
+      Object.entries(metadata ?? {}).filter(([key]) => REFERENCE_TEXT_METADATA_KEYS.has(key)),
+    ),
+  )
+
+  return {
+    ...safeFeedback,
+    reference_text_status: 'available',
+    recognized_text: normalizedText,
+  }
 }
 
 function readNumber(metadata: Record<string, unknown> | undefined, key: string): number | undefined {
@@ -814,6 +864,26 @@ async function updateContributionMetadata(
   }
 }
 
+interface ReferenceTextContributionMatch {
+  id: string
+  metadata: JsonRecord
+}
+
+export function resolveReferenceTextContribution(
+  rows: Array<{ id?: unknown; metadata?: unknown }>,
+  clientCaptureId: string,
+): ReferenceTextContributionMatch | null {
+  const matches = rows.flatMap((row) => {
+    const metadata = isRecord(row.metadata) ? row.metadata : {}
+    return typeof row.id === 'string' && readString(metadata, 'client_capture_id') === clientCaptureId
+      ? [{ id: row.id, metadata }]
+      : []
+  })
+
+  if (matches.length > 1) throw new Error('reference_text_capture_ambiguous')
+  return matches[0] ?? null
+}
+
 function manifestRowMatchesRecording(
   row: JsonRecord,
   recordingId: string | null,
@@ -1081,7 +1151,6 @@ export class UploadArtifactService {
       ...(payload.metadata || {}),
       target_text: firstNonEmptyString(payload.metadata?.target_text, payload.text),
       recognized_text: firstNonEmptyString(payload.recognizedText, payload.metadata?.recognized_text),
-      spoken_text: firstNonEmptyString(payload.metadata?.spoken_text, payload.recognizedText),
     })
     const serverQuality = assessServerRecordingQuality(
       sanitizedMetadata,
@@ -1213,6 +1282,50 @@ export class UploadArtifactService {
       manifestAlreadySynced,
       transcriptAlreadySynced,
     }
+    })
+  }
+
+  async finalizeReferenceText(
+    payload: FinalizeReferenceTextPayload,
+  ): Promise<FinalizeReferenceTextResult> {
+    return await runSerializedArtifactOperation(payload.contributorId, async () => {
+      if (!supabase) throw new Error('recording_progress_storage_unavailable')
+
+      const { data, error } = await supabase
+        .from('voice_contributions')
+        .select('id, metadata, audio_path, sentence_id')
+        .eq('contributor_id', payload.contributorId)
+        .eq('metadata->>recording_id', payload.recordingId)
+        .limit(2)
+
+      if (error) throw new Error(error.message)
+      const row = resolveReferenceTextContribution(
+        Array.isArray(data) ? data : [],
+        payload.clientCaptureId,
+      )
+      if (!row) {
+        return {
+          contributionId: null,
+          recordingId: payload.recordingId,
+          referenceTextStatus: payload.recognizedText.trim() ? 'available' : 'unavailable',
+          updated: false,
+        }
+      }
+
+      const currentMetadata = row.metadata
+
+      const update = buildReferenceTextMetadataUpdate(payload.recognizedText, payload.metadata)
+      await updateContributionMetadata(row.id, {
+        ...currentMetadata,
+        ...update,
+      })
+
+      return {
+        contributionId: row.id,
+        recordingId: payload.recordingId,
+        referenceTextStatus: update.reference_text_status as 'available' | 'unavailable',
+        updated: true,
+      }
     })
   }
 

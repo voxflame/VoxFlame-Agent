@@ -1,7 +1,5 @@
-import {
-  MandarinTrainingExercise,
-  getTrainingTipsForCategory,
-} from '@/lib/corpus/mandarin-training'
+import { getTrainingTipsForCategory } from '@/lib/corpus/mandarin-training'
+import type { MandarinTrainingExercise } from '@/lib/corpus/mandarin-training'
 import { normalizeChineseText } from '@/lib/training/mandarin-text'
 
 export type MandarinFeedbackStatus = 'excellent' | 'close' | 'retry' | 'unclear'
@@ -84,21 +82,21 @@ function buildSummary(
   extraChars: string[],
 ): string {
   if (status === 'unclear') {
-    return '这次系统还没稳定听清，建议换安静一点的环境，再慢一点说。'
+    return '录音已经保存，暂时没有生成可参考的文字。'
   }
 
   if (status === 'excellent') {
-    return '这次系统听到的内容和目标句一致，可以继续保持这个节奏。'
+    return '参考文字和题目一致。你可以直接继续，也可以先回听确认。'
   }
 
   if (status === 'close') {
     const missing = missingChars.length > 0 ? `少了“${missingChars.join('、')}”` : ''
     const extra = extraChars.length > 0 ? `多了“${extraChars.join('、')}”` : ''
     const detail = [missing, extra].filter(Boolean).join('，')
-    return `这次已经比较接近目标句了，${detail || '还有少量差异'}。`
+    return `参考文字和题目基本一致，${detail || '只有少量差异'}。请以回听为准。`
   }
 
-  return '这次和目标句还有明显差异，建议先看关键词，再分段慢练。'
+  return '参考文字和题目有一些差异。录音仍已保存，请以回听内容为准。'
 }
 
 function unique<T>(values: T[]): T[] {
@@ -126,8 +124,8 @@ function buildPronunciationSummary(
     targets,
     summary:
       summaryParts.length > 0
-        ? `系统这次最容易出错的是：${summaryParts.join('；')}。`
-        : '这次没有看到稳定的固定混淆，先继续看整句节奏和关键字是否完整。',
+        ? `参考文字里：${summaryParts.join('；')}。这只是识别提示，请以回听为准。`
+        : '参考文字没有显示固定差异；是否需要再录，由你回听后决定。',
   }
 }
 
@@ -150,8 +148,8 @@ function buildArticulationTips(
   extraChars: string[],
 ): string[] {
   const observedTips = [
-    missingChars.length > 0 ? `先只盯“${missingChars[0]}”这个字，把动作做慢一点。` : '',
-    extraChars.length > 0 ? '先把每个字之间留半拍，不要急着把句子连过去。' : '',
+    missingChars.length > 0 ? `如果你想再试，可以单独说一次“${missingChars[0]}”，看参考文字是否变化。` : '',
+    extraChars.length > 0 ? '如果你想再试，可以在这几个字之间留一点间隔。' : '',
   ].filter(Boolean)
 
   return unique([
@@ -173,19 +171,19 @@ function buildMotorSuggestions(
   const suggestions: string[] = []
 
   if (status === 'unclear') {
-    suggestions.push('先把整句缩短一点、说慢一点，先求每个字都清楚出来。')
+    suggestions.push('你可以先回听；如果录音内容完整，可以直接继续。')
   }
 
   if (missingChars.length > 0) {
-    suggestions.push(`先只盯“${missingChars.join('、')}”这些字，嘴巴动作放慢，再回到整句。`)
+    suggestions.push(`参考文字少了“${missingChars.join('、')}”；你可以回听后决定是否单独试试这几个字。`)
   }
 
   if (extraChars.length > 0) {
-    suggestions.push(`这次有字连在一起了，下一遍每个字之间留半拍，不要急着往下冲。`)
+    suggestions.push(`参考文字多了“${extraChars.join('、')}”；你可以回听后决定是否再试一次。`)
   }
 
   if (pronunciationSummary.targets[0]) {
-    suggestions.push(`先把 ${pronunciationSummary.targets[0]}，再回到整句。`)
+    suggestions.push(`如果你想对比，可以先试试 ${pronunciationSummary.targets[0]}，再回到整句。`)
   }
 
   if (articulationTips.length > 0) {
@@ -193,7 +191,7 @@ function buildMotorSuggestions(
   }
 
   if (suggestions.length === 0) {
-    suggestions.push(categoryTips[0] || '先放慢、张口更明确一点，再把整句分成两段练。')
+    suggestions.push('如果回听内容符合你的表达，可以直接继续。')
   }
 
   return unique(suggestions).slice(0, 3)
@@ -224,11 +222,10 @@ export function analyzeMandarinAttempt(
       speechPatterns: baseFocus,
       articulationTips,
       pronunciationTargets: [],
-      pronunciationSummary: '这次还没有稳定拿到结果，先换安静环境再录一遍。',
+      pronunciationSummary: '暂时没有可用的参考文字；这不代表录音里没有声音。',
       summary: buildSummary('unclear', [], []),
       suggestions: [
-        '先确认麦克风权限和环境噪声，再重新录一遍。',
-        articulationTips[0] || categoryTips[0] || '先选安静环境，再慢慢读一遍。',
+        '先点回听确认录音内容；只有你觉得需要时再重录。',
       ],
     }
   }

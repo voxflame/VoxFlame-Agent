@@ -137,6 +137,8 @@ const TRAINING_METADATA_KEYS = new Set([
   'target_text',
   'spoken_text',
   'recognized_text',
+  'client_capture_id',
+  'reference_text_status',
   'consent_version',
   'collection_plan_id',
   'baseline_protocol',
@@ -203,6 +205,26 @@ function sanitizeMobileTrainingMetadata(
   )
 }
 
+const REFERENCE_TEXT_METADATA_KEYS = new Set([
+  'feedback_status',
+  'clarity_score',
+  'alignment_score',
+  'missing_chars',
+  'extra_chars',
+  'speech_patterns',
+  'articulation_tips',
+  'pronunciation_summary',
+])
+
+function sanitizeMobileReferenceTextMetadata(
+  metadata: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(sanitizeMobileTrainingMetadata(metadata))
+      .filter(([key]) => REFERENCE_TEXT_METADATA_KEYS.has(key)),
+  )
+}
+
 function buildUploadMetadata(
   item: MobileWorkbenchRecorderQueueItem,
   contentType: string,
@@ -225,7 +247,8 @@ function buildUploadMetadata(
     consent_version: MOBILE_LEGAL_CONSENT_VERSION,
     audio_quality_disposition: item.recording.audio.quality?.disposition,
     audio_quality_reasons: item.recording.audio.quality?.reasons,
-    spoken_text: item.recognizedText ?? '',
+    reference_text_status: item.recognizedText?.trim() ? 'available' : 'pending',
+    recognized_text: item.recognizedText?.trim() || undefined,
   }
 }
 
@@ -321,6 +344,37 @@ export async function uploadMobileRecorderQueueItem(
       ? '这条移动端录音已经写入训练资产，本次重试已安全复用。'
       : '移动端录音已上传并写入训练资产。',
   }
+}
+
+/** Enrich an already-saved mobile recording with the final automatic reference text. */
+export async function finalizeMobileRecorderReferenceText(
+  item: MobileWorkbenchRecorderQueueItem,
+  options: MobileWorkbenchClientOptions,
+): Promise<boolean> {
+  const clientCaptureId = typeof item.metadata.client_capture_id === 'string'
+    ? item.metadata.client_capture_id.trim()
+    : ''
+  if (!clientCaptureId) return false
+
+  const response = await fetchUploadApiWithRetry(
+    buildApiUrl(options.apiBaseUrl, '/upload/reference-text'),
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        recordingId: item.recordingId,
+        clientCaptureId,
+        recognizedText: item.recognizedText ?? '',
+        metadata: sanitizeMobileReferenceTextMetadata(item.metadata),
+      }),
+    },
+    options.tokenProvider,
+    item.contributorId,
+  )
+
+  return response.ok
 }
 
 export async function discardMobileRecorderQueueItem(

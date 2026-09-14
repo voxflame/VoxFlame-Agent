@@ -19,11 +19,11 @@ export default function ArticulationBaselineAboutPage() {
         <div className="mt-8 space-y-4">
           <section className="rounded-2xl border border-stone-200 bg-white p-5">
             <h2 className="text-lg font-semibold">可以观察</h2>
-            <p className="mt-2 text-pretty text-sm leading-7 text-stone-600">本轮系统听懂率、容易混淆的字与音组，以及录音环境是否稳定。</p>
+            <p className="mt-2 text-pretty text-sm leading-7 text-stone-600">本轮参考文字与题面的对照、容易出现差异的字与音组，以及录音环境是否稳定。</p>
           </section>
           <section className="rounded-2xl border border-stone-200 bg-white p-5">
             <h2 className="text-lg font-semibold">不能判断</h2>
-            <p className="mt-2 text-pretty text-sm leading-7 text-stone-600">它不能诊断构音障碍、判断医学严重程度，也不能替代言语语言治疗专业人员的评估。</p>
+            <p className="mt-2 text-pretty text-sm leading-7 text-stone-600">它不能判断你是否“说清楚”，不能诊断构音障碍或医学严重程度，也不能替代专业评估。</p>
           </section>
           <section className="rounded-2xl border border-stone-200 bg-white p-5">
             <h2 className="text-lg font-semibold">怎样复测更有意义</h2>

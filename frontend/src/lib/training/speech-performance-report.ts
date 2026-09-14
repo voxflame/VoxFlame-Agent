@@ -27,7 +27,7 @@ export interface SpeechPerformancePattern {
 
 export interface SpeechPerformanceReport {
   sampleCount: number
-  systemUnderstandingPercent: number
+  referenceTextAgreementPercent: number
   consistencyLabel: string
   consistencyDetail: string
   speechRateCharsPerSecond: number | null
@@ -133,7 +133,7 @@ export function buildSpeechPerformanceReport(
       targetLength - calculateCharacterEditDistance(attempt.normalizedTarget, attempt.normalizedHeard),
     )
   }, 0)
-  const systemUnderstandingPercent = totalTargetChars > 0
+  const referenceTextAgreementPercent = totalTargetChars > 0
     ? Math.round((matchedChars / totalTargetChars) * 100)
     : 0
   const attemptScores = validAttempts.map((attempt) => {
@@ -149,7 +149,7 @@ export function buildSpeechPerformanceReport(
     : scoreSpread <= 0.12 ? '本轮较稳定' : scoreSpread <= 0.25 ? '本轮有波动' : '不同词差异明显'
   const consistencyDetail = validAttempts.length < 3
     ? '至少完成 3 条后再看不同词之间的稳定性。'
-    : `不同词条听清率波动约 ${Math.round(scoreSpread * 100)} 个百分点。`
+    : `不同词条的参考文字匹配率波动约 ${Math.round(scoreSpread * 100)} 个百分点。`
 
   const totalDurationMs = validAttempts.reduce((sum, attempt) => sum + (attempt.durationMs ?? 0), 0)
   const totalSpeechDurationMs = validAttempts.reduce(
@@ -195,13 +195,13 @@ export function buildSpeechPerformanceReport(
   if (averageSilenceRatio !== null && averageSilenceRatio > 0.72) {
     nextActions.push('停顿较多：完整说完再结束录音；需要长停顿时不要把它当成错误。')
   }
-  if (patterns[0]) nextActions.push(`优先复练${patterns[0].label}，用相同设备对比前后两轮系统听清率。`)
-  if (systemUnderstandingPercent < 80) nextActions.push('把最常用的人名、地名和工作术语加入自定义材料，优先提高真实场景可用性。')
+  if (patterns[0]) nextActions.push(`如果你想复测，可以用相同设备再录${patterns[0].label}，对比前后两轮参考文字。`)
+  if (referenceTextAgreementPercent < 80) nextActions.push('把最常用的人名、地名和工作术语加入自定义材料，优先提高真实场景可用性。')
   if (nextActions.length === 0) nextActions.push('保持当前设备和距离，再换到面试、会议或日常场景验证是否同样稳定。')
 
   return {
     sampleCount: validAttempts.length,
-    systemUnderstandingPercent,
+    referenceTextAgreementPercent,
     consistencyLabel,
     consistencyDetail,
     speechRateCharsPerSecond,
@@ -213,6 +213,6 @@ export function buildSpeechPerformanceReport(
     personalizationDetail,
     patterns,
     nextActions: nextActions.slice(0, 3),
-    boundary: '本报告描述系统本轮如何听到你的声音和录音条件，不诊断疾病、嗓音健康或医学严重程度。',
+    boundary: '本报告只对照自动参考文字和录音条件；参考文字可能有误，不代表你的表达能力，也不诊断疾病。',
   }
 }

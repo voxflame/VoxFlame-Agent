@@ -94,7 +94,6 @@ import {
 } from '@/lib/training/dialect-collection'
 import { shouldDisableTrainingRecordingControl } from '@/lib/training/training-recording-control'
 import {
-  calculateCharacterEditDistance,
   summarizeArticulationBaseline,
 } from '@/lib/training/articulation-baseline-report'
 import {
@@ -188,17 +187,6 @@ type TrainingActivitySnapshot = WorkspaceMemorySnapshot['training_activity']
 const DEFAULT_VISIBLE_SENTENCES = 60
 const SEARCH_VISIBLE_SENTENCES = 80
 
-const UPLOAD_STATUS_LABELS: Record<TrainingAttemptUploadStatus, string> = {
-  idle: '这条录音还没进入保存流程',
-  saving: '正在自动保存',
-  uploaded: '已写入训练语料',
-  local_only: '已安全保存在本机',
-  auth_required: '需要重新登录恢复自动保存',
-  failed: '保存失败',
-  discarding: '正在撤回收录',
-  discarded: '已不收录',
-}
-
 function dedupeStrings(values: Array<string | null | undefined>, limit?: number): string[] {
   const seen = new Set<string>()
   const results: string[] = []
@@ -263,6 +251,7 @@ function stripFileExtension(filename: string): string {
 function buildUploadMetadata(
   exercise: PracticeExercise,
   recording: VoxFlameRecordingEnvelope,
+  clientCaptureId: string,
   transcript: string,
   feedback: MandarinTrainingFeedback,
   sampleQuality: TrainingSampleQuality,
@@ -283,18 +272,24 @@ function buildUploadMetadata(
     exercise_id: exercise.id,
     exercise_category: exercise.category,
     target_text: exercise.text,
+    client_capture_id: clientCaptureId,
+    reference_text_status: transcript ? 'available' : 'pending',
     ...(exercise.coverage_targets && exercise.coverage_targets.length > 0
       ? { pronunciation_targets: exercise.coverage_targets }
       : {}),
-    spoken_text: transcript,
-    feedback_status: feedback.status,
-    clarity_score: getClarityScore(feedback.status),
-    alignment_score: sampleQuality.score,
-    missing_chars: feedback.missingChars,
-    extra_chars: feedback.extraChars,
-    speech_patterns: feedback.speechPatterns,
-    articulation_tips: feedback.articulationTips,
-    pronunciation_summary: feedback.pronunciationSummary,
+    ...(transcript
+      ? {
+          recognized_text: transcript,
+          feedback_status: feedback.status,
+          clarity_score: getClarityScore(feedback.status),
+          alignment_score: sampleQuality.score,
+          missing_chars: feedback.missingChars,
+          extra_chars: feedback.extraChars,
+          speech_patterns: feedback.speechPatterns,
+          articulation_tips: feedback.articulationTips,
+          pronunciation_summary: feedback.pronunciationSummary,
+        }
+      : {}),
     prompt_group_key: lineage.promptGroupKey,
     prompt_fingerprint: lineage.promptFingerprint,
     recording_dedupe_key: lineage.recordingDedupeKey,
@@ -430,46 +425,6 @@ function getRecorderStatusCopy(
     description: isArticulationBaseline
       ? '准备好后直接从当前字开始。'
       : '先选一个训练主题，系统会给出当前要练的句子。',
-  }
-}
-
-function getBaselineTranscriptNotice(
-  transcript: string,
-  hasRecording: boolean,
-  transcriptStatus: PracticeAttempt['transcriptStatus'] = 'complete',
-): {
-  heardText: string
-  helperText: string
-  tone: 'sky' | 'amber'
-} {
-  if (transcriptStatus === 'pending') {
-    return {
-      heardText: '正在后台完成识别…',
-      helperText: '录音已经收下，你可以继续操作，不需要等待识别完成。',
-      tone: 'sky',
-    }
-  }
-
-  if (transcript.trim()) {
-    return {
-      heardText: transcript,
-      helperText: '识别完成，可以查看系统听到的内容。',
-      tone: 'sky',
-    }
-  }
-
-  if (hasRecording) {
-    return {
-      heardText: '录音已保存，但识别结果不完整。',
-      helperText: '这不等于没录到声音。把字说慢一点，尾音留完整，再录一次更稳。',
-      tone: 'amber',
-    }
-  }
-
-  return {
-    heardText: '这次还没有拿到可用录音。',
-    helperText: '先确认浏览器麦克风权限，再重新录一遍。',
-    tone: 'amber',
   }
 }
 
@@ -1164,33 +1119,6 @@ export function TrainingRecorderPage({
     ? `${trainingUploadLabels.dialectName ?? '方言'}表达`
     : '普通话表达'
   const recorderStatus = getRecorderStatusCopy(status, sessionError, isArticulationBaseline)
-  const currentAttemptUnderstandingRatio = useMemo(() => {
-    if (!attempt || !isArticulationBaseline || attempt.feedback.normalizedTarget.length === 0) {
-      return null
-    }
-
-    return Math.max(
-      0,
-      (attempt.feedback.normalizedTarget.length - calculateCharacterEditDistance(
-        attempt.feedback.normalizedTarget,
-        attempt.feedback.normalizedHeard,
-      ))
-      / attempt.feedback.normalizedTarget.length,
-    )
-  }, [attempt, isArticulationBaseline])
-  const baselineTranscriptNotice = useMemo(
-    () => (
-      isArticulationBaseline && attempt
-        ? getBaselineTranscriptNotice(
-            attempt.transcript,
-            Boolean(attempt.recording),
-            attempt.transcriptStatus,
-          )
-        : null
-    ),
-    [attempt, isArticulationBaseline],
-  )
-
   const exerciseSelectionHint = useMemo(() => {
     if (isArticulationBaseline) {
       return '固定 50 个单音节，按顺序逐字录制。'
@@ -1640,7 +1568,7 @@ export function TrainingRecorderPage({
       ))
       setNotice({
         tone: 'error',
-        message: result.errorMessage || '旧录音撤回失败，系统没有开始重录，请稍后再试。',
+        message: result.errorMessage || '旧录音撤回失败，没有开始重录，请稍后再试。',
       })
       return
     }
@@ -1726,6 +1654,11 @@ export function TrainingRecorderPage({
   const persistTrainingAttempt = useCallback(async (
     attemptToPersist: PracticeAttempt,
     _saveTrigger: AttemptSaveTrigger,
+    referenceTextCompletion?: Promise<{
+      clientCaptureId: string
+      recognizedText: string
+      metadata?: Record<string, unknown>
+    }>,
   ) => {
     if (!attemptToPersist.recording) {
       setNotice({
@@ -1758,9 +1691,11 @@ export function TrainingRecorderPage({
       sentenceId: attemptToPersist.exercise.id,
       recording: attemptToPersist.recording,
       consentScope,
+      referenceTextCompletion,
       metadata: buildUploadMetadata(
         attemptToPersist.exercise,
         attemptToPersist.recording,
+        attemptToPersist.clientCaptureId,
         attemptToPersist.transcript,
         attemptToPersist.feedback,
         attemptToPersist.sampleQuality,
@@ -1800,7 +1735,7 @@ export function TrainingRecorderPage({
         })
         setNotice({
           tone: 'error',
-          message: discardResult.errorMessage || '旧录音撤回失败，系统没有开始重录，请稍后再试。',
+          message: discardResult.errorMessage || '旧录音撤回失败，没有开始重录，请稍后再试。',
         })
         return
       }
@@ -1856,7 +1791,7 @@ export function TrainingRecorderPage({
 
       setNotice({
         tone: 'success',
-        message: '这条录音已经进入训练语料，只保留标签和系统听到的结果。',
+        message: '这条录音和题目标签已经保存。',
       })
       return
     }
@@ -2008,6 +1943,9 @@ export function TrainingRecorderPage({
           feedback,
           recording: result.recording,
           transcriptLatencyMs,
+          referenceTextStatus: transcriptStatus === 'pending'
+            ? 'pending'
+            : transcript.trim() ? 'available' : 'unavailable',
         })
 
         return {
@@ -2046,10 +1984,36 @@ export function TrainingRecorderPage({
         ))
       }
       setAttempt(nextAttempt)
-      // Upload the captured audio immediately. Final ASR is best-effort metadata
-      // and must never block durable storage of the original recording.
+      // Save the captured audio immediately. The reference text may arrive later
+      // and must never block durable storage of the user's recording.
       if (nextAttempt.recording) {
-        void persistTrainingAttempt(nextAttempt, 'auto')
+        const referenceTextCompletion = result.transcriptCompletion.then(({ transcript, transcriptLatencyMs }) => {
+          const finalizedAttempt = buildAttempt(
+            transcript.trim(),
+            transcriptLatencyMs,
+            'complete',
+          )
+          return {
+            clientCaptureId: result.clientCaptureId,
+            recognizedText: transcript.trim(),
+            metadata: buildUploadMetadata(
+              recordedExercise,
+              result.recording as VoxFlameRecordingEnvelope,
+              result.clientCaptureId,
+              transcript.trim(),
+              finalizedAttempt.feedback,
+              finalizedAttempt.sampleQuality,
+              readingAssistanceUsed,
+              { ...trainingUploadLabels, dialectName: dialect?.name, dialectRegion: dialect?.region },
+              collectionPlanId,
+              readingArticle,
+              effectiveReadingRoundId,
+              speechVariant,
+              utterancePairId,
+            ),
+          }
+        })
+        void persistTrainingAttempt(nextAttempt, 'auto', referenceTextCompletion)
       }
       if (!isArticulationBaseline) {
         setCollectionFlowStep(result.recording ? 'review' : 'record')
@@ -2120,8 +2084,6 @@ export function TrainingRecorderPage({
           }))
         }
 
-        // Upload already started immediately after capture. Do not wait for ASR
-        // or issue a second upload for the same recording ID.
       }).catch((completionError: unknown) => {
         console.error('[contribute] transcript finalization failed:', completionError)
         setAttempt((current) => (
@@ -2145,14 +2107,16 @@ export function TrainingRecorderPage({
   }, [
     canSaveTrainingSample,
     categoryExercises,
+    collectionPlanId,
     dialectPairEnabled,
+    effectiveReadingRoundId,
     isArticulationBaseline,
     matchingExercises,
     normalizedQuery.length,
     persistTrainingAttempt,
     readingArticle,
     stopRecording,
-    trainingUploadLabels.dialectName,
+    trainingUploadLabels,
   ])
 
   if (isLoading || shouldBlockTrainingPageForProgress(Boolean(readingArticle), recordingProgress.isLoading)) {
@@ -2700,7 +2664,7 @@ export function TrainingRecorderPage({
                     {isReplacingAttempt
                       ? '正在撤回旧录音，完成后会自动回到这一句开始重录。'
                       : attempt.uploadStatus === 'saving'
-                      ? '正在自动保存，你可以先确认系统听到的内容。'
+                      ? '正在自动保存，你可以先回听录音。'
                       : attempt.uploadStatus === 'uploaded'
                         ? '已经安全保存到你的训练数据中。'
                         : attempt.uploadStatus === 'local_only'
@@ -2716,11 +2680,11 @@ export function TrainingRecorderPage({
                   <dd className="text-pretty text-base leading-7 text-stone-950">{attempt.exercise.text}</dd>
                 </div>
                 <div className="grid gap-1 py-4 sm:grid-cols-[5rem_1fr] sm:gap-4">
-                  <dt className="text-sm font-medium text-stone-500">系统听到</dt>
+                  <dt className="text-sm font-medium text-stone-500">参考文字</dt>
                   <dd className="text-pretty text-base leading-7 text-stone-950">
                     {attempt.transcriptStatus === 'pending'
-                      ? '正在后台完成识别…'
-                      : attempt.transcript || '这次没有拿到稳定的识别文本，但录音仍可回听。'}
+                      ? '正在生成，不影响录音保存。'
+                      : attempt.transcript || '暂时没有生成参考文字，请以回听录音为准。'}
                   </dd>
                 </div>
               </dl>
@@ -2791,12 +2755,12 @@ export function TrainingRecorderPage({
           <details className="rounded-2xl border border-stone-200 bg-white">
             <summary className="flex min-h-12 cursor-pointer items-center justify-between gap-4 px-4 py-3 text-sm font-semibold text-stone-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500">
               <span>{isArticulationBaseline ? '本轮进度' : '本轮与主题信息'}</span>
-              <span className="text-xs font-normal text-stone-500">{isArticulationBaseline ? '完成数与系统听懂' : '进度、待补登与材料'}</span>
+              <span className="text-xs font-normal text-stone-500">{isArticulationBaseline ? '完成数与文字对照' : '进度、待补登与材料'}</span>
             </summary>
             <div className="grid gap-3 border-t border-stone-200 p-4 sm:grid-cols-3">
               <div className="rounded-xl bg-stone-50 px-4 py-3"><p className="text-xs text-stone-500">本轮已录</p><p className="mt-1 font-semibold text-stone-900 tabular-nums">{sessionPracticedExerciseIds.length} {isArticulationBaseline ? '字' : '句'}</p></div>
               <div className="rounded-xl bg-stone-50 px-4 py-3"><p className="text-xs text-stone-500">待补登</p><p className="mt-1 font-semibold text-stone-900 tabular-nums">{localQueueItems.length} 条</p></div>
-              <div className="rounded-xl bg-stone-50 px-4 py-3"><p className="text-xs text-stone-500">{isArticulationBaseline ? '系统听懂' : '当前主题'}</p><p className="mt-1 font-semibold text-stone-900">{isArticulationBaseline ? formatPercent(baselineSummary?.systemUnderstandingRatio ?? 0) : topicSelection.label}</p></div>
+              <div className="rounded-xl bg-stone-50 px-4 py-3"><p className="text-xs text-stone-500">{isArticulationBaseline ? '参考文字与题面一致' : '当前主题'}</p><p className="mt-1 font-semibold text-stone-900">{isArticulationBaseline ? formatPercent(baselineSummary?.referenceTextAgreementRatio ?? 0) : topicSelection.label}</p></div>
             </div>
           </details>
         </main>

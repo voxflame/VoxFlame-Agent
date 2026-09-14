@@ -28,7 +28,7 @@ export interface MobileArticulationBaselineSummary {
   completedCount: number
   totalCount: number
   remainingCount: number
-  accuracyPercent: number
+  referenceTextAgreementPercent: number
   label: string
   summary: string
   isComplete: boolean
@@ -126,8 +126,8 @@ export function analyzeMobileTrainingAttempt(
       normalizedHeard,
       missingChars: Array.from(normalizedTarget),
       extraChars: [],
-      summary: '这次系统还没稳定听清。',
-      suggestion: '换安静一点的位置，放慢一点再说一次。',
+      summary: '录音已经保留，暂时没有生成参考文字。',
+      suggestion: '先回听确认；只有你觉得需要时再录一次。',
     }
   }
 
@@ -137,15 +137,15 @@ export function analyzeMobileTrainingAttempt(
     ? 'excellent'
     : gapCount <= 2 ? 'close' : 'retry'
   const summary = status === 'excellent'
-    ? '系统听到的内容和目标句一致。'
+    ? '参考文字和题目一致。'
     : status === 'close'
-      ? '已经很接近，只有少量字符差异。'
-      : '这次和目标句还有明显差异。'
+      ? '参考文字和题目基本一致，只有少量差异。'
+      : '参考文字和题目有一些差异，请以回听为准。'
   const suggestion = missingChars.length > 0
-    ? `下一次先把“${missingChars.slice(0, 3).join('、')}”说稳，再回到整句。`
+    ? `参考文字里少了“${missingChars.slice(0, 3).join('、')}”；你可以回听后决定是否再录。`
     : extraChars.length > 0
-      ? `下一次在“${extraChars.slice(0, 3).join('、')}”附近留半拍。`
-      : '保持现在的速度和张口幅度。'
+      ? `参考文字里多了“${extraChars.slice(0, 3).join('、')}”；你可以回听后决定是否再录。`
+      : '如果回听内容符合你的表达，可以直接继续。'
 
   return {
     status,
@@ -178,7 +178,7 @@ export function summarizeMobileArticulationBaseline(
     },
     0,
   )
-  const accuracyPercent = totalChars > 0 ? Math.round((matchedChars / totalChars) * 100) : 0
+  const referenceTextAgreementPercent = totalChars > 0 ? Math.round((matchedChars / totalChars) * 100) : 0
   const isComplete = totalCount > 0 && completedCount >= totalCount
   const patternCounts = new Map<string, number>()
   attempts.forEach((attempt) => {
@@ -205,11 +205,11 @@ export function summarizeMobileArticulationBaseline(
     personalizationSeconds,
     personalizationProgressPercent,
     nextAction: hasLowConfidenceRecording
-      ? '有录音过短或收音不稳，先在相同设备上重录，再比较系统听清率。'
+      ? '有录音过短或收音不稳；请先回听，只有你觉得需要时再用相同设备复测。'
       : patterns[0]
-        ? `下一轮优先复练${patterns[0].label}，再比较前后两轮系统听清率。`
+        ? `如果你想复测，可以先对比${patterns[0].label}的录音和参考文字。`
         : '保持当前设备和距离，完成更多词后再看稳定规律。',
-    boundary: '报告描述系统本轮如何听到你的声音，不诊断疾病、嗓音健康或医学严重程度。',
+    boundary: '报告只对照自动参考文字和录音条件；参考文字可能有误，不代表你的表达能力，也不诊断疾病。',
   }
 
   if (!isComplete) {
@@ -217,11 +217,11 @@ export function summarizeMobileArticulationBaseline(
       completedCount,
       totalCount,
       remainingCount,
-      accuracyPercent,
+      referenceTextAgreementPercent,
       label: completedCount > 0 ? '基线进行中' : '待开始',
       summary: completedCount > 0
         ? `已经完成 ${completedCount}/${totalCount} 个单音节，还剩 ${remainingCount} 个。`
-        : '逐字完成 50 个单音节后，可查看系统听懂表现和建议复测项。',
+        : '逐字完成 50 个单音节后，可查看参考文字与题面的对照和建议复测项。',
       isComplete: false,
       ...reportFields,
     }
@@ -231,9 +231,9 @@ export function summarizeMobileArticulationBaseline(
     completedCount,
     totalCount,
     remainingCount,
-    accuracyPercent,
+    referenceTextAgreementPercent,
     label: '基线已完成',
-    summary: `本轮系统听懂率约 ${accuracyPercent}%。请在相同设备和距离下复测；结果不判断构音障碍类型或医学严重程度。`,
+    summary: `本轮参考文字与题面一致约 ${referenceTextAgreementPercent}%。这只反映自动文字的对照结果，不评价你的声音。`,
     isComplete: true,
     ...reportFields,
   }

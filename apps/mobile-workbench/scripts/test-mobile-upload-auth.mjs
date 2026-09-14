@@ -7,7 +7,7 @@ const source = await readFile(new URL('../src/api/mobile-upload-client.ts', impo
 const isolated = source.replace("import { File } from 'expo-file-system'", 'class File { exists = true; constructor(uri) { this.uri = uri } }')
   .replace("import { MOBILE_LEGAL_CONSENT_VERSION } from '../auth/legal-consent'", "const MOBILE_LEGAL_CONSENT_VERSION = 'test'")
 const js = ts.transpileModule(isolated, { compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 } }).outputText
-const { uploadMobileRecorderQueueItem } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`)
+const { finalizeMobileRecorderReferenceText, uploadMobileRecorderQueueItem } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`)
 const item = {
   recordingId: 'r1', contributorId: 'a', text: 'test', metadata: {}, consentScope: 'training_only',
   recording: { recordingId: 'r1', sessionId: 's', audio: { uri: 'local.wav', format: 'wav', durationSeconds: 2 } },
@@ -54,6 +54,21 @@ test('native completion obtains a new token after PUT, independent of signing', 
   }
   await uploadMobileRecorderQueueItem(item, { apiBaseUrl: 'https://api.test', tokenProvider: { async getAccessToken() { return token } } })
 })
+test('native initial upload keeps automatic text out of human spoken_text', async () => {
+  let completePayload = null
+  globalThis.fetch = async (url, init) => {
+    if (url.endsWith('/sign')) return Response.json({ url: 'https://oss.test/audio' })
+    if (url.includes('oss.test')) return new Response(null, { status: 200 })
+    completePayload = JSON.parse(init.body)
+    return Response.json({ success: true, recordingId: 'r1' })
+  }
+  await uploadMobileRecorderQueueItem({ ...item, recognizedText: '参考文字' }, {
+    apiBaseUrl: 'https://api.test', tokenProvider: { async getAccessToken() { return 'valid' } },
+  })
+  assert.equal(completePayload.metadata.spoken_text, undefined)
+  assert.equal(completePayload.metadata.recognized_text, '参考文字')
+  assert.equal(completePayload.metadata.reference_text_status, 'available')
+})
 test('native failed refresh does not send stale token again or upload to OSS', async () => {
   let calls = 0
   globalThis.fetch = async () => { calls++; return new Response(null, { status: 401 }) }
@@ -86,4 +101,32 @@ test('native overload retry remains bounded and preserves payload', async () => 
     apiBaseUrl: 'https://api.test', tokenProvider: { async getAccessToken() { return 'valid' } },
   }), /mobile_upload_sign_503/)
   assert.equal(attempts, 3)
+})
+
+test('native final reference text uses the capture id and never writes spoken_text', async () => {
+  let payload = null
+  globalThis.fetch = async (_url, init) => {
+    payload = JSON.parse(init.body)
+    return Response.json({ success: true })
+  }
+
+  const updated = await finalizeMobileRecorderReferenceText({
+    ...item,
+    recognizedText: '林军请帮我拿下',
+    metadata: {
+      client_capture_id: 'capture-1',
+      recognized_text: '林军请帮我拿下',
+      spoken_text: '不应从 ASR 写入',
+      feedback_status: 'retry',
+    },
+  }, {
+    apiBaseUrl: 'https://api.test',
+    tokenProvider: { async getAccessToken() { return 'valid' } },
+  })
+
+  assert.equal(updated, true)
+  assert.equal(payload.clientCaptureId, 'capture-1')
+  assert.equal(payload.recognizedText, '林军请帮我拿下')
+  assert.equal(payload.metadata.spoken_text, undefined)
+  assert.equal(payload.metadata.feedback_status, 'retry')
 })

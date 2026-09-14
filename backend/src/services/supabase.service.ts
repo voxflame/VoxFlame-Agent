@@ -68,6 +68,40 @@ interface VoiceContributionRow {
   metadata?: JsonRecord;
 }
 
+/** Top-level transcript is the recording prompt, never an automatic recognition fallback. */
+export function toPreparedExpressionTrainingSample(
+  row: VoiceContributionRow,
+): PreparedExpressionTrainingSample | null {
+  const metadata = isRecord(row.metadata) ? row.metadata : undefined;
+  if (readString(metadata, 'kind') !== 'training_result') {
+    return null;
+  }
+
+  return {
+    created_at: row.created_at ?? null,
+    target_text: readString(metadata, 'target_text') ?? readString(metadata, 'exercise_text') ?? '',
+    recognized_text:
+      readString(metadata, 'recognized_text')
+      ?? readString(metadata, 'raw_transcript')
+      ?? '',
+    exercise_category: readString(metadata, 'exercise_category'),
+    feedback_status: readString(metadata, 'feedback_status'),
+    prepared_expression_section_id: readString(metadata, 'prepared_expression_section_id'),
+    prepared_expression_section_title: readString(metadata, 'prepared_expression_section_title'),
+    high_risk_phrases: readStringList(metadata?.high_risk_phrases),
+    hotwords: dedupeStrings(
+      [
+        ...readStringList(metadata?.hotwords),
+        ...readStringList(metadata?.keywords),
+      ],
+      8,
+    ),
+    speech_patterns: readStringList(metadata?.speech_patterns),
+    articulation_tips: readStringList(metadata?.articulation_tips),
+    pronunciation_summary: readString(metadata, 'pronunciation_summary'),
+  };
+}
+
 export interface UserProfile {
   id?: string;
   name?: string;
@@ -1595,45 +1629,14 @@ export class SupabaseService {
     }
 
     return rows
-      .filter((row) => {
-        const metadata = isRecord(row.metadata) ? row.metadata : undefined;
-        return (
-          readString(metadata, 'kind') === 'training_result'
-        );
-      })
+      .filter((row) => toPreparedExpressionTrainingSample(row) !== null)
       .sort((left, right) => {
         const leftTime = new Date(left.created_at ?? 0).getTime();
         const rightTime = new Date(right.created_at ?? 0).getTime();
         return rightTime - leftTime;
       })
-      .map((row) => {
-        const metadata = isRecord(row.metadata) ? row.metadata : undefined;
-
-        return {
-          created_at: row.created_at ?? null,
-          target_text: readString(metadata, 'target_text') ?? readString(metadata, 'exercise_text') ?? '',
-          recognized_text:
-            readString(metadata, 'recognized_text')
-            ?? readString(metadata, 'raw_transcript')
-            ?? (typeof row.transcript === 'string' ? row.transcript.trim() : '')
-            ?? '',
-          exercise_category: readString(metadata, 'exercise_category'),
-          feedback_status: readString(metadata, 'feedback_status'),
-          prepared_expression_section_id: readString(metadata, 'prepared_expression_section_id'),
-          prepared_expression_section_title: readString(metadata, 'prepared_expression_section_title'),
-          high_risk_phrases: readStringList(metadata?.high_risk_phrases),
-          hotwords: dedupeStrings(
-            [
-              ...readStringList(metadata?.hotwords),
-              ...readStringList(metadata?.keywords),
-            ],
-            8,
-          ),
-          speech_patterns: readStringList(metadata?.speech_patterns),
-          articulation_tips: readStringList(metadata?.articulation_tips),
-          pronunciation_summary: readString(metadata, 'pronunciation_summary'),
-        };
-      });
+      .map((row) => toPreparedExpressionTrainingSample(row))
+      .filter((sample): sample is PreparedExpressionTrainingSample => sample !== null);
   }
 
   private getChinaDayWindow(offsetDays: number): {

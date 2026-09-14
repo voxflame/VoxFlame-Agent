@@ -14,7 +14,7 @@ const QUICK_START = [
   {
     step: '02',
     title: '完成 50 字基线',
-    body: '按顺序逐字录完，再看系统听懂、易混淆音组和收音建议。',
+    body: '按顺序逐字录完，再对照录音、自动参考文字和收音情况。',
     href: '/articulation-baseline',
     action: '开始基线',
   },
@@ -37,7 +37,7 @@ const RECORDING_RULES = [
 const PAGE_GUIDE = [
   {
     title: '普通话构音表现基线',
-    body: '用 50 个单音节建立可复测的系统听懂基线，不作临床诊断。',
+    body: '用 50 个单音节建立可复测的参考文字对照，不对你的声音评分。',
     href: '/articulation-baseline',
   },
   {

@@ -44,6 +44,8 @@ interface UploadOptions {
   consentScope?: VoxFlameConsentScope
   /** 结构化元数据 */
   metadata?: Record<string, unknown>
+  /** Final automatic text may arrive while durable audio upload is still in flight. */
+  referenceTextCompletion?: Promise<UploadReferenceText>
 }
 
 export interface UploadReceipt {
@@ -65,6 +67,12 @@ export interface UploadResult {
   errorMessage?: string
 }
 
+export interface UploadReferenceText {
+  clientCaptureId: string
+  recognizedText: string
+  metadata?: Record<string, unknown>
+}
+
 export interface DiscardUploadOptions {
   recordingId: string
   contributionId?: string | null
@@ -75,6 +83,13 @@ export interface DiscardUploadResult {
   ok: boolean
   status: 'discarded' | 'auth_required' | 'failed'
   errorMessage?: string
+}
+
+export interface FinalizeReferenceTextOptions {
+  recordingId: string
+  clientCaptureId: string
+  recognizedText: string
+  metadata?: Record<string, unknown>
 }
 
 function toStorageSegment(value: unknown): string {
@@ -89,6 +104,35 @@ function toStorageSegment(value: unknown): string {
     .replace(/[^\w\u4e00-\u9fa5-]+/g, '')
 }
 
+async function persistFinalReferenceText(
+  userId: string,
+  options: FinalizeReferenceTextOptions,
+): Promise<boolean> {
+  const token = await getAccessToken({ expectedUserId: userId })
+  if (!token) return false
+
+  try {
+    const response = await fetchUploadRequestWithRetry(`${config.api.baseUrl}/upload/reference-text`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        recordingId: options.recordingId,
+        clientCaptureId: options.clientCaptureId,
+        recognizedText: options.recognizedText,
+        metadata: sanitizeTrainingUploadMetadata(options.metadata),
+      }),
+    }, { onUnauthorized: (rejectedToken) => getAccessToken({ expectedUserId: userId, rejectedToken }) })
+
+    return response.ok
+  } catch (error) {
+    console.warn('[recording-upload] final reference text was not persisted', error)
+    return false
+  }
+}
+
 export function useVoiceUpload() {
   const [isUploading, setIsUploading] = useState(false)
   const [isSyncingLocalQueue, setIsSyncingLocalQueue] = useState(false)
@@ -99,6 +143,7 @@ export function useVoiceUpload() {
   const [lastUploadReceipt, setLastUploadReceipt] = useState<UploadReceipt | null>(null)
   const activeUploadCountRef = useRef(0)
   const lastAuthenticatedUserIdRef = useRef<string | null>(null)
+  const pendingReferenceTextPromisesRef = useRef(new Map<string, Promise<UploadReferenceText>>())
   const syncPromiseRef = useRef<Promise<{ synced: number; total: number }> | null>(null)
   const syncLocalRecordingsRef = useRef<(silent?: boolean) => Promise<{ synced: number; total: number }>>(async () => ({ synced: 0, total: 0 }))
 
@@ -151,11 +196,27 @@ export function useVoiceUpload() {
           ...(existingItem?.metadata || {}),
           ...(options.metadata || {}),
         },
+        referenceTextCompletion: existingItem?.referenceTextCompletion,
         createdAt: options.recording.createdAt,
         recording: options.recording,
       }
 
       await enqueueRecorderQueueItem(localRecord)
+
+      if (options.referenceTextCompletion) {
+        pendingReferenceTextPromisesRef.current.set(
+          options.recording.recordingId,
+          options.referenceTextCompletion,
+        )
+        void options.referenceTextCompletion.then(async (referenceText) => {
+          await updateRecorderQueueItem(options.recording.recordingId, (current) => (
+            current
+              ? { ...current, referenceTextCompletion: referenceText }
+              : current
+          ))
+          void refreshLocalQueueCount()
+        })
+      }
 
       await refreshLocalQueueCount()
       setLastError(null)
@@ -369,6 +430,15 @@ export function useVoiceUpload() {
         manifestAlreadySynced?: boolean
       }
 
+      if (normalizedOptions.referenceTextCompletion) {
+        void normalizedOptions.referenceTextCompletion.then((referenceText) => (
+          persistFinalReferenceText(userId, {
+            recordingId,
+            ...referenceText,
+          })
+        ))
+      }
+
       setUploadProgress(80)
 
       // 4. 更新贡献者统计 (暂时跳过，或者也移交给后端)
@@ -484,6 +554,14 @@ export function useVoiceUpload() {
     }
   }, [isAuthenticated, refreshLocalQueueCount, userId])
 
+  /** Best-effort enrichment after the recording itself has already been saved. */
+  const finalizeReferenceText = useCallback(async (
+    options: FinalizeReferenceTextOptions,
+  ): Promise<boolean> => {
+    if (!isAuthenticated || !userId) return false
+    return await persistFinalReferenceText(userId, options)
+  }, [isAuthenticated, userId])
+
   /**
    * 同步本地记录到云端
    */
@@ -542,9 +620,15 @@ export function useVoiceUpload() {
           metadata: record.metadata || {},
           consentScope: record.consentScope,
           recording: record.recording,
+          referenceTextCompletion:
+            pendingReferenceTextPromisesRef.current.get(record.recordingId)
+            ?? (record.referenceTextCompletion
+              ? Promise.resolve(record.referenceTextCompletion)
+              : undefined),
         })
 
         if (result.status === 'uploaded') {
+          pendingReferenceTextPromisesRef.current.delete(record.recordingId)
           await removeRecorderQueueItem(record.recordingId)
           syncedCount++
           continue
@@ -643,6 +727,7 @@ export function useVoiceUpload() {
   return {
     uploadRecording,
     discardUploadedRecording,
+    finalizeReferenceText,
     syncLocalRecordings,
     getLocalRecordCount,
     isUploading,

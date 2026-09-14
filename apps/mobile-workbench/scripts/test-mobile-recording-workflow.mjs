@@ -99,6 +99,13 @@ for (const requiredField of [
 const appSource = await readFile(path.resolve('App.tsx'), 'utf8')
 assert.match(appSource, /consentReady\s*&&\s*hasCurrentLegalConsent/)
 
+const recorderQueueSource = await readFile(path.resolve('src/queue/use-native-recorder-queue.ts'), 'utf8')
+assert.match(
+  recorderQueueSource,
+  /const uploadedItems = await updateNativeRecorderQueueItemStatus\([\s\S]*?const latestItem = uploadedItems\.find\([\s\S]*?finalizeMobileRecorderReferenceText\(latestItem/,
+  'upload completion must re-read the serialized queue item so a transcript that arrived mid-upload is finalized',
+)
+
 const legalConsentSource = await readFile(path.resolve('src/auth/legal-consent.ts'), 'utf8')
 assert.match(legalConsentSource, /hasCurrentMobileLegalConsent/)
 

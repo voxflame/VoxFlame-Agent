@@ -1432,7 +1432,7 @@ function CommunicationScreen({
           <Text style={styles.cardLabel}>文字沟通</Text>
           {connected || liveTranscript ? (
             <Text style={styles.liveTranscript}>
-              {liveTranscript || '开始说话后，系统听到的内容会出现在这里。'}
+              {liveTranscript || '开始说话后，自动生成的参考文字会出现在这里。'}
             </Text>
           ) : null}
           <Text style={styles.fieldLabel}>输入或修改一句话</Text>
@@ -1933,6 +1933,7 @@ function PracticeScreen({
         reading_segment_index: catalog.selectedReadingArticle ? exerciseIndex : undefined,
         reading_segment_count: catalog.selectedReadingArticle?.segmentCount,
         client_capture_id: captureId,
+        reference_text_status: 'pending',
         age_band: ageBand.trim() || undefined,
         sex: sex.trim() || undefined,
         etiology: profileEtiology || undefined,
@@ -1992,14 +1993,19 @@ function PracticeScreen({
       exercise_id: exercise.id,
       exercise_text: exercise.text,
       target_text: exercise.text,
-      raw_transcript: heardText,
-      recognized_text: heardText,
-      feedback_status: nextFeedback.status,
-      clarity_score: nextFeedback.status === 'excellent'
-        ? 0.95
-        : nextFeedback.status === 'close' ? 0.78 : nextFeedback.status === 'retry' ? 0.48 : 0.2,
-      missing_chars: nextFeedback.missingChars,
-      extra_chars: nextFeedback.extraChars,
+      reference_text_status: heardText.trim() ? 'available' : 'unavailable',
+      ...(heardText.trim()
+        ? {
+            raw_transcript: heardText,
+            recognized_text: heardText,
+            feedback_status: nextFeedback.status,
+            clarity_score: nextFeedback.status === 'excellent'
+              ? 0.95
+              : nextFeedback.status === 'close' ? 0.78 : nextFeedback.status === 'retry' ? 0.48 : 0.2,
+            missing_chars: nextFeedback.missingChars,
+            extra_chars: nextFeedback.extraChars,
+          }
+        : {}),
       ...(capture.preparedExpressionId
         ? { prepared_expression_id: capture.preparedExpressionId }
         : {}),
@@ -2176,7 +2182,7 @@ function PracticeScreen({
         </Text>
         <Text style={styles.pageCopy}>
           {flow === 'articulation_baseline'
-            ? '按顺序逐字完成 50 个单音节，查看系统听懂和复测建议；结果不是临床诊断。'
+            ? '按顺序逐字完成 50 个单音节，对照录音和自动参考文字；结果不是对你的评分。'
             : `已选择「${usesPreparedMaterial ? '自定义材料' : catalog.selectedReadingArticle?.title ?? selectedCategory?.label ?? '当前材料'}」。确认一次后，可以连续录制这一组。`}
         </Text>
       </View>
@@ -2292,8 +2298,8 @@ function PracticeScreen({
             ) : null}
             {feedback ? (
               <View style={styles.feedbackPanel}>
-                <Text style={styles.feedbackLabel}>系统听到</Text>
-                <Text style={styles.feedbackHeard}>{feedback.normalizedHeard || '暂时没有听清'}</Text>
+                <Text style={styles.feedbackLabel}>参考文字</Text>
+                <Text style={styles.feedbackHeard}>{feedback.normalizedHeard || '暂时没有生成，请先回听'}</Text>
                 <Text style={styles.feedbackSummary}>{feedback.summary}</Text>
                 <Text style={styles.mutedText}>{feedback.suggestion}</Text>
                 {pendingAttempt ? (
@@ -2320,7 +2326,7 @@ function PracticeScreen({
                 <Text style={styles.mutedText}>{baselineSummary.summary}</Text>
                 <View style={styles.reportItem}>
                   <Text style={styles.cardLabel}>普通话构音表现基线</Text>
-                  <Text style={styles.reportText}>系统听懂 {baselineSummary.accuracyPercent}%</Text>
+                  <Text style={styles.reportText}>参考文字与题面一致 {baselineSummary.referenceTextAgreementPercent}%</Text>
                   <Text style={styles.mutedText}>
                     个性化数据约 {baselineSummary.personalizationSeconds} 秒 / 5 分钟参考量
                   </Text>

@@ -210,9 +210,9 @@ function summarizeWindowHeuristically(
       : '主要集中在高频目标句';
   const mismatchLead =
     mismatchPairs.length > 1
-      ? '目标句和系统听到结果仍有反复差异'
+      ? '目标句和自动参考文字仍有反复差异'
       : mismatchPairs.length === 1
-        ? '目标句和系统听到结果还有一处代表性差异'
+        ? '目标句和自动参考文字还有一处代表性差异'
         : '整体识别较平稳';
   const stableLead =
     stableWins.length > 1
@@ -402,7 +402,7 @@ function buildDailySummaryPrompt(
           '每条样本都包含 target_text 和 recognized_text，必须围绕这两个字段的差异总结。',
           'summary 用 1 句中文，只写今天可复用的主要规律；不要只围绕一两个字、单个词或单条例子；不超过 70 字。',
           '具体例子放进 mismatch_pairs / stable_wins / support_strategies，不要让 summary 变成例子列表。',
-          'mismatch_pairs 只保留今天真实出现的“目标 -> 系统听到”错配。',
+          'mismatch_pairs 只保留今天真实出现的“目标 -> 自动参考文字”差异。',
           'next_focus 写今天下一轮最值得继续盯的 1 到 4 个短焦点。',
           'stable_wins 只写今天已经较稳的目标句或短片段。',
         ],
@@ -458,7 +458,7 @@ function buildWeeklySummaryPrompt(
           '只总结 target_text 和 recognized_text 的稳定差异，不要把材料说明、场景标题或系统提示改写成训练结论。',
           'summary 用 1 句中文，只写 7 天内可复用的稳定规律；不要只围绕一两个字、单个词或单条例子；不超过 90 字。',
           '具体例子放进 mismatch_pairs / stable_wins / support_strategies，不要让 summary 变成例子列表。',
-          'mismatch_pairs 只保留最近 7 天重复或最有代表性的“目标 -> 系统听到”错配。',
+          'mismatch_pairs 只保留最近 7 天重复或最有代表性的“目标 -> 自动参考文字”差异。',
           'next_focus 要能服务训练页和纠错链路，短、明确、可复用。',
         ],
         limits: {

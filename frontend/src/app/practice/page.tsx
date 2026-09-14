@@ -40,8 +40,8 @@ export default function PracticeGatewayPage() {
               <ClipboardCheck className="size-6" aria-hidden="true" />
             </span>
             <p className="mt-7 text-sm font-semibold text-orange-200">50 字普通话构音基线</p>
-            <h2 className="mt-2 text-balance text-2xl font-semibold">了解系统如何听懂你的普通话</h2>
-            <p className="mt-3 text-pretty text-sm leading-7 text-stone-300">逐字完成 50 个单音节，查看系统听懂、易混淆音组和收音建议；结果不是临床诊断。</p>
+            <h2 className="mt-2 text-balance text-2xl font-semibold">了解自动文字在哪些字上需要改进</h2>
+            <p className="mt-3 text-pretty text-sm leading-7 text-stone-300">逐字完成 50 个单音节，对照录音与参考文字；结果只用于改进识别和收音，不是对你的评分。</p>
             <span className="mt-auto inline-flex items-center gap-2 pt-6 text-sm font-semibold">开始基线 <ArrowRight className="size-4" aria-hidden="true" /></span>
           </Link>
 

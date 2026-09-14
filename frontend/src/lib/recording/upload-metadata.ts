@@ -9,6 +9,8 @@ const ALLOWED_METADATA_KEYS = new Set([
   'target_text',
   'spoken_text',
   'recognized_text',
+  'client_capture_id',
+  'reference_text_status',
   'prompt_group_key',
   'prompt_fingerprint',
   'recording_dedupe_key',
